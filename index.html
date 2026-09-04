@@ -12,7 +12,6 @@
     <link rel="apple-touch-icon" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'/%3E%3C/svg%3E" />
     <link id="manifest-link" rel="manifest">
     
-    <!-- PWA Dynamic Generator -->
     <script>
         const generatePWA = () => {
             const manifest = {
@@ -59,6 +58,8 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -99,8 +100,6 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- 🚀 FIREBASE INITIALIZATION 🚀 ---
-        // הנתונים נלקחו אוטומטית מתוך התמונה שהעלית
         const firebaseConfig = {
             apiKey: "AIzaSyBMfjLTktAFc5uFRN8Oda8-_u29KykDAYA",
             authDomain: "loos-77484.firebaseapp.com",
@@ -115,7 +114,7 @@
         }
         const db = firebase.firestore();
 
-        const { useState, useEffect, useMemo } = React;
+        const { useState, useEffect, useMemo, useRef } = React;
 
         const IconFlame = ({ className = "w-5 h-5" }) => <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 23c-4.97 0-9-3.58-9-8 0-4.19 3.01-7.26 5.88-9.84.58-.52 1.17-1.04 1.72-1.58.37-.36.93-.38 1.32-.05.39.33.47.89.18 1.32-.88 1.31-1.68 2.65-1.92 4.15 1.48-1.05 3.19-1.99 5.02-2.73.43-.18.93-.01 1.16.39.23.4.12.91-.25 1.18C14.05 9.3 12.5 11.2 12.5 13.5c0 1.38.56 2.63 1.46 3.54.4.4.4 1.05 0 1.45-.4.4-1.05.4-1.45 0C11.1 17.08 10.5 15.36 10.5 13.5c0-1.4.58-2.67 1.5-3.6-2.12 1.14-3.8 2.87-4.5 5.1-.15.48-.59.8-1.08.8-.75 0-1.28-.7-1.05-1.41.86-2.68 2.86-4.78 5.37-6.03.35-.17.77-.07.99.25.22.32.13.76-.2 1.08-.85.83-1.6 1.77-2.15 2.81 2.37-1.63 5.3-2.6 8.3-2.6 1.1 0 2.18.13 3.22.39.46.12.75.58.64 1.04-.11.46-.57.75-1.03.64-1.28-.32-2.58-.43-3.83-.34 2.85.95 4.8 3.58 4.8 6.6 0 4.42-4.03 8-9 8z"/></svg>;
         const IconSparkle = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
@@ -132,6 +131,15 @@
         const IconList = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
 
         const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+
+        const getUserLevel = (points) => {
+            if (points <= 50) return { title: 'תלמידה מתחילה', icon: '🌱' };
+            if (points <= 150) return { title: 'צוערת בגרויות', icon: '🚀' };
+            if (points <= 300) return { title: 'סיירת למידה', icon: '🕵️‍♀️' };
+            if (points <= 600) return { title: 'מאסטר בלמידה', icon: '👑' };
+            if (points <= 1000) return { title: 'אגדת מיונים', icon: '🦸‍♀️' };
+            return { title: 'פרופסורית (Top 1%)', icon: '🎓' };
+        };
 
         const getNextSaturdayNight = () => {
             const now = new Date();
@@ -211,6 +219,16 @@
             return windows;
         };
 
+        const ALL_BADGES = [
+            { id: 'b_exam_90', icon: '🏆', title: 'מצטיינת מבחנים', description: 'קיבלת ב-4 מבחנים מעל 90', reqType: 'exams_90_plus', reqTarget: 4 },
+            { id: 'b_on_time', icon: '⏱️', title: 'חסינת איחורים', description: 'הגשת בזמן במשך שבועיים רצוף', reqType: 'streak_days', reqTarget: 14 },
+            { id: 'b_weekly_20', icon: '⚡', title: 'טורבו', description: 'צברת מעל 20 נקודות בשבוע אחד', reqType: 'weekly_points', reqTarget: 20 },
+            { id: 'b_fast_hw', icon: '💨', title: 'ספידי', description: 'הגשת 5 שיעורי בית בפחות מחצי מהזמן', reqType: 'fast_hw', reqTarget: 5 },
+            { id: 'b_sync_study', icon: '🤝', title: 'שותפות לגורל', description: 'את וחברה השלמתן משימה ארוכה באותו יום', reqType: 'sync_study', reqTarget: 1 },
+            { id: 'b_comeback', icon: '🔄', title: 'קאמבק של אלופות', description: 'איבדת רצף, ולא נשברת - הגשת משימה ביום שאחרי', reqType: 'comeback', reqTarget: 1 },
+            { id: 'b_sprint', icon: '🏎️', title: 'עקיפה בסיבוב', description: 'עקפת חברה בנקודות ביום שישי לקראת סגירת השבוע', reqType: 'sprint', reqTarget: 1 },
+        ];
+
         const DEFAULT_USER_STATE = {
             password: '',
             name: 'תלמיד/ה',
@@ -237,11 +255,11 @@
             streakHistory: [],
             friends: [],
             exams: [],
-            notifications: []
+            notifications: [],
+            badges: [] 
         };
 
         function App() {
-            // Initial state from LocalStorage (acts as cache)
             const [globalState, setGlobalState] = useState(() => {
                 const saved = localStorage.getItem('studyStreakData_DB_v7');
                 if (saved) {
@@ -250,18 +268,15 @@
                 return { users: {}, activeUser: null };
             });
 
-            // LocalStorage Sync Effect (Backup)
             useEffect(() => {
                 localStorage.setItem('studyStreakData_DB_v7', JSON.stringify(globalState));
             }, [globalState]);
 
-            // --- 🚀 LIVE SYNC EFFECT (REAL-TIME FIREBASE) 🚀 ---
             useEffect(() => {
                 if (!globalState.activeUser || !db) return;
 
                 const userRef = db.collection("users").doc(globalState.activeUser);
                 
-                // הירשמות לשינויים בזמן אמת במסמך של המשתמש בענן
                 const unsubscribe = userRef.onSnapshot((doc) => {
                     if (doc.exists) {
                         const liveData = doc.data();
@@ -269,8 +284,6 @@
                         setGlobalState(prev => {
                             const currentUserData = prev.users[prev.activeUser];
                             
-                            // שימוש בחותמת זמן כדי למנוע רינדור כפול (כשהנתונים באמת זהים) 
-                            // וכדי לזהות תמיד ובמדויק כשמכשיר אחר ביצע שינוי כלשהו
                             if (currentUserData) {
                                 if (liveData.lastSync && currentUserData.lastSync) {
                                     if (liveData.lastSync === currentUserData.lastSync) return prev;
@@ -279,7 +292,6 @@
                                 }
                             }
                             
-                            // עדכון הסטייט המקומי עם הנתונים העדכניים מהענן
                             return {
                                 ...prev,
                                 users: {
@@ -293,10 +305,8 @@
                     console.error("Live sync error:", error);
                 });
 
-                // ניקוי ההאזנה כשיוצאים או מחליפים משתמש
                 return () => unsubscribe();
             }, [globalState.activeUser]);
-
 
             const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
 
@@ -306,16 +316,13 @@
                     const user = prev.users[prev.activeUser];
                     const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
                     
-                    // הוספת חותמת זמן ייחודית בכל עדכון - מכריח את המכשיר השני להתרענן מיד
                     updatedUser.lastSync = Date.now();
                     
-                    // סנכרון לפיירבייס בענן בכל עדכון
                     if (db) {
                         db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
                           .catch(err => console.error("Error saving to Firebase: ", err));
                     }
 
-                    // עדכון מיידי של ה-UI (Optimistic Update)
                     return {
                         ...prev,
                         users: {
@@ -326,7 +333,45 @@
                 });
             };
 
-            // Reset Weekly Points Logic
+            const checkAndAwardBadges = (userData) => {
+                if(!userData) return userData;
+                let newBadges = [...(userData.badges || [])];
+                let earnedNew = false;
+                
+                const exam90PlusBadge = newBadges.find(b => b.id === 'b_exam_90');
+                if (!exam90PlusBadge) {
+                    const exams90PlusCount = (userData.exams || []).filter(e => e.grade && e.grade >= 90).length;
+                    if (exams90PlusCount >= 4) {
+                        newBadges.push({ id: 'b_exam_90', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('🏆 זכית בתג: מצטיינת מבחנים!', 'success');
+                    }
+                }
+                
+                const turboBadge = newBadges.find(b => b.id === 'b_weekly_20');
+                if(!turboBadge) {
+                    if (userData.highestWeeklyPoints >= 20 || userData.weeklyPoints >= 20) {
+                        newBadges.push({ id: 'b_weekly_20', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('⚡ זכית בתג: טורבו!', 'success');
+                    }
+                }
+                
+                const onTimeBadge = newBadges.find(b => b.id === 'b_on_time');
+                if(!onTimeBadge) {
+                    if (userData.longestStreak >= 14) {
+                        newBadges.push({ id: 'b_on_time', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('⏱️ זכית בתג: חסינת איחורים!', 'success');
+                    }
+                }
+
+                if (earnedNew) {
+                    return { ...userData, badges: newBadges };
+                }
+                return userData;
+            };
+
             useEffect(() => {
                 if (activeUserData) {
                     const now = new Date().getTime();
@@ -341,53 +386,139 @@
                 }
             }, [globalState.activeUser, activeUserData?.nextWeeklyReset]);
 
-            // Auto-break streak logic
             useEffect(() => {
-                if (activeUserData && activeUserData.taskStreak > 0) {
-                    const now = new Date();
-                    let shouldBreakStreak = false;
-                    let oldestUncompletedDate = null;
+                if (!activeUserData || !activeUserData.tasks) return;
+                const now = new Date();
+                let shouldBreakStreak = false;
+                let oldestUncompletedDate = null;
+                let needsUpdate = false;
+                let updatedTasks = [...activeUserData.tasks];
+                let pointsToDeduct = 0;
+                let historyLogs = [];
 
-                    activeUserData.tasks.forEach(task => {
-                        if (!task.completed && !task.isLessonLog && task.dueDate && task.dueTime) {
-                            const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
-                            if (now > dueDate) {
-                                shouldBreakStreak = true;
-                                if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
-                                    oldestUncompletedDate = dueDate;
-                                }
+                updatedTasks = updatedTasks.map(task => {
+                    if (!task.completed && !task.isLessonLog && task.dueDate && task.dueTime) {
+                        const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+                        
+                        if (now > dueDate && activeUserData.taskStreak > 0) {
+                            shouldBreakStreak = true;
+                            if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
+                                oldestUncompletedDate = dueDate;
                             }
                         }
-                    });
 
-                    if (shouldBreakStreak) {
-                        updateUserData(prev => {
-                            let newStreakHistory = [...prev.streakHistory];
-                            if (prev.taskStreak > 0) {
-                                newStreakHistory.push({
-                                    id: 'sh_' + Date.now(),
-                                    startDate: prev.currentStreakStart,
-                                    endDate: oldestUncompletedDate.toISOString(),
-                                    length: prev.taskStreak,
-                                    emojis: [...(prev.currentStreakEmojis || [])]
-                                });
-                            }
-                            showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה פתוחה עבר. 😢', 'warning');
-                            return {
-                                ...prev,
-                                taskStreak: 0,
-                                currentStreakStart: null,
-                                currentStreakEmojis: [],
-                                streakHistory: newStreakHistory
-                            };
-                        });
+                        const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
+                        if (hoursLate >= 3 && !task.autoPenaltyApplied) {
+                            needsUpdate = true;
+                            pointsToDeduct += 2;
+                            
+                            const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
+                            historyLogs.push({
+                                id: 'ph_auto_' + task.id + '_' + Date.now(),
+                                taskId: task.id,
+                                taskTitle: task.title,
+                                subjectName: sub ? sub.name : 'כללי',
+                                subjectEmoji: sub ? sub.emoji : '📚',
+                                points: -2,
+                                date: now.toISOString(),
+                                details: 'קנס אוטומטי! המשימה עברה את זמן ההגשה ביותר מ-3 שעות.'
+                            });
+                            
+                            return { ...task, autoPenaltyApplied: true };
+                        }
                     }
+                    return task;
+                });
+
+                if (shouldBreakStreak || needsUpdate) {
+                    updateUserData(prev => {
+                        let newStreakHistory = [...(prev.streakHistory || [])];
+                        let taskStreak = prev.taskStreak;
+                        let currentStreakStart = prev.currentStreakStart;
+                        let currentStreakEmojis = prev.currentStreakEmojis;
+
+                        if (shouldBreakStreak && taskStreak > 0) {
+                            newStreakHistory.push({
+                                id: 'sh_' + Date.now(),
+                                startDate: currentStreakStart,
+                                endDate: oldestUncompletedDate.toISOString(),
+                                length: taskStreak,
+                                emojis: [...(currentStreakEmojis || [])]
+                            });
+                            taskStreak = 0;
+                            currentStreakStart = null;
+                            currentStreakEmojis = [];
+                            setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
+                        }
+
+                        if (needsUpdate) {
+                            setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
+                        }
+
+                        return {
+                            ...prev,
+                            tasks: updatedTasks,
+                            totalPoints: prev.totalPoints - pointsToDeduct,
+                            weeklyPoints: prev.weeklyPoints - pointsToDeduct,
+                            pointsHistory: [...historyLogs, ...(prev.pointsHistory || [])],
+                            taskStreak,
+                            currentStreakStart,
+                            currentStreakEmojis,
+                            streakHistory: newStreakHistory
+                        };
+                    });
                 }
-            }, [globalState.activeUser, activeUserData?.tasks, activeUserData?.taskStreak]);
+            }, [activeUserData?.tasks, activeUserData?.taskStreak]);
 
-            // --- 🔄 משיכת נתוני חברות בזמן אמת ---
+            const handleAddTaskToCalendar = (task) => {
+                const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
+                const subjectName = sub ? sub.name : 'כללי';
+                const title = `${task.title}`;
+                const desc = `נושא: ${task.lessonTopic || 'לא צוין'}\\nנשמר דרך StudyStreak Pro ✨`;
+
+                if (!task.dueDate) {
+                    showToast('לא הוגדר תאריך למשימה זו! עדכני תאריך לפני הוספה ליומן.', 'warning');
+                    return;
+                }
+
+                const dueDate = new Date(task.dueDate);
+                let dueTimeStr = task.dueTime || '08:00';
+                const [hours, minutes] = dueTimeStr.split(':').map(Number);
+                dueDate.setHours(hours, minutes, 0);
+
+                const formatICSDate = (date) => {
+                    return date.toISOString().replace(/-|:/g, '').split('.')[0] + 'Z';
+                };
+
+                const dtstart = formatICSDate(dueDate);
+                const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); 
+                const dtend = formatICSDate(endDate);
+
+                let alarms = '';
+                if (task.isExamPrep || title.includes('מבחן') || title.includes('מתכונת') || title.includes('למידה ל')) {
+                    // התראה לכל יומיים שנותרו עד המבחן
+                    for (let i = 2; i <= 14; i += 2) {
+                        alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title}\nTRIGGER:-P${i}D\nEND:VALARM`;
+                    }
+                } else {
+                    // התראה לשיעורי בית
+                    alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: משימה להגשה בקרוב!\nTRIGGER:-P2D\nEND:VALARM`;
+                }
+
+                const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//StudyStreak//HE\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:${task.id}@studystreak.app\nDTSTAMP:${formatICSDate(new Date())}\nDTSTART:${dtstart}\nDTEND:${dtend}\nSUMMARY:${title} (${subjectName})\nDESCRIPTION:${desc}${alarms}\nEND:VEVENT\nEND:VCALENDAR`;
+
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.setAttribute('download', `${title}.ics`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showToast('קובץ היומן ירד! פתחי אותו כדי להפעיל את התזכורות האוטומטיות 📅', 'success');
+            };
+
             const [liveFriends, setLiveFriends] = useState({});
-
             useEffect(() => {
                 if (activeTab === 'social' && activeUserData?.friends?.length > 0 && window.db) {
                     const fetchFriends = async () => {
@@ -406,7 +537,6 @@
                 }
             }, [activeTab, activeUserData?.friends]);
 
-            // --- 💬 האזנה להודעות והתראות נכנסות ---
             useEffect(() => {
                 if (activeUserData && activeUserData.notifications) {
                     const unread = activeUserData.notifications.filter(n => !n.read);
@@ -415,7 +545,6 @@
                             showToast(`הודעה מ-${n.from}: ${n.text}`, 'info');
                         });
                         
-                        // סימון הודעות כנקראו כדי שלא יקפצו שוב
                         updateUserData(prev => ({
                             ...prev,
                             notifications: prev.notifications.map(n => ({...n, read: true}))
@@ -424,54 +553,98 @@
                 }
             }, [activeUserData?.notifications]);
 
-            // App View States
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toastMessage, setToastMessage] = useState(null);
             const [printMode, setPrintMode] = useState(false);
+            const [printType, setPrintType] = useState(null);
             const [examPlanData, setExamPlanData] = useState(null);
+            const [weeklyReportData, setWeeklyReportData] = useState(null);
 
-            // Modals States
             const [modals, setModals] = useState({
                 task: false, complete: false, subject: false, 
                 friend: false, pointsHistory: false, streakHistory: false,
-                addFriend: false, addAnchor: false, examPlanner: false, cancelExam: false
+                addFriend: false, addAnchor: false, examPlanner: false, cancelExam: false, giveUp: false,
+                examGrade: false, quickExam: false
             });
-
-            useEffect(() => {
-                const isModalOpen = Object.values(modals).some(isOpen => isOpen);
-                if (isModalOpen) {
-                    document.body.style.overflow = 'hidden';
-                } else {
-                    document.body.style.overflow = 'unset';
-                }
-                return () => { document.body.style.overflow = 'unset'; };
-            }, [modals]);
 
             const [activeTask, setActiveTask] = useState(null);
             const [taskToCancel, setTaskToCancel] = useState(null);
+            const [taskToGiveUp, setTaskToGiveUp] = useState(null);
+            const [activeExamForGrade, setActiveExamForGrade] = useState(null);
             const [activeFriend, setActiveFriend] = useState(null);
             const [editingSubject, setEditingSubject] = useState(null);
             const [tempRules, setTempRules] = useState([]);
             
-            // Settings Layout State
             const [selectedSettingsDay, setSelectedSettingsDay] = useState(0);
             const [activeDayIndex, setActiveDayIndex] = useState(0);
 
-            // Filters
             const [archiveFilter, setArchiveFilter] = useState('all');
             const [lessonLogFilter, setLessonLogFilter] = useState('all');
             const [taskFilter, setTaskFilter] = useState('all'); 
 
-            // Modal specific sub-states
             const [taskFormHasHW, setTaskFormHasHW] = useState(true);
             const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [lateReason, setLateReason] = useState('');
             const [otherLateReason, setOtherLateReason] = useState('');
             
-            // Exam Planner State
             const [examPlannerData, setExamPlannerData] = useState({ 
                 step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 
             });
+
+            const pieChartRef = useRef(null);
+            const chartInstance = useRef(null);
+            
+            useEffect(() => {
+                if (activeTab === 'profile' && pieChartRef.current && activeUserData) {
+                    const ctx = pieChartRef.current.getContext('2d');
+                    
+                    const subjectCounts = {};
+                    activeUserData.tasks.forEach(t => {
+                        if (t.completed && !t.givenUp) {
+                            subjectCounts[t.subjectId] = (subjectCounts[t.subjectId] || 0) + 1;
+                        }
+                    });
+                    
+                    const labels = [];
+                    const data = [];
+                    const backgroundColor = [];
+                    
+                    Object.keys(subjectCounts).forEach(subId => {
+                        const sub = activeUserData.subjects.find(s => s.id === subId);
+                        labels.push(sub ? `${sub.emoji} ${sub.name}` : 'כללי');
+                        data.push(subjectCounts[subId]);
+                        backgroundColor.push(sub ? sub.color : '#a8a29e');
+                    });
+                    
+                    if (chartInstance.current) chartInstance.current.destroy();
+                    
+                    if (data.length > 0) {
+                        chartInstance.current = new Chart(ctx, {
+                            type: 'pie',
+                            data: {
+                                labels: labels,
+                                datasets: [{
+                                    data: data,
+                                    backgroundColor: backgroundColor,
+                                    borderWidth: 2,
+                                    borderColor: '#ffffff'
+                                }]
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                    legend: { position: 'right', rtl: true, labels: { font: { family: 'Heebo' } } }
+                                }
+                            }
+                        });
+                    }
+                }
+                
+                return () => {
+                    if (chartInstance.current) chartInstance.current.destroy();
+                };
+            }, [activeTab, activeUserData?.tasks, activeUserData?.subjects]);
 
             const showToast = (text, type = 'info') => {
                 setToastMessage({ text, type });
@@ -495,7 +668,6 @@
                                 showToast('סיסמה שגויה למשתמש הקיים!', 'error');
                                 return;
                             }
-                            // קביעת activeUser תפעיל אוטומטית את onSnapshot Effect
                             setGlobalState(prev => ({...prev, users: {...prev.users, [user]: data}, activeUser: user}));
                             showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
                         } else {
@@ -538,8 +710,8 @@
                     const noHwTask = {
                         id: 't_' + Date.now(),
                         subjectId: taskData.subjectId,
-                        title: 'סיכום שיעור: ' + taskData.lessonTopic,
-                        lessonTopic: taskData.lessonTopic,
+                        title: 'סיכום שיעור: ' + (taskData.lessonTopic || 'ללא נושא'),
+                        lessonTopic: taskData.lessonTopic || '',
                         createdAt: now.toISOString(),
                         completed: true,
                         completedAt: now.toISOString(),
@@ -549,7 +721,7 @@
                         givenDate: actualGivenDate
                     };
                     
-                    updateUserData(prev => ({ 
+                    updateUserData(prev => checkAndAwardBadges({ 
                         ...prev, 
                         tasks: [noHwTask, ...prev.tasks]
                     }));
@@ -561,7 +733,8 @@
                         id: 't_' + Date.now(),
                         createdAt: now.toISOString(),
                         completed: false,
-                        givenDate: actualGivenDate
+                        givenDate: actualGivenDate,
+                        autoPenaltyApplied: false
                     };
                     updateUserData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
                     toggleModal('task', false);
@@ -602,10 +775,15 @@
                     }
                 } else {
                     streakBroken = true;
-                    if (isSameDay) {
-                        pointsDelta = -1; pointsText = `הוגש באיחור קל (באותו יום). סיבה: ${chosenLateReason}`;
+                    if (task.autoPenaltyApplied) {
+                        pointsDelta = 0;
+                        pointsText = `הוגש באיחור (הקנס ירד כבר אוטומטית). סיבה: ${chosenLateReason}`;
                     } else {
-                        pointsDelta = -2; pointsText = `הוגש באיחור של יום ומעלה. סיבה: ${chosenLateReason}`;
+                        if (isSameDay) {
+                            pointsDelta = -1; pointsText = `הוגש באיחור קל (באותו יום). סיבה: ${chosenLateReason}`;
+                        } else {
+                            pointsDelta = -2; pointsText = `הוגש באיחור של יום ומעלה. סיבה: ${chosenLateReason}`;
+                        }
                     }
                 }
 
@@ -624,7 +802,7 @@
                 let newLongest = activeUserData.longestStreak || 0;
                 let newStreakStart = activeUserData.currentStreakStart;
                 let newStreakEmojis = [...(activeUserData.currentStreakEmojis || [])];
-                let newStreakHistory = [...activeUserData.streakHistory];
+                let newStreakHistory = [...(activeUserData.streakHistory || [])];
                 let streakMessage = '';
 
                 if (!streakBroken) {
@@ -633,7 +811,7 @@
                         newStreakStart = now.toISOString();
                         newStreakEmojis = [];
                     }
-                    if (sub && sub.name) newStreakEmojis.push(sub.name); 
+                    if (sub && sub.name && !newStreakEmojis.includes(sub.name)) newStreakEmojis.push(sub.name); 
                     if (newStreak > newLongest) newLongest = newStreak;
                     streakMessage = `המד עלה ל-${newStreak} 🔥`;
                 } else {
@@ -652,7 +830,7 @@
                     streakMessage = `הרצף נשבר בגלל האיחור 😢`;
                 }
 
-                updateUserData(prev => ({
+                updateUserData(prev => checkAndAwardBadges({
                     ...prev,
                     tasks: prev.tasks.map(t => t.id === task.id ? { 
                         ...t, completed: true, completedAt: now.toISOString(), 
@@ -664,7 +842,7 @@
                     longestStreak: newLongest,
                     currentStreakStart: newStreakStart,
                     currentStreakEmojis: newStreakEmojis,
-                    pointsHistory: [historyLog, ...prev.pointsHistory],
+                    pointsHistory: pointsDelta !== 0 ? [historyLog, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []),
                     streakHistory: newStreakHistory
                 }));
 
@@ -674,8 +852,56 @@
                 if (pointsDelta > 0) {
                     showToast(`כל הכבוד! ${pointsDelta}+ נקודות. ${streakMessage}`, 'success');
                 } else {
-                    showToast(`המשימה הושלמה, אבל ירדו נקודות (${pointsDelta}). ${streakMessage}`, 'warning');
+                    showToast(`המשימה הושלמה ${pointsDelta === 0 ? '(ללא קנס נוסף)' : 'וירדו נקודות'}. ${streakMessage}`, 'warning');
                 }
+            };
+
+            const handleGiveUpConfirm = () => {
+                if (!taskToGiveUp) return;
+                const now = new Date();
+                const sub = activeUserData.subjects.find(s => s.id === taskToGiveUp.subjectId);
+                
+                updateUserData(prev => {
+                    let newStreak = prev.taskStreak;
+                    let newStreakHistory = [...(prev.streakHistory || [])];
+                    
+                    if (newStreak > 0) {
+                        newStreakHistory.push({
+                            id: 'sh_' + Date.now(),
+                            startDate: prev.currentStreakStart,
+                            endDate: now.toISOString(),
+                            length: newStreak,
+                            emojis: [...(prev.currentStreakEmojis || [])]
+                        });
+                    }
+
+                    const historyLog = {
+                        id: 'ph_' + Date.now(),
+                        taskId: taskToGiveUp.id,
+                        taskTitle: taskToGiveUp.title,
+                        subjectName: sub ? sub.name : 'כללי',
+                        subjectEmoji: sub ? sub.emoji : '📚',
+                        points: -10,
+                        date: now.toISOString(),
+                        details: 'ויתור סופי על המשימה 🏳️'
+                    };
+
+                    return {
+                        ...prev,
+                        tasks: prev.tasks.map(t => t.id === taskToGiveUp.id ? { ...t, completed: true, givenUp: true, completedAt: now.toISOString(), pointsEarned: -10 } : t),
+                        totalPoints: prev.totalPoints - 10,
+                        weeklyPoints: prev.weeklyPoints - 10,
+                        taskStreak: 0,
+                        currentStreakStart: null,
+                        currentStreakEmojis: [],
+                        streakHistory: newStreakHistory,
+                        pointsHistory: [historyLog, ...(prev.pointsHistory || [])]
+                    };
+                });
+                
+                toggleModal('giveUp', false);
+                setTaskToGiveUp(null);
+                showToast('ויתרת על המשימה. הרצף נשבר וירדו 10 נקודות 😢', 'error');
             };
 
             const handleDeleteTask = (taskId) => {
@@ -692,7 +918,7 @@
                     let newStreak = prev.taskStreak;
                     let newStreakStart = prev.currentStreakStart;
                     let newStreakEmojis = [...(prev.currentStreakEmojis || [])];
-                    let newStreakHistory = [...prev.streakHistory];
+                    let newStreakHistory = [...(prev.streakHistory || [])];
                     let streakMessage = '';
                     
                     const examIndex = prev.exams ? prev.exams.findIndex(e => e.id === taskToCancel.examId) : -1;
@@ -744,13 +970,63 @@
                         currentStreakStart: newStreakStart,
                         currentStreakEmojis: newStreakEmojis,
                         streakHistory: newStreakHistory,
-                        pointsHistory: [historyLog, ...prev.pointsHistory],
+                        pointsHistory: [historyLog, ...(prev.pointsHistory || [])],
                         exams: examsCopy
                     };
                 });
                 
                 toggleModal('cancelExam', false);
                 setTaskToCancel(null);
+            };
+
+            const handleSaveExamGrade = (e) => {
+                e.preventDefault();
+                const grade = Number(e.target.grade.value);
+                if (!activeExamForGrade) return;
+
+                let pointsDelta = 0;
+                let message = '';
+                if (grade >= 90) {
+                    pointsDelta = 10;
+                    message = `מדהים! הציון שלך הוא ${grade}. הרווחת 10 נקודות. תותחית! 🎉`;
+                } else if (grade <= 56) {
+                    pointsDelta = -5;
+                    message = `לא נורא, במבחן הזה קיבלת ${grade}. ירדו 5 נקודות, אבל זה רק אומר שיש מקום לשיפור. נלמד מזה לפעם הבאה! 💪`;
+                } else {
+                    pointsDelta = 0;
+                    message = `הציון הוזן (${grade}). כל הכבוד על המאמץ!`;
+                }
+
+                updateUserData(prev => {
+                    const updatedExams = prev.exams.map(ex => 
+                        ex.id === activeExamForGrade.id ? { ...ex, grade } : ex
+                    );
+                    
+                    const sub = prev.subjects.find(s => s.id === activeExamForGrade.subjectId);
+                    
+                    const newHistory = pointsDelta !== 0 ? [{
+                        id: 'ph_grade_' + Date.now(),
+                        taskId: activeExamForGrade.id,
+                        taskTitle: `ציון מבחן: ${activeExamForGrade.examName}`,
+                        subjectName: sub ? sub.name : 'כללי',
+                        subjectEmoji: sub ? sub.emoji : '📚',
+                        points: pointsDelta,
+                        date: new Date().toISOString(),
+                        details: message
+                    }, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []);
+
+                    return checkAndAwardBadges({
+                        ...prev,
+                        exams: updatedExams,
+                        totalPoints: prev.totalPoints + pointsDelta,
+                        weeklyPoints: prev.weeklyPoints + pointsDelta,
+                        pointsHistory: newHistory
+                    });
+                });
+
+                toggleModal('examGrade', false);
+                setActiveExamForGrade(null);
+                showToast(message, pointsDelta >= 0 ? 'success' : 'warning');
             };
 
             const handleRemoveFromLessonLog = (taskId) => {
@@ -840,7 +1116,6 @@
                             toggleModal('addFriend', false);
                             showToast(`איזה כיף! ${friendData.name || username} התווסף/ה לרשימה.`, 'success');
                             
-                            // משיכה מיידית של הנתונים העדכניים לתצוגה חיה
                             setLiveFriends(prev => ({...prev, [username]: friendData}));
                         } else {
                             showToast('לא קיים משתמש עם השם הזה במערכת 😢', 'error');
@@ -868,7 +1143,7 @@
                         const updatedNotifications = [...(friendData.notifications || []), newNotification];
                         await friendRef.update({ 
                             notifications: updatedNotifications,
-                            lastSync: Date.now() // מכריח את הטלפון השני להתרענן מיד ולהציג את ההודעה
+                            lastSync: Date.now() 
                         });
                         showToast('ההודעה נשלחה לחברה בהצלחה! 🔔', 'success');
                         toggleModal('friend', false);
@@ -883,7 +1158,7 @@
             const handleRemoveFriend = (id) => {
                 updateUserData(prev => ({ ...prev, friends: prev.friends.filter(f => f.id !== id) }));
                 toggleModal('friend', false);
-                showToast('חבר הוסר', 'success');
+                showToast('חברה הוסרה', 'success');
             };
 
             const handleGenerateExam = (subjectId) => {
@@ -892,17 +1167,72 @@
                     return;
                 }
                 const subTasks = activeUserData.tasks.filter(t => t.subjectId === subjectId && (t.completed || t.isLessonLog));
-                const weakTasks = subTasks.filter(t => t.understandingRating <= 2 && !t.isLessonLog);
+                const weakTasks = subTasks.filter(t => t.understandingRating <= 2 && !t.isLessonLog && !t.givenUp);
                 const allTopics = [...new Set(subTasks.map(t => t.lessonTopic).filter(Boolean))];
                 const hardEx = subTasks.filter(t => t.hardExercises && t.hardExercises.trim() !== '').map(t => ({ title: t.title, ex: t.hardExercises, date: t.completedAt, topic: t.lessonTopic }));
                 const subObj = activeUserData.subjects.find(s=>s.id === subjectId);
                 const subjectName = subObj ? `${subObj.emoji || ''} ${subObj.name}` : 'כללי';
 
                 setExamPlanData({ subjectName, weakTasks, allTopics, hardEx, date: new Date().toLocaleDateString('he-IL') });
+                setPrintType('exam');
                 setPrintMode(true);
                 setTimeout(() => {
                     window.print();
                     setPrintMode(false);
+                    setPrintType(null);
+                }, 500);
+            };
+
+            const handleGenerateWeeklyReport = () => {
+                const now = new Date();
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0,0,0,0);
+                
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                endOfWeek.setHours(23,59,59,999);
+
+                const thisWeekTasks = activeUserData.tasks.filter(t => {
+                    if (!t.completedAt) return false;
+                    const d = new Date(t.completedAt);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const completedHW = thisWeekTasks.filter(t => !t.givenUp && !t.isExamPrep && !t.isLessonLog);
+                const givenUpHW = thisWeekTasks.filter(t => t.givenUp);
+                const examPrepDone = thisWeekTasks.filter(t => !t.givenUp && t.isExamPrep);
+                const lessonsLogged = thisWeekTasks.filter(t => t.isLessonLog);
+
+                const thisWeekExams = (activeUserData.exams || []).filter(e => {
+                    const d = new Date(e.date);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
+                    const d = new Date(h.date);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const totalPointsGained = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
+
+                setWeeklyReportData({
+                    startDate: startOfWeek.toLocaleDateString('he-IL'),
+                    endDate: endOfWeek.toLocaleDateString('he-IL'),
+                    completedHW,
+                    givenUpHW,
+                    examPrepDone,
+                    lessonsLogged,
+                    thisWeekExams,
+                    totalPointsGained
+                });
+
+                setPrintType('weekly');
+                setPrintMode(true);
+                setTimeout(() => {
+                    window.print();
+                    setPrintMode(false);
+                    setPrintType(null);
                 }, 500);
             };
 
@@ -917,8 +1247,6 @@
 
                 const totalMinutes = hours * 60;
                 const chunkMinutes = Math.ceil(totalMinutes / targetSessions);
-                let remainingMinutes = totalMinutes;
-                const sessions = [];
 
                 const start = new Date();
                 start.setHours(0,0,0,0);
@@ -931,12 +1259,13 @@
                     return;
                 }
 
-                let sessionCounter = 0;
                 const nowTime = new Date();
                 const currentMinsNow = nowTime.getHours() * 60 + nowTime.getMinutes();
                 const todayStr = nowTime.toDateString();
 
-                for (let i = 0; i < daysDiff && sessionCounter < targetSessions; i++) {
+                let allAvailableWindows = [];
+
+                for (let i = 0; i < daysDiff; i++) {
                     const current = new Date();
                     current.setDate(current.getDate() + i);
                     const dayOfWeek = current.getDay();
@@ -951,7 +1280,6 @@
                     if (!windows) continue;
 
                     for (let w of windows) {
-                        if (sessionCounter >= targetSessions || remainingMinutes <= 0) break;
                         let wStartMins = timeToMins(w.start);
                         let wEndMins = timeToMins(w.end);
 
@@ -963,21 +1291,43 @@
                         }
 
                         const windowDuration = wEndMins - wStartMins;
-
                         if (windowDuration >= 30) {
-                            const sessionDuration = Math.min(windowDuration, remainingMinutes, chunkMinutes); 
-                            remainingMinutes -= sessionDuration;
-
-                            sessions.push({
-                                id: 'ses_' + Date.now() + Math.random(),
+                            allAvailableWindows.push({
                                 date: current.toISOString().split('T')[0],
-                                startTime: minsToTime(wStartMins),
-                                endTime: minsToTime(wStartMins + sessionDuration),
-                                duration: sessionDuration
+                                startMins: wStartMins,
+                                endMins: wEndMins,
+                                duration: windowDuration
                             });
-                            sessionCounter++;
                         }
                     }
+                }
+
+                let selectedWindows = [];
+                if (allAvailableWindows.length <= targetSessions) {
+                    selectedWindows = allAvailableWindows; 
+                } else {
+                    const step = allAvailableWindows.length / targetSessions;
+                    for (let i = 0; i < targetSessions; i++) {
+                        const idx = Math.floor(i * step);
+                        selectedWindows.push(allAvailableWindows[idx]);
+                    }
+                }
+
+                const sessions = [];
+                let remainingMinutes = totalMinutes;
+
+                for (let w of selectedWindows) {
+                    if (remainingMinutes <= 0) break;
+                    const sessionDuration = Math.min(w.duration, remainingMinutes, chunkMinutes); 
+                    remainingMinutes -= sessionDuration;
+
+                    sessions.push({
+                        id: 'ses_' + Date.now() + Math.random(),
+                        date: w.date,
+                        startTime: minsToTime(w.startMins),
+                        endTime: minsToTime(w.startMins + sessionDuration),
+                        duration: sessionDuration
+                    });
                 }
 
                 setExamPlannerData({...examPlannerData, step: 2, sessions, remainingMinutes});
@@ -1001,7 +1351,8 @@
                     givenDate: new Date().toISOString().split('T')[0],
                     dueDate: ses.date,
                     startTime: ses.startTime,
-                    dueTime: ses.endTime
+                    dueTime: ses.endTime,
+                    autoPenaltyApplied: false
                 }));
 
                 updateUserData(prev => ({
@@ -1015,50 +1366,184 @@
                 setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 });
             };
 
-            if (printMode && examPlanData) {
-                return (
-                    <div id="print-area" className="bg-white text-black p-8 font-sans text-right" dir="rtl">
-                        <div className="text-center mb-8 border-b-2 border-stone-800 pb-4">
-                            <h1 className="text-3xl font-bold mb-2">דוח הכנה ממוקד למבחן: {examPlanData.subjectName}</h1>
-                            <p className="text-sm text-stone-500">הופק בתאריך: {examPlanData.date} על ידי StudyStreak Pro</p>
-                        </div>
+            const handleAddQuickExam = (e) => {
+                e.preventDefault();
+                const subjectId = e.target.subjectId.value;
+                const examName = e.target.examName.value;
+                const date = e.target.date.value;
+                
+                const newExam = {
+                    id: 'ex_' + Date.now(),
+                    subjectId,
+                    examName,
+                    date,
+                    targetHours: 0,
+                    sessionsCount: 0,
+                    cancellations: 0
+                };
+                
+                updateUserData(prev => ({
+                    ...prev,
+                    exams: [...(prev.exams || []), newExam]
+                }));
+                
+                toggleModal('quickExam', false);
+                showToast('המבחן נוסף למערכת בהצלחה! 🎉', 'success');
+            };
 
-                        <div className="mb-8">
-                            <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">נושאים לחיזוק דחוף (דירוג הבנה נמוך)</h2>
-                            {examPlanData.weakTasks.length === 0 ? <p className="text-stone-600">אין נושאים חלשים מתועדים! נראה שהבנת הכל היטב.</p> : (
-                                <ul className="list-disc list-inside space-y-2">
-                                    {examPlanData.weakTasks.map(t => (
-                                        <li key={t.id}><strong>{t.lessonTopic}</strong> (מתוך משימה: {t.title})</li>
+            const handleAddExamToCalendar = (exam) => {
+                const sub = activeUserData.subjects.find(s => s.id === exam.subjectId);
+                const subjectName = sub ? sub.name : 'כללי';
+                const title = `מבחן: ${exam.examName || 'מבחן'} ב${subjectName}`;
+                
+                const dueDate = new Date(exam.date);
+                dueDate.setHours(8, 0, 0);
+
+                const formatICSDate = (date) => {
+                    return date.toISOString().replace(/-|:/g, '').split('.')[0] + 'Z';
+                };
+
+                const dtstart = formatICSDate(dueDate);
+                const endDate = new Date(dueDate.getTime() + 2 * 60 * 60 * 1000); 
+                const dtend = formatICSDate(endDate);
+
+                const alarms = `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} בעוד שבוע!\nTRIGGER:-P7D\nEND:VALARM\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} בעוד 3 ימים!\nTRIGGER:-P3D\nEND:VALARM\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} מחר! בהצלחה!\nTRIGGER:-PT15H\nEND:VALARM`;
+
+                const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//StudyStreak//HE\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:${exam.id}@studystreak.app\nDTSTAMP:${formatICSDate(new Date())}\nDTSTART:${dtstart}\nDTEND:${dtend}\nSUMMARY:${title}\nDESCRIPTION:בהצלחה במבחן!${alarms}\nEND:VEVENT\nEND:VCALENDAR`;
+
+                const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
+                const link = document.createElement('a');
+                link.href = window.URL.createObjectURL(blob);
+                link.setAttribute('download', `${title}.ics`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                showToast('המבחן ירד כקובץ יומן! פתחי אותו כדי להוסיף ליומן שלך 📅', 'success');
+            };
+
+            if (printMode) {
+                if (printType === 'exam' && examPlanData) {
+                    return (
+                        <div id="print-area" className="bg-white text-black p-8 font-sans text-right" dir="rtl">
+                            <div className="text-center mb-8 border-b-2 border-stone-800 pb-4">
+                                <h1 className="text-3xl font-bold mb-2">דוח הכנה ממוקד למבחן: {examPlanData.subjectName}</h1>
+                                <p className="text-sm text-stone-500">הופק בתאריך: {examPlanData.date} על ידי StudyStreak Pro</p>
+                            </div>
+
+                            <div className="mb-8">
+                                <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">נושאים לחיזוק דחוף (דירוג הבנה נמוך)</h2>
+                                {examPlanData.weakTasks.length === 0 ? <p className="text-stone-600">אין נושאים חלשים מתועדים! נראה שהבנת הכל היטב.</p> : (
+                                    <ul className="list-disc list-inside space-y-2">
+                                        {examPlanData.weakTasks.map(t => (
+                                            <li key={t.id}><strong>{t.lessonTopic}</strong> (מתוך משימה: {t.title})</li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div className="mb-8">
+                                <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">תרגילים וסעיפים קשים לחזרה</h2>
+                                {examPlanData.hardEx.length === 0 ? <p className="text-stone-600">לא סומנו תרגילים קשים במהלך הלמידה.</p> : (
+                                    <ul className="list-disc list-inside space-y-4">
+                                        {examPlanData.hardEx.map((ex, i) => (
+                                            <li key={i} className="bg-stone-50 p-3 rounded border border-stone-200">
+                                                <strong>{ex.title}</strong> {ex.topic && <span className="text-stone-500 text-sm">({ex.topic})</span>} <span className="text-stone-400 text-sm" dir="ltr">- {new Date(ex.date).toLocaleDateString('he-IL')}</span>:<br/>
+                                                <span className="text-stone-800 mt-1 block font-medium">{ex.ex}</span>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                )}
+                            </div>
+
+                            <div>
+                                <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">רשימת כל נושאי הלימוד שנלמדו השנה</h2>
+                                <div className="flex flex-wrap gap-2 mt-3">
+                                    {examPlanData.allTopics.map((topic, i) => (
+                                        <span key={i} className="border border-stone-300 px-3 py-1 rounded-full text-sm bg-stone-50 font-medium">{topic}</span>
                                     ))}
-                                </ul>
-                            )}
-                        </div>
-
-                        <div className="mb-8">
-                            <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">תרגילים וסעיפים קשים לחזרה</h2>
-                            {examPlanData.hardEx.length === 0 ? <p className="text-stone-600">לא סומנו תרגילים קשים במהלך הלמידה.</p> : (
-                                <ul className="list-disc list-inside space-y-4">
-                                    {examPlanData.hardEx.map((ex, i) => (
-                                        <li key={i} className="bg-stone-50 p-3 rounded border border-stone-200">
-                                            <strong>{ex.title}</strong> {ex.topic && <span className="text-stone-500 text-sm">({ex.topic})</span>} <span className="text-stone-400 text-sm" dir="ltr">- {new Date(ex.date).toLocaleDateString('he-IL')}</span>:<br/>
-                                            <span className="text-stone-800 mt-1 block font-medium">{ex.ex}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            )}
-                        </div>
-
-                        <div>
-                            <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">רשימת כל נושאי הלימוד שנלמדו השנה</h2>
-                            <div className="flex flex-wrap gap-2 mt-3">
-                                {examPlanData.allTopics.map((topic, i) => (
-                                    <span key={i} className="border border-stone-300 px-3 py-1 rounded-full text-sm bg-stone-50 font-medium">{topic}</span>
-                                ))}
-                                {examPlanData.allTopics.length === 0 && <p className="text-stone-600">לא תועדו נושאי לימוד.</p>}
+                                    {examPlanData.allTopics.length === 0 && <p className="text-stone-600">לא תועדו נושאי לימוד.</p>}
+                                </div>
                             </div>
                         </div>
-                    </div>
-                );
+                    );
+                } else if (printType === 'weekly' && weeklyReportData) {
+                    return (
+                        <div id="print-area" className="bg-white text-black p-8 font-sans text-right" dir="rtl">
+                            <div className="text-center mb-8 border-b-2 border-stone-800 pb-4">
+                                <h1 className="text-3xl font-bold mb-2">דוח התקדמות שבועי - StudyStreak Pro</h1>
+                                <p className="text-lg font-bold text-stone-600 mb-1">תלמידה: {activeUserData.name}</p>
+                                <p className="text-sm text-stone-500 font-medium">שבוע: {weeklyReportData.startDate} עד {weeklyReportData.endDate}</p>
+                            </div>
+                            
+                            <div className="flex gap-4 mb-8">
+                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">משימות הושלמו</div>
+                                    <div className="text-3xl font-black text-emerald-600">{weeklyReportData.completedHW.length}</div>
+                                </div>
+                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">סשנים למבחנים</div>
+                                    <div className="text-3xl font-black text-indigo-600">{weeklyReportData.examPrepDone.length}</div>
+                                </div>
+                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">נקודות השבוע</div>
+                                    <div className="text-3xl font-black text-purple-600">{weeklyReportData.totalPointsGained}</div>
+                                </div>
+                            </div>
+
+                            <div className="mb-8">
+                                <h2 className="text-xl font-bold bg-stone-100 p-3 mb-4 rounded-xl border border-stone-200 flex items-center gap-2"><span>📚</span> שיעורי בית ומשימות שהוגשו השבוע</h2>
+                                {weeklyReportData.completedHW.length > 0 ? (
+                                    <ul className="list-disc list-inside space-y-2 text-base">
+                                        {weeklyReportData.completedHW.map(t => {
+                                            const sub = activeUserData.subjects.find(s=>s.id === t.subjectId);
+                                            return <li key={t.id}><strong>{sub ? sub.name : 'כללי'}:</strong> {t.title} <span className="text-stone-500 text-sm font-medium mr-1">(דירוג הבנה: {t.understandingRating}/5)</span></li>
+                                        })}
+                                    </ul>
+                                ) : <p className="text-base text-stone-500 italic">לא הושלמו משימות השבוע.</p>}
+                            </div>
+
+                            <div className="mb-8">
+                                <h2 className="text-xl font-bold bg-stone-100 p-3 mb-4 rounded-xl border border-stone-200 flex items-center gap-2"><span>🧠</span> הכנה למבחנים ולמידה עצמית</h2>
+                                {weeklyReportData.examPrepDone.length > 0 ? (
+                                    <ul className="list-disc list-inside space-y-2 text-base">
+                                        {weeklyReportData.examPrepDone.map(t => (
+                                            <li key={t.id}>{t.title}</li>
+                                        ))}
+                                    </ul>
+                                ) : <p className="text-base text-stone-500 italic">לא התקיימו מפגשי הכנה למבחנים השבוע.</p>}
+                            </div>
+
+                            {weeklyReportData.thisWeekExams.length > 0 && (
+                                <div className="mb-8">
+                                    <h2 className="text-xl font-bold bg-stone-100 p-3 mb-4 rounded-xl border border-stone-200 flex items-center gap-2"><span>📝</span> מבחנים שהתקיימו השבוע</h2>
+                                    <ul className="list-disc list-inside space-y-2 text-base">
+                                        {weeklyReportData.thisWeekExams.map(e => {
+                                            const sub = activeUserData.subjects.find(s=>s.id === e.subjectId);
+                                            return <li key={e.id}><strong>{e.examName} ({sub ? sub.name : 'כללי'})</strong> - {e.grade ? `הוזן ציון: ${e.grade}` : 'טרם הוזן ציון'}</li>
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
+
+                            {weeklyReportData.givenUpHW.length > 0 && (
+                                <div className="mb-8">
+                                    <h2 className="text-xl font-bold bg-rose-50 p-3 mb-4 rounded-xl border border-rose-200 text-rose-800 flex items-center gap-2"><span>⚠️</span> משימות שבוטלו / ויתור</h2>
+                                    <ul className="list-disc list-inside space-y-2 text-base text-rose-700">
+                                        {weeklyReportData.givenUpHW.map(t => {
+                                            const sub = activeUserData.subjects.find(s=>s.id === t.subjectId);
+                                            return <li key={t.id}><strong>{sub ? sub.name : 'כללי'}:</strong> {t.title}</li>
+                                        })}
+                                    </ul>
+                                </div>
+                            )}
+
+                            <div className="text-center mt-12 text-sm text-stone-400 font-bold border-t-2 border-stone-100 pt-6">
+                                הופק אוטומטית מ-StudyStreak Pro במטרה לעקוב ולשפר את הלמידה. כל הכבוד על המאמץ!
+                            </div>
+                        </div>
+                    );
+                }
             }
 
             if (!globalState.activeUser || !activeUserData) {
@@ -1071,7 +1556,7 @@
                             <div className="text-center mb-8 relative z-10">
                                 <span className="text-5xl inline-block mb-4 drop-shadow-sm">✨</span>
                                 <h1 className="text-3xl font-bold text-stone-800 tracking-tight">StudyStreak Pro</h1>
-                                <p className="text-sm text-stone-500 font-medium mt-1">מנהלים את שנת י"ב בסטייל</p>
+                                <p className="text-sm text-stone-500 font-medium mt-1">מנהלים את הלמידה בסטייל</p>
                             </div>
                             
                             {toastMessage && (
@@ -1112,7 +1597,7 @@
                         { id: 'lesson_log', label: 'יומן שיעורים', icon: IconBook },
                         { id: 'schedule', label: 'לו"ז וזמן', icon: IconCalendar },
                         { id: 'exam_prep', label: 'הכנה למבחנים', icon: IconBrain },
-                        { id: 'social', label: 'חברות', icon: IconUsers },
+                        { id: 'social', label: 'חברות 👑', icon: IconUsers },
                         { id: 'settings', label: 'הגדרות', icon: IconSettings },
                         { id: 'profile', label: 'פרופיל', icon: IconUser }
                     ].map(item => {
@@ -1131,10 +1616,15 @@
                 </nav>
             );
 
+            const myLevel = getUserLevel(activeUserData.totalPoints);
+            
+            // שימוש בטוח ברשימות כדי שלא יקרוס
+            const safePointsHistory = activeUserData.pointsHistory || [];
+            const safeStreakHistory = activeUserData.streakHistory || [];
+
             return (
                 <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print" dir="rtl">
                     
-                    {/* Toast Notification */}
                     {toastMessage && (
                         <div className="fixed top-safe-top left-1/2 -translate-x-1/2 mt-4 z-[80] max-w-sm w-11/12 animate-[bounce_0.5s_ease-out]">
                             <div className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-lg border text-sm font-semibold ${
@@ -1149,9 +1639,8 @@
                         </div>
                     )}
 
-                    {/* Desktop Sidebar */}
                     <aside className="hidden md:flex flex-col w-72 bg-white/80 backdrop-blur-xl border-l border-stone-200 p-6 sticky top-0 h-screen overflow-y-auto custom-scrollbar">
-                        <div className="flex items-center justify-between mb-10">
+                        <div className="flex items-center justify-between mb-8">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-rose-100 rounded-xl flex items-center justify-center text-xl shadow-sm">✨</div>
                                 <div>
@@ -1161,14 +1650,14 @@
                             </div>
                         </div>
 
-                        <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-5 rounded-3xl mb-8 cursor-pointer hover:shadow-lg transition-all shadow-md group relative overflow-hidden active:scale-95" 
+                        <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-5 rounded-3xl mb-8 cursor-pointer hover:shadow-lg transition-all shadow-md group relative active:scale-95" 
                              onClick={() => toggleModal('streakHistory', true)}>
                             <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
                             <div className="relative z-10 flex justify-between items-center mb-1">
                                 <span className="text-xs text-stone-400 font-medium">מד רצף משימות</span>
                             </div>
-                            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-rose-300 relative z-10 group-hover:scale-105 transition-transform origin-right flex items-center gap-2 drop-shadow-sm">
-                                <span className="text-white drop-shadow-md">{activeUserData.taskStreak}</span> <span className="text-3xl drop-shadow-md">🔥</span>
+                            <div className="text-4xl font-black text-purple-300 relative z-10 group-hover:scale-105 transition-transform origin-right flex items-center gap-2 drop-shadow-md pb-1">
+                                <span>{activeUserData.taskStreak}</span> <span className="text-3xl drop-shadow-md">🔥</span>
                             </div>
                         </div>
 
@@ -1184,7 +1673,6 @@
                         </div>
                     </aside>
 
-                    {/* Mobile Header & Bottom Nav */}
                     <header className="md:hidden flex justify-between items-center bg-white/90 backdrop-blur-md p-4 sticky top-0 z-40 border-b border-stone-100 pt-safe-top">
                         <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
@@ -1201,11 +1689,10 @@
                         <Navigation />
                     </nav>
 
-                    <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 lg:p-10 relative z-10">
+                    <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-6 lg:p-8 relative z-10">
                         
-                        {/* TAB: Dashboard */}
                         {activeTab === 'dashboard' && (
-                            <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                            <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                                 <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors group flex flex-col justify-between active:scale-95" onClick={() => toggleModal('streakHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2 flex items-center justify-between">
@@ -1224,9 +1711,9 @@
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
                                         <div className="text-3xl font-bold text-emerald-600">{activeUserData.totalPoints}</div>
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => setActiveTab('tasks')}>
-                                        <div className="text-stone-400 text-xs font-semibold mb-2">משימות פתוחות</div>
-                                        <div className="text-3xl font-bold text-rose-500">{activeUserData.tasks.filter(t => !t.completed).length}</div>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => setActiveTab('exam_prep')}>
+                                        <div className="text-stone-400 text-xs font-semibold mb-2">תרגילים בארכיון</div>
+                                        <div className="text-3xl font-bold text-rose-500">{activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '').length}</div>
                                     </div>
                                 </section>
 
@@ -1264,14 +1751,24 @@
                                                         <div className="font-bold text-stone-800 text-base">{task.title}</div>
                                                         {task.lessonTopic && <div className="text-sm text-stone-500 mt-1">{task.lessonTopic}</div>}
                                                     </div>
-                                                    <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`w-full border px-4 py-3 rounded-xl transition-colors font-bold text-sm flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
-                                                        <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
-                                                    </button>
+                                                    <div className="flex gap-2 w-full mt-1">
+                                                        <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-[2] border px-4 py-3 rounded-xl transition-colors font-bold text-sm flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
+                                                            <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
+                                                        </button>
+                                                        <button onClick={() => handleAddTaskToCalendar(task)} className="flex-[1] px-2 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
+                                                            📅 ליומן
+                                                        </button>
+                                                        {!task.isExamPrep && (
+                                                            <button onClick={() => { setTaskToGiveUp(task); toggleModal('giveUp', true); }} className="flex-[1] px-2 py-2 bg-white text-stone-400 hover:text-rose-600 hover:bg-rose-50 border border-stone-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
+                                                                🏳️ מוותרת
+                                                            </button>
+                                                        )}
+                                                    </div>
                                                 </div>
                                             )
                                         })}
                                         {activeUserData.tasks.filter(t => !t.completed).length === 0 && (
-                                            <div className="col-span-full text-center p-10 bg-white rounded-3xl text-stone-400 border border-stone-200 border-dashed">
+                                            <div className="col-span-full text-center p-8 bg-white rounded-3xl text-stone-400 border border-stone-200 border-dashed">
                                                 <div className="text-4xl mb-3">🎉</div>
                                                 <div className="text-base font-bold text-stone-600">אין משימות פתוחות! איזה כיף.</div> 
                                             </div>
@@ -1281,7 +1778,6 @@
                             </div>
                         )}
 
-                        {/* TAB: Tasks */}
                         {activeTab === 'tasks' && (() => {
                             const mainTasksList = activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed));
                             const taskSubjects = [...new Set(mainTasksList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1303,11 +1799,11 @@
                                 });
 
                             return (
-                            <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
-                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
+                            <div className="space-y-5 animate-[fadeIn_0.3s_ease-out]">
+                                <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white p-5 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div>
-                                        <h2 className="text-2xl font-bold text-stone-800 tracking-tight">רשימת משימות ושיעורי בית</h2>
-                                        <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות (מועד ההגשה הקרוב ביותר למעלה).</p>
+                                        <h2 className="text-xl font-bold text-stone-800 tracking-tight">רשימת משימות ושיעורי בית</h2>
+                                        <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות.</p>
                                     </div>
                                     <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
                                         <IconPlus className="w-4 h-4"/> הוספת חדש
@@ -1315,10 +1811,10 @@
                                 </div>
                                 
                                 {taskSubjects.length > 0 && (
-                                    <div className="flex flex-wrap gap-2 pb-2">
+                                    <div className="flex flex-wrap gap-2 pb-1">
                                         <button 
                                             onClick={() => setTaskFilter('all')}
-                                            className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${taskFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                            className={`px-4 py-2 rounded-full text-sm font-bold transition-all border active:scale-95 ${taskFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                         >
                                             הכל ביחד
                                         </button>
@@ -1326,7 +1822,7 @@
                                             <button 
                                                 key={sub.id}
                                                 onClick={() => setTaskFilter(sub.id)}
-                                                className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${taskFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                                className={`px-4 py-2 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${taskFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                             >
                                                 <span>{sub.emoji}</span> {sub.name}
                                             </button>
@@ -1339,7 +1835,7 @@
                                         const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                         const isLate = !task.completed && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
                                         return (
-                                            <div key={task.id} className={`p-5 rounded-3xl border transition-all ${task.completed ? 'bg-stone-50/50 border-stone-200 opacity-75' : isLate ? 'bg-rose-50/30 border-rose-200' : 'bg-white border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md'}`}>
+                                            <div key={task.id} className={`p-4 rounded-3xl border transition-all ${task.completed ? 'bg-stone-50/50 border-stone-200 opacity-75' : isLate ? 'bg-rose-50/30 border-rose-200' : 'bg-white border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md'}`}>
                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                     <div className="flex-1">
                                                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -1356,12 +1852,17 @@
                                                                     {isLate ? (task.isExamPrep ? 'זמן הלמידה עבר: ' : 'זמן ההגשה עבר: ') : (task.isExamPrep ? 'מתוכנן ל: ' : 'להגשה: ')} <span dir="rtl">{new Date(task.dueDate).toLocaleDateString('he-IL')} {task.startTime ? `מ-${task.startTime} עד ` : ''}{task.dueTime}</span>
                                                                 </span>
                                                             )}
-                                                            {task.completed && !task.isLessonLog && (
+                                                            {task.completed && !task.isLessonLog && !task.givenUp && (
                                                                 <span className="text-xs font-medium text-stone-500 bg-white border border-stone-200 px-2 py-1 rounded-lg shadow-sm">
                                                                     הושלם ב: <span dir="ltr">{new Date(task.completedAt).toLocaleString('he-IL', {dateStyle: 'short', timeStyle: 'short'})}</span>
                                                                 </span>
                                                             )}
-                                                            {task.lateReason && (
+                                                            {task.givenUp && (
+                                                                <span className="text-xs font-bold text-white bg-stone-400 px-2 py-1 rounded-lg shadow-sm">
+                                                                    🏳️ ויתרתי
+                                                                </span>
+                                                            )}
+                                                            {task.lateReason && !task.givenUp && (
                                                                 <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-lg border border-rose-100">
                                                                     סיבת איחור: {task.lateReason}
                                                                 </span>
@@ -1370,7 +1871,7 @@
                                                         <h3 className={`font-bold text-lg ${task.completed ? 'line-through text-stone-400' : 'text-stone-800'}`}>{task.title}</h3>
                                                         <div className="text-sm text-stone-500 mt-1 font-medium">{task.lessonTopic && `נושא: ${task.lessonTopic}`}</div>
                                                         
-                                                        {task.completed && !task.isLessonLog && (
+                                                        {task.completed && !task.isLessonLog && !task.givenUp && (
                                                             <div className="mt-4 text-xs space-y-2 border-t border-stone-200/50 pt-3 flex flex-wrap gap-2">
                                                                 <span className="bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 shadow-sm">
                                                                     הבנה: {task.understandingRating}/5
@@ -1385,19 +1886,29 @@
                                                     
                                                     <div className="flex md:flex-col gap-2 w-full md:w-auto shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4">
                                                         {!task.completed && (
-                                                            <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 md:flex-none border px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
-                                                                <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי'}
-                                                            </button>
+                                                            <>
+                                                                <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 md:flex-none border px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
+                                                                    <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי'}
+                                                                </button>
+                                                                <button onClick={() => handleAddTaskToCalendar(task)} className="flex-1 md:flex-none px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
+                                                                    📅 הוספה ליומן
+                                                                </button>
+                                                                {!task.isExamPrep && (
+                                                                    <button onClick={() => { setTaskToGiveUp(task); toggleModal('giveUp', true); }} className="flex-[0.5] md:flex-none px-3 py-2 bg-stone-50 text-stone-500 hover:text-rose-600 hover:bg-rose-50 border border-stone-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
+                                                                        🏳️ מוותרת
+                                                                    </button>
+                                                                )}
+                                                            </>
                                                         )}
-                                                        {task.isExamPrep ? (
+                                                        {task.isExamPrep && !task.completed ? (
                                                             <button onClick={() => { setTaskToCancel(task); toggleModal('cancelExam', true); }} className="flex-1 md:flex-none bg-stone-50 text-rose-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
                                                                 <IconTrash className="w-4 h-4"/> ביטול למידה
                                                             </button>
-                                                        ) : (
+                                                        ) : task.completed ? (
                                                             <button onClick={() => handleDeleteTask(task.id)} className="flex-1 md:flex-none bg-stone-50 text-stone-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
                                                                 <IconTrash className="w-4 h-4"/> מחיקה
                                                             </button>
-                                                        )}
+                                                        ) : null}
                                                     </div>
                                                 </div>
                                             </div>
@@ -1409,7 +1920,6 @@
                             )
                         })()}
 
-                        {/* TAB: Lesson Log */}
                         {activeTab === 'lesson_log' && (() => {
                             const lessonTasks = activeUserData.tasks.filter(t => t.lessonTopic && t.lessonTopic.trim() !== '' && !t.isExamPrep);
                             const logSubjects = [...new Set(lessonTasks.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1425,7 +1935,7 @@
                                     </div>
 
                                     {logSubjects.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-stone-100">
+                                        <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-stone-100">
                                             <button 
                                                 onClick={() => setLessonLogFilter('all')}
                                                 className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${lessonLogFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
@@ -1448,7 +1958,7 @@
                                         {filteredLogs.map(task => {
                                             const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                             return (
-                                                <div key={task.id} className="p-5 rounded-3xl border border-stone-100 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                                <div key={task.id} className="p-4 rounded-3xl border border-stone-100 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                     <div className="flex-1">
                                                         <div className="flex items-center gap-2 mb-3 flex-wrap">
                                                             <span className="text-xs px-2 py-1 rounded-lg font-bold shadow-sm" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
@@ -1480,10 +1990,9 @@
                             );
                         })()}
 
-                        {/* TAB: Settings */}
                         {activeTab === 'settings' && (
-                            <div className="space-y-8 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
-                                <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
+                            <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                                <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-end mb-6 pb-4 border-b border-stone-100 gap-4">
                                         <div>
                                             <h2 className="text-xl font-bold text-stone-800 tracking-tight">מקצועות וכללי הגשה</h2>
@@ -1495,9 +2004,11 @@
                                     </div>
                                     
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        {activeUserData.subjects.map(sub => (
-                                            <div key={sub.id} className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex flex-col justify-between hover:border-purple-200 transition-colors">
-                                                <div className="flex justify-between items-start mb-3">
+                                        {activeUserData.subjects.map(sub => {
+                                            const completedCount = activeUserData.tasks.filter(t => t.subjectId === sub.id && t.completed && !t.isLessonLog && !t.givenUp && !t.isExamPrep).length;
+                                            return (
+                                            <div key={sub.id} className="bg-stone-50 p-4 rounded-2xl border border-stone-200 flex flex-col justify-between hover:border-purple-200 transition-colors relative overflow-hidden">
+                                                <div className="flex justify-between items-start mb-3 relative z-10">
                                                     <div className="font-bold flex items-center gap-2 text-base text-stone-800">
                                                         <span className="w-4 h-4 rounded-full shadow-sm" style={{backgroundColor: sub.color}}></span>
                                                         {sub.emoji} {sub.name}
@@ -1507,7 +2018,15 @@
                                                         <button onClick={() => handleDeleteSubject(sub.id)} className="text-rose-500 text-xs font-bold bg-white border border-rose-100 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors active:scale-95"><IconTrash className="w-3.5 h-3.5"/></button>
                                                     </div>
                                                 </div>
-                                                <div className="bg-white rounded-xl p-3 text-xs text-stone-600 space-y-1.5 border border-stone-100">
+                                                
+                                                <div className="flex items-center justify-between mt-1 mb-3 relative z-10">
+                                                    <span className="text-xs font-bold text-stone-500 bg-white px-2 py-1 rounded-lg border border-stone-200 shadow-sm flex items-center gap-1.5">
+                                                        <IconCheck className="w-3.5 h-3.5 text-emerald-500" />
+                                                        {completedCount} הגשות בוצעו
+                                                    </span>
+                                                </div>
+
+                                                <div className="bg-white rounded-xl p-3 text-xs text-stone-600 space-y-1.5 border border-stone-100 relative z-10">
                                                     <div className="font-bold text-stone-800 mb-1">כללי הגשה אוטומטיים:</div>
                                                     {sub.rules && sub.rules.length > 0 ? sub.rules.map((r, i) => (
                                                         <div key={i} className="flex items-center gap-1.5">
@@ -1517,7 +2036,7 @@
                                                     )) : <div className="italic text-stone-400">אין כללים מוגדרים.</div>}
                                                 </div>
                                             </div>
-                                        ))}
+                                        )})}
                                         {activeUserData.subjects.length === 0 && <div className="text-sm text-stone-500 font-medium col-span-full py-8 bg-stone-50 rounded-2xl border border-dashed border-stone-300 text-center">עדיין לא הוגדרו מקצועות לימוד.</div>}
                                     </div>
                                 </div>
@@ -1576,9 +2095,8 @@
                             </div>
                         )}
 
-                        {/* TAB: Schedule Planning */}
                         {activeTab === 'schedule' && (
-                            <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
+                            <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="mb-6 pb-4 border-b border-stone-100">
                                         <h2 className="text-xl font-bold text-stone-800 tracking-tight">תכנון שבועי וזמן פנוי</h2>
@@ -1644,7 +2162,6 @@
                             </div>
                         )}
 
-                        {/* TAB: Exam Prep */}
                         {activeTab === 'exam_prep' && (() => {
                             const hardExercisesList = activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '');
                             const subjectsWithArchive = [...new Set(hardExercisesList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1654,10 +2171,9 @@
                                 : hardExercisesList.filter(t => t.subjectId === archiveFilter);
 
                             return (
-                            <div className="space-y-8 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                            <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
                                 
-                                {/* 🎯 מחולל למידה חכם (Study Planner) */}
-                                <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] relative overflow-hidden group">
+                                <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] relative overflow-hidden group">
                                     <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none transition-transform group-hover:scale-110"></div>
                                     <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 relative z-10">
                                         <div>
@@ -1665,28 +2181,53 @@
                                                 <span>🗓️</span> מחולל למידה אוטומטי
                                             </h2>
                                             <p className="text-sm text-stone-500 mt-2 max-w-xl leading-relaxed">
-                                                הזיני מבחן קרוב. המערכת תסרוק את הלו"ז שלך (שעות בי"ס ועוגנים) ותשבץ עבורך זמני למידה אידיאליים בחלונות הפנויים בימים שלפני המבחן.
+                                                הזיני מבחן קרוב. המערכת תסרוק את הלו"ז שלך ותפזר עבורך זמני למידה בחלונות הפנויים בכל הימים שנותרו עד המבחן.
                                             </p>
                                         </div>
-                                        <button onClick={() => toggleModal('examPlanner', true)} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-4 rounded-2xl text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 shrink-0">
-                                            <IconSparkle className="w-4 h-4"/> תכנון למידה חכם
-                                        </button>
+                                        <div className="flex flex-col sm:flex-row gap-3 shrink-0">
+                                            <button onClick={() => toggleModal('quickExam', true)} className="bg-white text-indigo-600 px-6 py-4 rounded-2xl text-sm font-bold shadow-sm border border-indigo-100 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 active:scale-95">
+                                                <IconPlus className="w-4 h-4"/> הוספה מהירה (ללא לו"ז)
+                                            </button>
+                                            <button onClick={() => toggleModal('examPlanner', true)} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-4 rounded-2xl text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                                                <IconSparkle className="w-4 h-4"/> תכנון למידה חכם
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {(activeUserData.exams || []).length > 0 && (
-                                        <div className="mt-6 pt-6 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 relative z-10">
+                                        <div className="mt-6 pt-6 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
                                             {(activeUserData.exams || []).sort((a,b) => new Date(a.date) - new Date(b.date)).map(exam => {
                                                 const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
-                                                const isPassed = new Date(exam.date) < new Date();
+                                                
+                                                const examDateObj = new Date(exam.date);
+                                                examDateObj.setHours(0,0,0,0);
+                                                const todayObj = new Date();
+                                                todayObj.setHours(0,0,0,0);
+                                                const isPassed = examDateObj <= todayObj;
+                                                
                                                 return (
-                                                    <div key={exam.id} className={`p-4 rounded-2xl border ${isPassed ? 'bg-stone-50 border-stone-200 opacity-70' : 'bg-white border-indigo-100 shadow-sm'}`}>
-                                                        <div className="flex justify-between items-start mb-1">
+                                                    <div key={exam.id} className={`p-5 rounded-3xl border transition-all ${isPassed ? 'bg-stone-50 border-stone-200 opacity-90' : 'bg-white border-indigo-100 shadow-sm hover:shadow-md'}`}>
+                                                        <div className="flex justify-between items-start mb-2">
                                                             <div className="text-xs font-bold text-stone-500" dir="ltr">{new Date(exam.date).toLocaleDateString('he-IL')}</div>
                                                             {exam.cancellations > 0 && !isPassed && <div className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 rounded">ביטולים: {exam.cancellations}/3</div>}
+                                                            {exam.grade && <div className="text-xs font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded shadow-sm">{exam.grade} ציון</div>}
                                                         </div>
-                                                        <div className={`font-bold text-base ${isPassed ? 'text-stone-600' : 'text-stone-800'}`}>{exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}</div>
+                                                        <div className={`font-bold text-lg leading-tight ${isPassed ? 'text-stone-600' : 'text-stone-800'}`}>{exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}</div>
                                                         <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
-                                                            תוכננו {exam.sessionsCount} מפגשים ({exam.targetHours} שעות)
+                                                            תוכננו {exam.sessionsCount || 0} מפגשים ({exam.targetHours || 0} שעות)
+                                                        </div>
+
+                                                        <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-100">
+                                                            {!isPassed && (
+                                                                <button onClick={() => handleAddExamToCalendar(exam)} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-2">
+                                                                    📅 הוספה ליומן 
+                                                                </button>
+                                                            )}
+                                                            {!exam.grade && (
+                                                                <button onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
+                                                                    הזנת ציון למבחן
+                                                                </button>
+                                                            )}
                                                         </div>
                                                     </div>
                                                 )
@@ -1695,13 +2236,12 @@
                                     )}
                                 </div>
 
-                                {/* הפקת דוח למבחן PDF */}
-                                <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 md:p-8 rounded-3xl border border-purple-100 shadow-sm relative overflow-hidden">
+                                <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-3xl border border-purple-100 shadow-sm relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-64 h-64 bg-white/40 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
                                     <h2 className="text-2xl font-bold mb-3 text-stone-800 flex items-center gap-3 relative z-10">
                                         <span className="text-3xl">📄</span> הפקת דוח הכנה למבחן
                                     </h2>
-                                    <p className="text-sm text-stone-600 mb-6 font-medium max-w-2xl relative z-10 leading-relaxed">
+                                    <p className="text-sm text-stone-600 mb-5 font-medium max-w-2xl relative z-10 leading-relaxed">
                                         בנינו אלגוריתם שמרכז את כל שיעורי הבית שעשית. בחרי מקצוע, והמערכת תפיק מסמך מרוכז להדפסה שכולל את הנושאים החלשים ותרגילים שסומנו כקשים.
                                     </p>
                                     <div className="flex flex-col sm:flex-row gap-3 relative z-10 bg-white/60 p-2 rounded-2xl backdrop-blur-sm border border-white/40 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
@@ -1715,8 +2255,7 @@
                                     </div>
                                 </div>
 
-                                {/* ארכיון תרגילים */}
-                                <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
+                                <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 gap-4">
                                         <div>
                                             <h3 className="text-xl font-bold text-stone-800 tracking-tight">בנק תרגילים מאתגרים (ארכיון)</h3>
@@ -1725,7 +2264,7 @@
                                     </div>
 
                                     {subjectsWithArchive.length > 0 && (
-                                        <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-stone-100">
+                                        <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-stone-100">
                                             <button 
                                                 onClick={() => setArchiveFilter('all')}
                                                 className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${archiveFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
@@ -1770,26 +2309,73 @@
                             )
                         })()}
 
-                        {/* TAB: Social */}
-                        {activeTab === 'social' && (
-                            <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
-                                <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
+                        {activeTab === 'social' && (() => {
+                            const topUserPoints = Math.max(...[activeUserData, ...Object.values(liveFriends).filter(f => f && f.username)].map(u => u.totalPoints || 0), 0);
+                            
+                            const allUsers = [
+                                { ...activeUserData, isMe: true },
+                                ...Object.values(liveFriends).filter(f => f && f.username)
+                            ];
+                            
+                            const sortedByPoints = [...allUsers].sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0));
+                            const sortedByStreak = [...allUsers].sort((a,b) => (b.taskStreak || 0) - (a.taskStreak || 0));
+
+                            return (
+                            <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
+                                <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div>
-                                        <h2 className="text-2xl font-bold text-stone-800 tracking-tight">החברות שלי</h2>
-                                        <p className="text-sm text-stone-500 mt-1">עקבי אחרי ההתקדמות של החברות, שלחי תזכורות, ולימדו ביחד.</p>
+                                        <h2 className="text-2xl font-bold text-stone-800 tracking-tight">החברות שלי והישגים</h2>
+                                        <p className="text-sm text-stone-500 mt-1">עקבי אחרי ההתקדמות של החברות, שלחי תזכורות, וראי מי אלופת הרצף!</p>
                                     </div>
                                     <button onClick={() => toggleModal('addFriend', true)} className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-4 rounded-2xl text-sm font-bold shadow-md hover:from-purple-600 hover:to-pink-600 transition-all flex items-center justify-center gap-2 active:scale-95">
                                         <IconPlus className="w-4 h-4"/> הוספת חברה
                                     </button>
                                 </div>
                                 
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                                    <div className="bg-white rounded-3xl p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
+                                        <h3 className="font-bold text-lg text-stone-800 mb-4 flex items-center gap-2">🏆 טבלת אלופות (ניקוד)</h3>
+                                        <div className="space-y-2">
+                                            {sortedByPoints.slice(0, 5).map((u, i) => {
+                                                const gap = topUserPoints - (u.totalPoints || 0);
+                                                return (
+                                                <div key={u.isMe ? 'me' : u.username} className={`flex items-center justify-between p-3 rounded-2xl border ${u.isMe ? 'bg-emerald-50 border-emerald-100' : 'bg-stone-50 border-stone-100'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-lg font-black w-6 text-center">{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : `${i+1}.`}</div>
+                                                        <div>
+                                                            <div className={`font-bold ${u.isMe ? 'text-emerald-700' : 'text-stone-700'}`}>{u.name} {u.isMe && '(אני)'}</div>
+                                                            {i > 0 && gap > 0 && <div className="text-[10px] text-stone-400 font-bold">רחוקה {gap} נק' מהמקום הראשון</div>}
+                                                        </div>
+                                                    </div>
+                                                    <div className="font-black text-emerald-600 bg-white px-3 py-1 rounded-lg shadow-sm border border-emerald-100/50" dir="ltr">{u.totalPoints || 0} נק'</div>
+                                                </div>
+                                            )})}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white rounded-3xl p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
+                                        <h3 className="font-bold text-lg text-stone-800 mb-4 flex items-center gap-2">🔥 מלכות הרצף</h3>
+                                        <div className="space-y-2">
+                                            {sortedByStreak.slice(0, 5).map((u, i) => (
+                                                <div key={u.isMe ? 'me' : u.username} className={`flex items-center justify-between p-3 rounded-2xl border ${u.isMe ? 'bg-rose-50 border-rose-100' : 'bg-stone-50 border-stone-100'}`}>
+                                                    <div className="flex items-center gap-3">
+                                                        <div className="text-lg font-black w-6 text-center">{i===0 ? '👑' : `${i+1}.`}</div>
+                                                        <div className={`font-bold ${u.isMe ? 'text-rose-700' : 'text-stone-700'}`}>{u.name} {u.isMe && '(אני)'}</div>
+                                                    </div>
+                                                    <div className="font-black text-rose-500 bg-white px-3 py-1 rounded-lg shadow-sm border border-rose-100/50" dir="ltr">{u.taskStreak || 0} 🔥</div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {activeUserData.friends.map(friend => {
                                         const liveData = liveFriends[friend.username] || {};
                                         const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (friend.streak || 0);
                                         
                                         return (
-                                        <div key={friend.id} className="bg-white p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
+                                        <div key={friend.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
                                             <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-150 pointer-events-none"></div>
                                             <div className="flex items-center gap-4 relative z-10">
                                                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-100 to-rose-100 flex items-center justify-center text-xl font-black text-purple-700 shadow-sm border border-white">
@@ -1811,41 +2397,87 @@
                                     {activeUserData.friends.length === 0 && <div className="text-stone-400 text-base font-medium text-center col-span-full py-16 bg-white rounded-3xl border border-dashed border-stone-300">עדיין לא הוספת חברות לקבוצה. לחצי למעלה כדי להתחיל.</div>}
                                 </div>
                             </div>
-                        )}
+                            )
+                        })()}
 
-                        {/* TAB: Profile */}
-                        {activeTab === 'profile' && (
+                        {activeTab === 'profile' && (() => {
+                            const userBadges = activeUserData.badges || [];
+                            
+                            return (
                             <div className="space-y-4 max-w-3xl mx-auto animate-[fadeIn_0.3s_ease-out]">
-                                <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
+                                <div className="bg-white p-8 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-full h-40 bg-gradient-to-br from-purple-100/50 to-pink-100/50 pointer-events-none"></div>
                                     
                                     <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6 mb-8 text-center md:text-right">
                                         <div className="w-24 h-24 bg-white text-purple-600 border-4 border-white shadow-md rounded-[28px] flex items-center justify-center text-4xl font-black shrink-0">
                                             {activeUserData.name.charAt(0)}
                                         </div>
-                                        <div className="mt-1 md:mt-3">
+                                        <div className="mt-1 md:mt-3 flex-1 flex flex-col items-center md:items-start">
                                             <h2 className="text-3xl font-black text-stone-800 tracking-tight" dir="auto">{activeUserData.name}</h2>
                                             <p className="text-stone-500 text-sm font-semibold mt-1" dir="auto">@{globalState.activeUser}</p>
+                                            
+                                            <div className="mt-3 bg-gradient-to-r from-purple-100 to-fuchsia-100 text-purple-800 px-4 py-2 rounded-full text-sm font-bold shadow-sm inline-flex items-center gap-2 border border-purple-200">
+                                                <span>{myLevel.icon}</span> דרגה: {myLevel.title}
+                                            </div>
                                         </div>
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
                                         <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
-                                            <div className="text-4xl font-black text-emerald-500 mb-2 group-hover:scale-105 transition-transform">{activeUserData.totalPoints}</div>
+                                            <div className="text-4xl font-black text-emerald-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.totalPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">סה"כ נקודות</div>
                                         </button>
                                         
                                         <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
-                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform">{activeUserData.weeklyPoints}</div>
+                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.weeklyPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
                                         </button>
                                         
                                         <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-rose-50 hover:border-rose-200 active:scale-[0.98]" onClick={()=>toggleModal('streakHistory', true)}>
-                                            <div className="text-4xl font-black text-rose-500 mb-2 group-hover:scale-110 transition-transform flex items-center gap-2">{activeUserData.longestStreak} <span className="text-2xl drop-shadow-sm">🔥</span></div>
+                                            <div className="text-4xl font-black text-rose-500 mb-2 group-hover:scale-110 transition-transform flex items-center gap-2" dir="ltr">{activeUserData.longestStreak} <span className="text-2xl drop-shadow-sm">🔥</span></div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">שיא רצף נוכחי</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-medium">לחצי להיסטוריה</div>
                                         </button>
+                                    </div>
+                                    
+                                    <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm relative z-10 mb-8">
+                                        <h3 className="font-bold text-lg mb-4 text-stone-800">התפלגות למידה לפי מקצוע 📊</h3>
+                                        <div className="h-64 w-full">
+                                            <canvas ref={pieChartRef}></canvas>
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm relative z-10 mb-8">
+                                        <h3 className="font-bold text-lg mb-4 text-stone-800">ארון התגים 🏅</h3>
+                                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                            {ALL_BADGES.map(badge => {
+                                                const earned = userBadges.find(b => b.id === badge.id);
+                                                return (
+                                                    <div key={badge.id} className={`p-4 rounded-2xl border text-center transition-all ${earned ? 'bg-gradient-to-b from-amber-50 to-orange-50 border-amber-200 shadow-sm' : 'bg-stone-50 border-stone-200 opacity-60 grayscale'}`}>
+                                                        <div className="text-3xl mb-2 drop-shadow-sm">{badge.icon}</div>
+                                                        <div className={`text-sm font-bold ${earned ? 'text-amber-800' : 'text-stone-500'}`}>{badge.title}</div>
+                                                        <div className="text-[10px] mt-1 text-stone-500 leading-tight">{badge.description}</div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-6 rounded-3xl border border-indigo-100 shadow-sm relative z-10 mb-8">
+                                        <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
+                                            <div>
+                                                <h3 className="text-xl font-bold mb-2 text-indigo-800 flex items-center gap-2">
+                                                    <span>📊</span> דוח התקדמות שבועי להורים
+                                                </h3>
+                                                <p className="text-sm text-indigo-600/80 font-medium max-w-lg">
+                                                    הפיקי בלחיצה דוח מסודר שמסכם את כל הלמידה, המשימות והנקודות שצברת השבוע, כדי לשתף ולהראות את ההשקעה שלך!
+                                                </p>
+                                            </div>
+                                            <button onClick={handleGenerateWeeklyReport} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-4 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 shrink-0 flex items-center justify-center gap-2">
+                                                הפקת דוח שבועי 🖨️
+                                            </button>
+                                        </div>
                                     </div>
 
                                     <div className="bg-stone-50/70 p-6 rounded-3xl border border-stone-200 text-right relative z-10">
@@ -1863,10 +2495,10 @@
                                     </div>
                                 </div>
                             </div>
-                        )}
+                            )
+                        })()}
                     </main>
 
-                    {/* Modal: Add Task */}
                     {modals.task && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -1910,7 +2542,7 @@
                                         </div>
                                         
                                         <div className="flex-1">
-                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">תאריך השיעור</label>
+                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">תאריך השיעור / קבלה</label>
                                             <input type="date" required value={taskGivenDate} onChange={(e) => {
                                                 setTaskGivenDate(e.target.value);
                                                 if (!taskFormHasHW) return;
@@ -1930,7 +2562,7 @@
                                     
                                     <div>
                                         <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">נושא השיעור (למחולל המבחנים)</label>
-                                        <input name="topic" required placeholder="למשל: אינטגרלים, אוטופיה..." className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
+                                        <input name="topic" required={false} placeholder="למשל: אינטגרלים, אוטופיה... (לא חובה)" className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
                                     </div>
 
                                     <div className="pt-2 border-t border-stone-100">
@@ -1974,7 +2606,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Complete Task */}
                     {modals.complete && activeTask && (() => {
                         const activeTaskIsLate = activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
                         
@@ -1989,7 +2620,9 @@
                                     
                                     {activeTaskIsLate && (
                                         <div className="bg-rose-50 text-rose-700 p-3 rounded-xl border border-rose-100 text-xs font-bold mb-4">
-                                            ⚠️ המשימה מוגשת באיחור. שמירת הרצף תתאפס.
+                                            {activeTask.autoPenaltyApplied 
+                                                ? '⚠️ שימי לב: הקנס על האיחור (-2 נקודות) כבר ירד אוטומטית.'
+                                                : '⚠️ המשימה מוגשת באיחור. הרצף שלך עלול להישבר.'}
                                         </div>
                                     )}
 
@@ -2054,7 +2687,29 @@
                         )
                     })()}
 
-                    {/* Modal: Cancel Exam Session */}
+                    {modals.giveUp && taskToGiveUp && (
+                        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out] text-center">
+                                <div className="text-5xl mb-4">🥺</div>
+                                <h3 className="font-black text-2xl text-stone-800 mb-2">בטוחה שאת רוצה לוותר?</h3>
+                                <p className="text-sm text-stone-500 mb-6 font-medium">
+                                    חבל, אני יודעת שאת יכולה לעשות את זה!<br/>
+                                    <span className="block mt-2 text-rose-600 font-bold bg-rose-50 p-2 rounded-xl border border-rose-100">
+                                        ויתור יאפס לך את הרצף המדהים שלך ויוריד לך 10 נקודות.
+                                    </span>
+                                </p>
+                                <div className="flex flex-col gap-3 mt-4">
+                                    <button onClick={()=> { toggleModal('giveUp', false); setTaskToGiveUp(null); }} className="w-full bg-emerald-500 text-white font-bold py-3.5 rounded-xl text-sm transition-colors shadow-md hover:bg-emerald-600 active:scale-95">
+                                        לא, אני אעשה את זה! 💪
+                                    </button>
+                                    <button onClick={handleGiveUpConfirm} className="w-full bg-stone-100 text-stone-500 font-bold py-3.5 rounded-xl text-sm transition-colors active:scale-95 hover:bg-rose-50 hover:text-rose-600 hover:border-rose-100 border border-transparent">
+                                        כן, מוותרת 🏳️ (-10)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {modals.cancelExam && taskToCancel && (
                         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out]">
@@ -2078,7 +2733,62 @@
                         </div>
                     )}
 
-                    {/* Modal: Exam Planner */}
+                    {modals.examGrade && activeExamForGrade && (
+                        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
+                                <div className="flex justify-between items-center mb-4">
+                                    <h3 className="font-black text-xl text-stone-800 flex items-center gap-2">
+                                        📝 עדכון ציון
+                                    </h3>
+                                    <button onClick={()=> { toggleModal('examGrade', false); setActiveExamForGrade(null); }} className="text-stone-400 bg-stone-100 p-2 rounded-full active:scale-95"><IconX className="w-4 h-4"/></button>
+                                </div>
+                                <p className="text-sm text-stone-500 mb-6 font-medium">המבחן {activeExamForGrade.examName} מאחורייך. איך היה? סמני את הציון וקבלי נקודות בונוס למדד (או קנס קטן על נכשל).</p>
+                                
+                                <form onSubmit={handleSaveExamGrade} className="space-y-5">
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">ציון במבחן (0-100)</label>
+                                        <input type="number" name="grade" min="0" max="100" required className="w-full p-4 bg-stone-50 border border-stone-200 rounded-xl text-2xl outline-none font-black focus:border-emerald-400 focus:ring-4 focus:ring-emerald-50 transition-all text-center text-emerald-600" placeholder="100" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-emerald-500 text-white py-4 rounded-xl text-base font-bold shadow-md hover:bg-emerald-600 transition-all active:scale-95">שמירת ציון</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {modals.quickExam && (
+                        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="font-bold text-xl text-stone-800 flex items-center gap-2">
+                                        📝 מבחן חדש בקליק
+                                    </h3>
+                                    <button onClick={()=>toggleModal('quickExam', false)} className="bg-stone-100 p-2 rounded-full text-stone-400 active:scale-95"><IconX className="w-4 h-4"/></button>
+                                </div>
+                                <form onSubmit={handleAddQuickExam} className="space-y-4">
+                                    <div className="bg-indigo-50 p-3 rounded-xl border border-indigo-100 text-xs text-indigo-700 font-medium mb-4">
+                                        אפשרות זו מוסיפה מבחן לרשימה בלי לחולל תוכנית למידה. מצוין לבחנים קטנים או אם את רוצה לנהל את הלמידה בעצמך.
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">מקצוע</label>
+                                        <select name="subjectId" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold">
+                                            <option value="">בחרי מקצוע...</option>
+                                            {activeUserData.subjects.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                                        </select>
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">נושא / שם המבחן</label>
+                                        <input type="text" name="examName" required placeholder="למשל: בוחן פתע, מתכונת..." className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
+                                    </div>
+                                    <div>
+                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">תאריך</label>
+                                        <input type="date" name="date" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
+                                    </div>
+                                    <button type="submit" className="w-full bg-indigo-600 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all active:scale-95">שמירת המבחן</button>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
                     {modals.examPlanner && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-lg p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2093,7 +2803,7 @@
                                 {examPlannerData.step === 1 ? (
                                     <form onSubmit={handleGenerateStudyPlan} className="space-y-5">
                                         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 text-sm font-medium text-indigo-800 leading-relaxed">
-                                            המערכת תסרוק את שעות בית הספר והעוגנים שלך ותבנה לך תוכנית למידה מסודרת לחלונות הזמן הפנויים.
+                                            המערכת תסרוק את הלו"ז שלך ותפזר עבורך זמני למידה בחלונות הפנויים בכל הימים שנותרו עד המבחן.
                                         </div>
                                         
                                         <div>
@@ -2137,14 +2847,14 @@
                                             <div>
                                                 <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">כמה שעות למידה?</label>
                                                 <div className="flex items-center gap-2">
-                                                    <input type="range" min="1" max="20" step="1" value={examPlannerData.hours} onChange={(e) => setExamPlannerData({...examPlannerData, hours: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
+                                                    <input type="range" min="1" max="50" step="1" value={examPlannerData.hours} onChange={(e) => setExamPlannerData({...examPlannerData, hours: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
                                                     <div className="w-12 text-center font-black text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg py-2">{examPlannerData.hours} ש'</div>
                                                 </div>
                                             </div>
                                             <div>
                                                 <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">בכמה מפגשים?</label>
                                                 <div className="flex items-center gap-2">
-                                                    <input type="range" min="1" max="10" step="1" value={examPlannerData.targetSessions} onChange={(e) => setExamPlannerData({...examPlannerData, targetSessions: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
+                                                    <input type="range" min="1" max="20" step="1" value={examPlannerData.targetSessions} onChange={(e) => setExamPlannerData({...examPlannerData, targetSessions: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
                                                     <div className="w-12 text-center font-black text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg py-2">{examPlannerData.targetSessions}</div>
                                                 </div>
                                             </div>
@@ -2209,7 +2919,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Subject */}
                     {modals.subject && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2264,7 +2973,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Add Anchor */}
                     {modals.addAnchor && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2284,7 +2992,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Add Friend */}
                     {modals.addFriend && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2303,7 +3010,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Points History */}
                     {modals.pointsHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2312,9 +3018,9 @@
                                     <button onClick={()=>toggleModal('pointsHistory',false)} className="bg-stone-100 p-2 rounded-full text-stone-500 hover:bg-stone-200 transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
                                 </div>
                                 <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
-                                    {activeUserData.pointsHistory.length === 0 ? <div className="text-center py-10 text-sm text-stone-400 font-medium">אין היסטוריה עדיין. בצעי משימות כדי לצבור נקודות!</div> : 
-                                    activeUserData.pointsHistory.sort((a,b)=>new Date(b.date)-new Date(a.date)).map(log => (
-                                        <div key={log.id} className={`p-4 rounded-2xl border-r-[6px] shadow-[0_2px_10px_-2px_rgba(0,0,0,0.02)] ${log.points > 0 ? 'bg-emerald-50/50 border-emerald-400 border-l border-y border-stone-100' : 'bg-rose-50/50 border-rose-400 border-l border-y border-stone-100'}`}>
+                                    {safePointsHistory.length === 0 ? <div className="text-center py-10 text-sm text-stone-400 font-medium">אין היסטוריה עדיין. בצעי משימות כדי לצבור נקודות!</div> : 
+                                    [...safePointsHistory].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(log => (
+                                        <div key={log.id} className={`p-4 rounded-2xl border-r-[6px] shadow-[0_2px_10px_-2px_rgba(0,0,0,0.02)] ${log.points > 0 ? 'bg-emerald-50/50 border-emerald-400 border-l border-y border-stone-100' : log.points === 0 ? 'bg-stone-50 border-stone-400 border-l border-y' : 'bg-rose-50/50 border-rose-400 border-l border-y border-stone-100'}`}>
                                             <div className="flex justify-between items-start font-bold text-sm mb-1.5 text-stone-800">
                                                 <div className="flex flex-col">
                                                     <span className="flex items-center gap-1.5">
@@ -2322,10 +3028,10 @@
                                                     </span>
                                                     <span className="mt-1">{log.taskTitle}</span>
                                                 </div>
-                                                <span className={`${log.points > 0 ? 'text-emerald-600 bg-emerald-100' : 'text-rose-600 bg-rose-100'} px-2 py-0.5 rounded-lg shadow-sm whitespace-nowrap`} dir="ltr">{log.points > 0 ? '+'+log.points : log.points}</span>
+                                                <span className={`${log.points > 0 ? 'text-emerald-600 bg-emerald-100' : log.points === 0 ? 'text-stone-600 bg-stone-200' : 'text-rose-600 bg-rose-100'} px-2 py-0.5 rounded-lg shadow-sm whitespace-nowrap`} dir="ltr">{log.points > 0 ? '+'+log.points : log.points}</span>
                                             </div>
                                             <div className="text-[10px] font-bold text-stone-400 mb-2" dir="ltr">{new Date(log.date).toLocaleString('he-IL')}</div>
-                                            <div className={`text-xs font-medium p-2 rounded-lg ${log.points > 0 ? 'bg-emerald-100/30 text-emerald-700' : 'bg-rose-100/30 text-rose-700'}`}>{log.details}</div>
+                                            <div className={`text-xs font-medium p-2 rounded-lg ${log.points > 0 ? 'bg-emerald-100/30 text-emerald-700' : log.points === 0 ? 'bg-stone-200/50 text-stone-700' : 'bg-rose-100/30 text-rose-700'}`}>{log.details}</div>
                                         </div>
                                     ))}
                                 </div>
@@ -2333,7 +3039,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Streak History */}
                     {modals.streakHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2343,7 +3048,6 @@
                                 </div>
                                 <div className="overflow-y-auto flex-1 space-y-4 pr-2 custom-scrollbar">
                                     
-                                    {/* Current Streak */}
                                     {activeUserData.taskStreak > 0 && (
                                         <div className="p-5 rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 flex flex-col shadow-sm relative overflow-hidden">
                                             <div className="absolute top-0 right-0 w-20 h-20 bg-white/40 rounded-bl-full -mr-10 -mt-10 pointer-events-none"></div>
@@ -2363,13 +3067,12 @@
                                         </div>
                                     )}
 
-                                    {/* Past Streaks */}
-                                    {activeUserData.streakHistory.length === 0 ? (
+                                    {safeStreakHistory.length === 0 ? (
                                         activeUserData.taskStreak === 0 && <div className="text-center py-10 text-sm text-stone-400 font-medium">עדיין לא נשבר לך רצף (או שעוד לא התחלת)!</div>
                                     ) : (
                                         <>
                                             <div className="text-sm font-bold text-stone-400 mt-4 mb-2">רצפים מהעבר:</div>
-                                            {activeUserData.streakHistory.sort((a,b)=>new Date(b.endDate)-new Date(a.endDate)).map(log => (
+                                            {[...safeStreakHistory].sort((a,b)=>new Date(b.endDate)-new Date(a.endDate)).map(log => (
                                                 <div key={log.id} className="p-4 rounded-2xl border border-stone-200 bg-stone-50 flex flex-col shadow-sm">
                                                     <div className="flex justify-between items-start mb-2">
                                                         <div>
@@ -2394,7 +3097,6 @@
                         </div>
                     )}
 
-                    {/* Modal: Friend Info */}
                     {modals.friend && activeFriend && (() => {
                         const liveData = liveFriends[activeFriend.username] || {};
                         const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (activeFriend.streak || 0);
