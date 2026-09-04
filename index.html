@@ -235,7 +235,8 @@
             pointsHistory: [],
             streakHistory: [],
             friends: [],
-            exams: []
+            exams: [],
+            notifications: []
         };
 
         function App() {
@@ -255,7 +256,7 @@
 
             // --- 🚀 LIVE SYNC EFFECT (REAL-TIME FIREBASE) 🚀 ---
             useEffect(() => {
-                if (!globalState.activeUser || !window.db) return;
+                if (!globalState.activeUser || !db) return;
 
                 const userRef = db.collection("users").doc(globalState.activeUser);
                 
@@ -267,9 +268,14 @@
                         setGlobalState(prev => {
                             const currentUserData = prev.users[prev.activeUser];
                             
-                            // מניעת רינדור כפול אם הנתונים זהים לחלוטין (קורה מיד אחרי עדכון מקומי שלנו)
-                            if (JSON.stringify(currentUserData) === JSON.stringify(liveData)) {
-                                return prev;
+                            // שימוש בחותמת זמן כדי למנוע רינדור כפול (כשהנתונים באמת זהים) 
+                            // וכדי לזהות תמיד ובמדויק כשמכשיר אחר ביצע שינוי כלשהו
+                            if (currentUserData) {
+                                if (liveData.lastSync && currentUserData.lastSync) {
+                                    if (liveData.lastSync === currentUserData.lastSync) return prev;
+                                } else if (JSON.stringify(currentUserData) === JSON.stringify(liveData)) {
+                                    return prev;
+                                }
                             }
                             
                             // עדכון הסטייט המקומי עם הנתונים העדכניים מהענן
@@ -299,8 +305,11 @@
                     const user = prev.users[prev.activeUser];
                     const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
                     
+                    // הוספת חותמת זמן ייחודית בכל עדכון - מכריח את המכשיר השני להתרענן מיד
+                    updatedUser.lastSync = Date.now();
+                    
                     // סנכרון לפיירבייס בענן בכל עדכון
-                    if (window.db) {
+                    if (db) {
                         db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
                           .catch(err => console.error("Error saving to Firebase: ", err));
                     }
@@ -375,6 +384,45 @@
                 }
             }, [globalState.activeUser, activeUserData?.tasks, activeUserData?.taskStreak]);
 
+            // --- 🔄 משיכת נתוני חברות בזמן אמת ---
+            const [liveFriends, setLiveFriends] = useState({});
+
+            useEffect(() => {
+                if (activeTab === 'social' && activeUserData?.friends?.length > 0 && window.db) {
+                    const fetchFriends = async () => {
+                        const friendsData = {};
+                        for (let f of activeUserData.friends) {
+                            try {
+                                const doc = await db.collection("users").doc(f.username).get();
+                                if (doc.exists) {
+                                    friendsData[f.username] = doc.data();
+                                }
+                            } catch (e) { console.error(e); }
+                        }
+                        setLiveFriends(friendsData);
+                    };
+                    fetchFriends();
+                }
+            }, [activeTab, activeUserData?.friends]);
+
+            // --- 💬 האזנה להודעות והתראות נכנסות ---
+            useEffect(() => {
+                if (activeUserData && activeUserData.notifications) {
+                    const unread = activeUserData.notifications.filter(n => !n.read);
+                    if (unread.length > 0) {
+                        unread.forEach(n => {
+                            showToast(`הודעה מ-${n.from}: ${n.text}`, 'info');
+                        });
+                        
+                        // סימון הודעות כנקראו כדי שלא יקפצו שוב
+                        updateUserData(prev => ({
+                            ...prev,
+                            notifications: prev.notifications.map(n => ({...n, read: true}))
+                        }));
+                    }
+                }
+            }, [activeUserData?.notifications]);
+
             // App View States
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toastMessage, setToastMessage] = useState(null);
@@ -437,7 +485,7 @@
                 const pass = e.target.password.value;
                 if(!user) return;
 
-                if (window.db) {
+                if (db) {
                     const userRef = db.collection("users").doc(user);
                     userRef.get().then((doc) => {
                         if (doc.exists) {
@@ -768,6 +816,16 @@
                 const username = e.target.username.value.trim();
                 if(!username) return;
 
+                if (username === globalState.activeUser) {
+                    showToast('אי אפשר להוסיף את עצמך 😅', 'warning');
+                    return;
+                }
+                
+                if (activeUserData.friends.some(f => f.username === username)) {
+                    showToast('המשתמש/ת כבר ברשימת החברות שלך!', 'warning');
+                    return;
+                }
+
                 if (window.db) {
                     db.collection("users").doc(username).get().then((doc) => {
                         if (doc.exists) {
@@ -775,20 +833,49 @@
                             const newFriend = {
                                 id: 'f_' + Date.now(),
                                 username: username,
-                                name: friendData.name || username,
-                                streak: friendData.taskStreak || 0,
-                                points: friendData.totalPoints || 0,
-                                pendingTasks: friendData.tasks ? friendData.tasks.filter(t => !t.completed).slice(0, 3) : []
+                                name: friendData.name || username
                             };
-                            updateUserData(prev => ({ ...prev, friends: [...prev.friends.filter(f=>f.username !== username), newFriend] }));
+                            updateUserData(prev => ({ ...prev, friends: [...prev.friends, newFriend] }));
                             toggleModal('addFriend', false);
-                            showToast(`חבר/ה ${friendData.name || username} התווסף/ה וסונכרן מהענן!`, 'success');
+                            showToast(`איזה כיף! ${friendData.name || username} התווסף/ה לרשימה.`, 'success');
+                            
+                            // משיכה מיידית של הנתונים העדכניים לתצוגה חיה
+                            setLiveFriends(prev => ({...prev, [username]: friendData}));
                         } else {
-                            showToast('לא נמצא משתמש כזה במערכת 😢', 'error');
+                            showToast('לא קיים משתמש עם השם הזה במערכת 😢', 'error');
                         }
                     }).catch(err => {
                         showToast('שגיאה בתקשורת עם השרת', 'error');
                     });
+                }
+            };
+
+            const handleSendNudge = async (friendUsername) => {
+                if (!window.db) return;
+                try {
+                    const friendRef = db.collection("users").doc(friendUsername);
+                    const doc = await friendRef.get();
+                    if (doc.exists) {
+                        const friendData = doc.data();
+                        const newNotification = {
+                            id: 'n_' + Date.now(),
+                            from: activeUserData.name,
+                            text: 'היי, מה עם השיעורים? מתקדמת? 👀',
+                            read: false,
+                            timestamp: Date.now()
+                        };
+                        const updatedNotifications = [...(friendData.notifications || []), newNotification];
+                        await friendRef.update({ 
+                            notifications: updatedNotifications,
+                            lastSync: Date.now() // מכריח את הטלפון השני להתרענן מיד ולהציג את ההודעה
+                        });
+                        showToast('ההודעה נשלחה לחברה בהצלחה! 🔔', 'success');
+                        toggleModal('friend', false);
+                    } else {
+                        showToast('המשתמש לא קיים במסד הנתונים', 'error');
+                    }
+                } catch (error) {
+                    showToast('שגיאה בשליחת ההודעה', 'error');
                 }
             };
 
@@ -1051,9 +1138,11 @@
                         <div className="fixed top-safe-top left-1/2 -translate-x-1/2 mt-4 z-[80] max-w-sm w-11/12 animate-[bounce_0.5s_ease-out]">
                             <div className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-lg border text-sm font-semibold ${
                                 toastMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                toastMessage.type === 'error' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200'
+                                toastMessage.type === 'error' ? 'bg-rose-50 text-rose-700 border-rose-200' : 
+                                toastMessage.type === 'info' ? 'bg-indigo-50 text-indigo-700 border-indigo-200' :
+                                'bg-amber-50 text-amber-700 border-amber-200'
                             }`}>
-                                <span>{toastMessage.type === 'success' ? '✨' : '⚠️'}</span>
+                                <span>{toastMessage.type === 'success' ? '✨' : toastMessage.type === 'info' ? '💬' : '⚠️'}</span>
                                 <p className="flex-1">{toastMessage.text}</p>
                             </div>
                         </div>
@@ -1694,7 +1783,11 @@
                                 </div>
                                 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-                                    {activeUserData.friends.map(friend => (
+                                    {activeUserData.friends.map(friend => {
+                                        const liveData = liveFriends[friend.username] || {};
+                                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (friend.streak || 0);
+                                        
+                                        return (
                                         <div key={friend.id} className="bg-white p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
                                             <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-150 pointer-events-none"></div>
                                             <div className="flex items-center gap-4 relative z-10">
@@ -1708,12 +1801,12 @@
                                                 <div className="text-center bg-stone-50 border border-stone-200 rounded-xl px-3 py-2">
                                                     <div className="text-[10px] text-stone-500 font-bold mb-0.5">רצף</div>
                                                     <div className="font-black text-rose-500 text-lg flex items-center justify-center gap-1">
-                                                        {friend.streak} <span className="text-sm">🔥</span>
+                                                        {displayStreak} <span className="text-sm">🔥</span>
                                                     </div>
                                                 </div>
                                             </div>
                                         </div>
-                                    ))}
+                                    )})}
                                     {activeUserData.friends.length === 0 && <div className="text-stone-400 text-base font-medium text-center col-span-full py-16 bg-white rounded-3xl border border-dashed border-stone-300">עדיין לא הוספת חברות לקבוצה. לחצי למעלה כדי להתחיל.</div>}
                                 </div>
                             </div>
@@ -2301,7 +2394,13 @@
                     )}
 
                     {/* Modal: Friend Info */}
-                    {modals.friend && activeFriend && (
+                    {modals.friend && activeFriend && (() => {
+                        const liveData = liveFriends[activeFriend.username] || {};
+                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (activeFriend.streak || 0);
+                        const displayPoints = liveData.totalPoints !== undefined ? liveData.totalPoints : (activeFriend.points || 0);
+                        const pendingTasks = liveData.tasks ? liveData.tasks.filter(t => !t.completed).slice(0, 3) : (activeFriend.pendingTasks || []);
+                        
+                        return (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-8 text-center shadow-2xl border border-stone-100 relative overflow-hidden animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 pointer-events-none"></div>
@@ -2314,19 +2413,19 @@
                                 <div className="flex justify-center gap-4 mb-8 relative z-10">
                                     <div className="bg-white shadow-[0_2px_10px_-2px_rgba(0,0,0,0.05)] px-5 py-3 rounded-2xl border border-rose-50 w-28">
                                         <div className="text-[10px] font-bold text-stone-400 mb-1 uppercase tracking-wide">מד משימות</div>
-                                        <div className="text-rose-500 font-black text-2xl">{activeFriend.streak}</div>
+                                        <div className="text-rose-500 font-black text-2xl">{displayStreak}</div>
                                     </div>
                                     <div className="bg-white shadow-[0_2px_10px_-2px_rgba(0,0,0,0.05)] px-5 py-3 rounded-2xl border border-emerald-50 w-28">
                                         <div className="text-[10px] font-bold text-stone-400 mb-1 uppercase tracking-wide">נקודות</div>
-                                        <div className="text-emerald-500 font-black text-2xl">{activeFriend.points}</div>
+                                        <div className="text-emerald-500 font-black text-2xl">{displayPoints}</div>
                                     </div>
                                 </div>
 
                                 <div className="text-right bg-stone-50 p-5 rounded-2xl mb-6 border border-stone-200 relative z-10">
                                     <h4 className="font-bold text-sm mb-3 text-stone-800 flex items-center gap-2">משימות שפתוחות אצלה:</h4>
-                                    {activeFriend.pendingTasks?.length > 0 ? (
+                                    {pendingTasks.length > 0 ? (
                                         <ul className="text-xs space-y-2 text-stone-600 font-medium">
-                                            {activeFriend.pendingTasks.map((pt,i) => <li key={i} className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-stone-300 rounded-full"></div>{pt.title}</li>)}
+                                            {pendingTasks.map((pt,i) => <li key={i} className="flex items-center gap-2"><div className="w-1.5 h-1.5 bg-stone-300 rounded-full shrink-0"></div><span className="truncate">{pt.title}</span></li>)}
                                         </ul>
                                     ) : (
                                         <p className="text-xs text-stone-400 font-medium italic">אין משימות פתוחות כרגע. הכל נקי!</p>
@@ -2334,7 +2433,7 @@
                                 </div>
 
                                 <div className="space-y-3 relative z-10">
-                                    <button onClick={() => { showToast('Nudge נשלח בהצלחה! 🔔', 'success'); toggleModal('friend', false); }} className="w-full bg-stone-800 hover:bg-stone-900 text-white font-bold py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 active:scale-95">
+                                    <button onClick={() => handleSendNudge(activeFriend.username)} className="w-full bg-stone-800 hover:bg-stone-900 text-white font-bold py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 active:scale-95">
                                         שליחת הודעת "מה עם השיעורים?" 💬
                                     </button>
                                     <button onClick={()=>{ handleRemoveFriend(activeFriend.id); }} className="w-full bg-white text-rose-500 font-bold py-4 rounded-xl border border-rose-100 text-sm hover:bg-rose-50 transition-colors active:scale-95">
@@ -2343,7 +2442,8 @@
                                 </div>
                             </div>
                         </div>
-                    )}
+                        );
+                    })()}
 
                 </div>
             );
