@@ -2,23 +2,56 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <!-- הוספנו viewport-fit=cover כדי שהאפליקציה תתפרס על כל המסך גם מאחורי המגרעת (Notch) -->
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    
-    <!-- הגדרות חיוניות לאפליקציית מובייל (PWA) -->
+    <meta name="theme-color" content="#fafaf9">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
-    <meta name="apple-mobile-web-app-title" content="StudyStreak">
-    <meta name="theme-color" content="#fafaf9">
-    
     <title>StudyStreak Pro - ניהול למידה חכם</title>
     
-    <!-- קישורים וירטואליים - הסקריפט למטה ימלא אותם בתוכן -->
-    <link id="manifest-link" rel="manifest" href="">
-    <link id="apple-touch-icon" rel="apple-touch-icon" href="">
+    <link rel="icon" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'/%3E%3C/svg%3E" type="image/svg+xml" />
+    <link id="manifest-link" rel="manifest">
     
+    <!-- PWA Dynamic Generator -->
+    <script>
+        const generatePWA = () => {
+            const manifest = {
+                name: "StudyStreak Pro",
+                short_name: "StudyStreak",
+                start_url: ".",
+                display: "standalone",
+                background_color: "#fafaf9",
+                theme_color: "#fafaf9",
+                icons: [{
+                    src: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'/%3E%3C/svg%3E",
+                    sizes: "192x192",
+                    type: "image/svg+xml"
+                }]
+            };
+            const blob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
+            document.querySelector('#manifest-link').setAttribute('href', URL.createObjectURL(blob));
+        };
+        generatePWA();
+    </script>
+
+    <!-- Firebase Compat SDKs (CDN) -->
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
+
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    spacing: {
+                        'safe-bottom': 'env(safe-area-inset-bottom)',
+                        'safe-top': 'env(safe-area-inset-top)',
+                    }
+                }
+            }
+        }
+    </script>
     
     <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
@@ -34,8 +67,12 @@
     <style>
         body { 
             font-family: 'Heebo', sans-serif;
-            -webkit-tap-highlight-color: transparent; /* מעלים את הריבוע האפור המעצבן בלחיצה בנייד */
-            overscroll-behavior-y: none; /* מונע גלילת יתר (Pull to refresh קופצני) */
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+        }
+        
+        input, textarea, select {
+            user-select: auto;
         }
         
         ::-webkit-scrollbar { width: 8px; height: 8px; }
@@ -56,50 +93,27 @@
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
-
-    <!-- PWA Magic Injection (קוד ליצירת אפליקציה מקובץ אחד) -->
-    <script>
-        // 1. יצירת אייקון וירטואלי 
-        const svgIcon = `<svg xmlns='http://www.w3.org/2000/svg' width='512' height='512' viewBox='0 0 512 512'><rect width='512' height='512' fill='#a855f7' rx='110'/><text x='50%' y='50%' font-size='220' text-anchor='middle' dy='.35em' fill='%23ffffff'>✨</text></svg>`;
-        const iconUrl = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgIcon);
-        document.getElementById('apple-touch-icon').href = iconUrl;
-
-        // 2. יצירת קובץ Manifest וירטואלי להתקנה
-        const manifest = {
-            name: "StudyStreak Pro",
-            short_name: "StudyStreak",
-            description: "ניהול הלמידה והבגרויות שלך בסטייל",
-            start_url: ".",
-            display: "standalone",
-            background_color: "#fafaf9",
-            theme_color: "#fafaf9",
-            orientation: "portrait",
-            icons: [
-                { src: iconUrl, sizes: "512x512", type: "image/svg+xml", purpose: "any maskable" }
-            ]
-        };
-        const manifestBlob = new Blob([JSON.stringify(manifest)], {type: 'application/json'});
-        document.getElementById('manifest-link').href = URL.createObjectURL(manifestBlob);
-
-        // 3. יצירת Service Worker וירטואלי כדי שהטלפון יזהה אותנו כאפליקציה אמיתית
-        if ('serviceWorker' in navigator) {
-            const swCode = `
-                self.addEventListener('install', (e) => self.skipWaiting());
-                self.addEventListener('activate', (e) => e.waitUntil(self.clients.claim()));
-                self.addEventListener('fetch', (e) => {
-                    // בינתיים אנחנו רק מעבירים את הבקשות הלאה. כשנחבר פיירבייס, אפשר להוסיף פה קאש אמיתי לאופליין.
-                });
-            `;
-            const swBlob = new Blob([swCode], {type: 'application/javascript'});
-            navigator.serviceWorker.register(URL.createObjectURL(swBlob))
-                .catch(err => console.log('SW Registration failed:', err));
-        }
-    </script>
 </head>
-<body class="bg-stone-50 text-stone-800 min-h-screen selection:bg-purple-200 selection:text-purple-900">
+<body class="bg-stone-50 text-stone-800 min-h-screen selection:bg-purple-200 selection:text-purple-900 pt-safe-top pb-safe-bottom">
     <div id="root"></div>
 
     <script type="text/babel">
+        // --- 🚀 FIREBASE INITIALIZATION 🚀 ---
+        // הנתונים נלקחו אוטומטית מתוך התמונה שהעלית
+        const firebaseConfig = {
+            apiKey: "AIzaSyBMfjLTktAFc5uFRN8Oda8-_u29KykDAYA",
+            authDomain: "loos-77484.firebaseapp.com",
+            projectId: "loos-77484",
+            storageBucket: "loos-77484.firebasestorage.app",
+            messagingSenderId: "944527580287",
+            appId: "1:944527580287:web:3c6ccacac1a0a8121a334a"
+        };
+        
+        if (!firebase.apps.length) {
+            firebase.initializeApp(firebaseConfig);
+        }
+        const db = firebase.firestore();
+
         const { useState, useEffect, useMemo } = React;
 
         const IconFlame = ({ className = "w-5 h-5" }) => <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 23c-4.97 0-9-3.58-9-8 0-4.19 3.01-7.26 5.88-9.84.58-.52 1.17-1.04 1.72-1.58.37-.36.93-.38 1.32-.05.39.33.47.89.18 1.32-.88 1.31-1.68 2.65-1.92 4.15 1.48-1.05 3.19-1.99 5.02-2.73.43-.18.93-.01 1.16.39.23.4.12.91-.25 1.18C14.05 9.3 12.5 11.2 12.5 13.5c0 1.38.56 2.63 1.46 3.54.4.4.4 1.05 0 1.45-.4.4-1.05.4-1.45 0C11.1 17.08 10.5 15.36 10.5 13.5c0-1.4.58-2.67 1.5-3.6-2.12 1.14-3.8 2.87-4.5 5.1-.15.48-.59.8-1.08.8-.75 0-1.28-.7-1.05-1.41.86-2.68 2.86-4.78 5.37-6.03.35-.17.77-.07.99.25.22.32.13.76-.2 1.08-.85.83-1.6 1.77-2.15 2.81 2.37-1.63 5.3-2.6 8.3-2.6 1.1 0 2.18.13 3.22.39.46.12.75.58.64 1.04-.11.46-.57.75-1.03.64-1.28-.32-2.58-.43-3.83-.34 2.85.95 4.8 3.58 4.8 6.6 0 4.42-4.03 8-9 8z"/></svg>;
@@ -127,8 +141,20 @@
             return nextSaturday.getTime();
         };
 
+        const timeToMins = (t) => {
+            if (!t) return 0;
+            const [h, m] = t.split(':').map(Number);
+            return h * 60 + m;
+        };
+
+        const minsToTime = (m) => {
+            const h = Math.floor(m / 60);
+            const mins = m % 60;
+            return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+        };
+
         const calculateSpecificDueDate = (subject, givenDateStr) => {
-            if (!subject || !subject.rules || subject.rules.length === 0) return null;
+            if (!subject || !subject.rules || subject.rules.length === 0) return null; 
             
             const givenDate = new Date(givenDateStr);
             const currentDay = givenDate.getDay();
@@ -146,22 +172,12 @@
                     time: rule.dueTime || '22:00'
                 };
             }
-            return null;
+            return null; 
         };
 
         const calculateSmartWindows = (schoolEndTimeStr, anchors) => {
             if (!schoolEndTimeStr || schoolEndTimeStr === '00:00') return null;
             
-            const timeToMins = (t) => {
-                const [h, m] = t.split(':').map(Number);
-                return h * 60 + m;
-            };
-            const minsToTime = (m) => {
-                const h = Math.floor(m / 60);
-                const mins = m % 60;
-                return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
-            };
-
             const schoolEndMins = timeToMins(schoolEndTimeStr);
             let currentMins = schoolEndMins + 45; 
             const endOfDayMins = timeToMins('22:00'); 
@@ -203,7 +219,7 @@
             currentStreakEmojis: [],
             totalPoints: 0,
             weeklyPoints: 0,
-            highestWeeklyPoints: 0,
+            highestWeeklyPoints: 0, 
             nextWeeklyReset: getNextSaturdayNight(),
             subjects: [],
             tasks: [],
@@ -218,7 +234,8 @@
             ],
             pointsHistory: [],
             streakHistory: [],
-            friends: []
+            friends: [],
+            exams: []
         };
 
         function App() {
@@ -230,6 +247,7 @@
                 return { users: {}, activeUser: null };
             });
 
+            // Firebase Sync Effect
             useEffect(() => {
                 localStorage.setItem('studyStreakData_DB_v7', JSON.stringify(globalState));
             }, [globalState]);
@@ -241,6 +259,13 @@
                     if (!prev.activeUser) return prev;
                     const user = prev.users[prev.activeUser];
                     const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
+                    
+                    // סנכרון שקט לפיירבייס בענן בכל עדכון
+                    if (window.db) {
+                        db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
+                          .catch(err => console.error("Error saving to Firebase: ", err));
+                    }
+
                     return {
                         ...prev,
                         users: {
@@ -251,6 +276,7 @@
                 });
             };
 
+            // Reset Weekly Points Logic
             useEffect(() => {
                 if (activeUserData) {
                     const now = new Date().getTime();
@@ -265,6 +291,7 @@
                 }
             }, [globalState.activeUser, activeUserData?.nextWeeklyReset]);
 
+            // Auto-break streak logic
             useEffect(() => {
                 if (activeUserData && activeUserData.taskStreak > 0) {
                     const now = new Date();
@@ -308,15 +335,17 @@
                 }
             }, [globalState.activeUser, activeUserData?.tasks, activeUserData?.taskStreak]);
 
+            // App View States
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toastMessage, setToastMessage] = useState(null);
             const [printMode, setPrintMode] = useState(false);
             const [examPlanData, setExamPlanData] = useState(null);
 
+            // Modals States
             const [modals, setModals] = useState({
                 task: false, complete: false, subject: false, 
                 friend: false, pointsHistory: false, streakHistory: false,
-                addFriend: false, addAnchor: false
+                addFriend: false, addAnchor: false, examPlanner: false, cancelExam: false
             });
 
             useEffect(() => {
@@ -330,18 +359,30 @@
             }, [modals]);
 
             const [activeTask, setActiveTask] = useState(null);
+            const [taskToCancel, setTaskToCancel] = useState(null);
             const [activeFriend, setActiveFriend] = useState(null);
             const [editingSubject, setEditingSubject] = useState(null);
             const [tempRules, setTempRules] = useState([]);
             
+            // Settings Layout State
             const [selectedSettingsDay, setSelectedSettingsDay] = useState(0);
             const [activeDayIndex, setActiveDayIndex] = useState(0);
+
+            // Filters
             const [archiveFilter, setArchiveFilter] = useState('all');
             const [lessonLogFilter, setLessonLogFilter] = useState('all');
+            const [taskFilter, setTaskFilter] = useState('all'); 
+
+            // Modal specific sub-states
             const [taskFormHasHW, setTaskFormHasHW] = useState(true);
             const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [lateReason, setLateReason] = useState('');
             const [otherLateReason, setOtherLateReason] = useState('');
+            
+            // Exam Planner State
+            const [examPlannerData, setExamPlannerData] = useState({ 
+                step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 
+            });
 
             const showToast = (text, type = 'info') => {
                 setToastMessage({ text, type });
@@ -356,20 +397,44 @@
                 const pass = e.target.password.value;
                 if(!user) return;
 
-                setGlobalState(prev => {
-                    const users = { ...prev.users };
-                    if (users[user]) {
-                        if (users[user].password !== pass) {
-                            showToast('סיסמה שגויה למשתמש הקיים!', 'error');
-                            return prev;
+                // שילוב בדיקת פיירבייס בענן למשתמש
+                if (window.db) {
+                    const userRef = db.collection("users").doc(user);
+                    userRef.get().then((doc) => {
+                        if (doc.exists) {
+                            const data = doc.data();
+                            if (data.password !== pass) {
+                                showToast('סיסמה שגויה למשתמש הקיים!', 'error');
+                                return;
+                            }
+                            setGlobalState(prev => ({...prev, users: {...prev.users, [user]: data}, activeUser: user}));
+                            showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
+                        } else {
+                             const newUser = { ...DEFAULT_USER_STATE, password: pass, name: user };
+                             userRef.set(newUser).then(() => {
+                                 setGlobalState(prev => ({...prev, users: {...prev.users, [user]: newUser}, activeUser: user}));
+                                 showToast('חשבון חדש נוצר בהצלחה וסונכרן לענן! ✨', 'success');
+                             });
                         }
-                        showToast(`איזה כיף שחזרת, ${users[user].name}! ✨`, 'success');
-                    } else {
-                        users[user] = { ...DEFAULT_USER_STATE, password: pass, name: user };
-                        showToast('חשבון חדש נוצר בהצלחה! ✨', 'success');
-                    }
-                    return { ...prev, users, activeUser: user };
-                });
+                    }).catch(error => {
+                        console.log("Fallback to local due to error:", error);
+                        // גיבוי לוקאלי אם אין רשת או שהפיירבייס לא הוגדר נכון עדין
+                        setGlobalState(prev => {
+                            const users = { ...prev.users };
+                            if (users[user]) {
+                                if (users[user].password !== pass) {
+                                    showToast('סיסמה שגויה למשתמש הקיים!', 'error');
+                                    return prev;
+                                }
+                                showToast(`איזה כיף שחזרת, ${users[user].name}! ✨ (מצב אופליין)`, 'success');
+                            } else {
+                                users[user] = { ...DEFAULT_USER_STATE, password: pass, name: user };
+                                showToast('חשבון חדש נוצר מקומית (מצב אופליין)', 'success');
+                            }
+                            return { ...prev, users, activeUser: user };
+                        });
+                    });
+                }
             };
 
             const handleLogout = () => {
@@ -379,7 +444,6 @@
 
             const handleAddTask = (taskData, hasHW) => {
                 const now = new Date();
-                const sub = activeUserData.subjects.find(s => s.id === taskData.subjectId);
                 const actualGivenDate = taskData.givenDate || now.toISOString().split('T')[0];
                 
                 if (!hasHW) {
@@ -420,12 +484,18 @@
             const handleCompleteTask = (task, rating, hardExercises, chosenLateReason) => {
                 const now = new Date();
                 const createdAt = new Date(task.createdAt);
-                const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
-                const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
+                let dueDate;
                 
+                if (task.dueDate && task.dueTime) {
+                    dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+                } else {
+                    dueDate = new Date(); 
+                    dueDate.setHours(23,59,59);
+                }
+
+                const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
                 const usedDurationMs = now.getTime() - createdAt.getTime();
-                
                 const isLate = now.getTime() > dueDate.getTime();
                 const isSameDay = now.toDateString() === dueDate.toDateString();
                 
@@ -434,10 +504,13 @@
                 let streakBroken = false;
 
                 if (!isLate) {
-                    if (usedDurationMs <= totalDurationMs / 2) {
-                        pointsDelta = 2; pointsText = 'הוגש ממש מוקדם (פחות מחצי מהזמן)! אלופה.';
+                    if (usedDurationMs <= Math.max(totalDurationMs / 2, 86400000)) { 
+                        pointsDelta = 2; pointsText = 'הוגש מוקדם! אלופה.';
                     } else {
                         pointsDelta = 1; pointsText = 'הוגש בזמן שנקבע.';
+                    }
+                    if (task.isExamPrep) {
+                        pointsDelta += 1; pointsText = 'בוצע סשן למידה למבחן (+נקודת בונוס על השקעה)!';
                     }
                 } else {
                     streakBroken = true;
@@ -472,7 +545,7 @@
                         newStreakStart = now.toISOString();
                         newStreakEmojis = [];
                     }
-                    if (sub && sub.name) newStreakEmojis.push(sub.name);
+                    if (sub && sub.name) newStreakEmojis.push(sub.name); 
                     if (newStreak > newLongest) newLongest = newStreak;
                     streakMessage = `המד עלה ל-${newStreak} 🔥`;
                 } else {
@@ -520,6 +593,76 @@
             const handleDeleteTask = (taskId) => {
                 updateUserData(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== taskId) }));
                 showToast('משימה נמחקה', 'success');
+            };
+
+            const handleCancelExamSessionConfirm = () => {
+                if (!taskToCancel) return;
+                const now = new Date();
+                const sub = activeUserData.subjects.find(s => s.id === taskToCancel.subjectId);
+                
+                updateUserData(prev => {
+                    let newStreak = prev.taskStreak;
+                    let newStreakStart = prev.currentStreakStart;
+                    let newStreakEmojis = [...(prev.currentStreakEmojis || [])];
+                    let newStreakHistory = [...prev.streakHistory];
+                    let streakMessage = '';
+                    
+                    const examIndex = prev.exams ? prev.exams.findIndex(e => e.id === taskToCancel.examId) : -1;
+                    const examsCopy = [...(prev.exams || [])];
+                    
+                    if (examIndex !== -1) {
+                        const exam = examsCopy[examIndex];
+                        exam.cancellations = (exam.cancellations || 0) + 1;
+                        
+                        if (exam.cancellations >= 3) {
+                            if (newStreak > 0) {
+                                newStreakHistory.push({
+                                    id: 'sh_' + Date.now(),
+                                    startDate: newStreakStart,
+                                    endDate: now.toISOString(),
+                                    length: newStreak,
+                                    emojis: newStreakEmojis
+                                });
+                            }
+                            newStreak = 0;
+                            newStreakStart = null;
+                            newStreakEmojis = [];
+                            streakMessage = ' בוטלו 3 מפגשים למבחן זה, הרצף נשבר! 😢';
+                        } else {
+                            streakMessage = ` אזהרה: ${exam.cancellations}/3 ביטולים. ביטול נוסף ישבור את הרצף!`;
+                        }
+                        examsCopy[examIndex] = exam;
+                    }
+
+                    const historyLog = {
+                        id: 'ph_' + Date.now(),
+                        taskId: taskToCancel.id,
+                        taskTitle: taskToCancel.title,
+                        subjectName: sub ? sub.name : 'כללי',
+                        subjectEmoji: sub ? sub.emoji : '📚',
+                        points: -4,
+                        date: now.toISOString(),
+                        details: 'קנס על ביטול מפגש למידה למבחן'
+                    };
+
+                    showToast(`המפגש בוטל. ירדו 4 נקודות.${streakMessage}`, 'warning');
+
+                    return {
+                        ...prev,
+                        tasks: prev.tasks.filter(t => t.id !== taskToCancel.id),
+                        totalPoints: prev.totalPoints - 4,
+                        weeklyPoints: prev.weeklyPoints - 4,
+                        taskStreak: newStreak,
+                        currentStreakStart: newStreakStart,
+                        currentStreakEmojis: newStreakEmojis,
+                        streakHistory: newStreakHistory,
+                        pointsHistory: [historyLog, ...prev.pointsHistory],
+                        exams: examsCopy
+                    };
+                });
+                
+                toggleModal('cancelExam', false);
+                setTaskToCancel(null);
             };
 
             const handleRemoveFromLessonLog = (taskId) => {
@@ -586,17 +729,28 @@
                 const username = e.target.username.value.trim();
                 if(!username) return;
 
-                const newFriend = {
-                    id: 'f_' + Date.now(),
-                    username,
-                    name: username,
-                    streak: Math.floor(Math.random() * 10),
-                    points: Math.floor(Math.random() * 50),
-                    pendingTasks: [{title: 'חיבור באזרחות'}, {title: 'תרגול מתמטיקה 806'}]
-                };
-                updateUserData(prev => ({ ...prev, friends: [...prev.friends, newFriend] }));
-                toggleModal('addFriend', false);
-                showToast(`חבר/ה ${username} התווסף/ה!`, 'success');
+                if (window.db) {
+                    db.collection("users").doc(username).get().then((doc) => {
+                        if (doc.exists) {
+                            const friendData = doc.data();
+                            const newFriend = {
+                                id: 'f_' + Date.now(),
+                                username: username,
+                                name: friendData.name || username,
+                                streak: friendData.taskStreak || 0,
+                                points: friendData.totalPoints || 0,
+                                pendingTasks: friendData.tasks ? friendData.tasks.filter(t => !t.completed).slice(0, 3) : []
+                            };
+                            updateUserData(prev => ({ ...prev, friends: [...prev.friends.filter(f=>f.username !== username), newFriend] }));
+                            toggleModal('addFriend', false);
+                            showToast(`חבר/ה ${friendData.name || username} התווסף/ה וסונכרן מהענן!`, 'success');
+                        } else {
+                            showToast('לא נמצא משתמש כזה במערכת 😢', 'error');
+                        }
+                    }).catch(err => {
+                        showToast('שגיאה בתקשורת עם השרת', 'error');
+                    });
+                }
             };
 
             const handleRemoveFriend = (id) => {
@@ -623,6 +777,115 @@
                     window.print();
                     setPrintMode(false);
                 }, 500);
+            };
+
+            const handleGenerateStudyPlan = (e) => {
+                e.preventDefault();
+                const subId = examPlannerData.subjectId;
+                const targetDate = examPlannerData.date;
+                const hours = examPlannerData.hours;
+                const targetSessions = examPlannerData.targetSessions;
+
+                if (!subId || !targetDate) { showToast('יש למלא מקצוע ותאריך', 'warning'); return; }
+
+                const totalMinutes = hours * 60;
+                const chunkMinutes = Math.ceil(totalMinutes / targetSessions);
+                let remainingMinutes = totalMinutes;
+                const sessions = [];
+
+                const start = new Date();
+                start.setHours(0,0,0,0);
+                const end = new Date(targetDate);
+                end.setHours(0,0,0,0);
+
+                const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+                if (daysDiff <= 0) {
+                    showToast('תאריך המבחן חייב להיות מחר או מאוחר יותר', 'error');
+                    return;
+                }
+
+                let sessionCounter = 0;
+                const nowTime = new Date();
+                const currentMinsNow = nowTime.getHours() * 60 + nowTime.getMinutes();
+                const todayStr = nowTime.toDateString();
+
+                for (let i = 0; i < daysDiff && sessionCounter < targetSessions; i++) {
+                    const current = new Date();
+                    current.setDate(current.getDate() + i);
+                    const dayOfWeek = current.getDay();
+                    const isToday = current.toDateString() === todayStr;
+
+                    const dayPlan = activeUserData.scheduleSettings[dayOfWeek];
+                    const isFreeDay = !dayPlan.schoolEndTime;
+                    const windows = isFreeDay && dayPlan.anchors.length === 0
+                        ? [{ start: '08:00', end: '22:00' }]
+                        : calculateSmartWindows(dayPlan.schoolEndTime || '08:30', dayPlan.anchors);
+
+                    if (!windows) continue;
+
+                    for (let w of windows) {
+                        if (sessionCounter >= targetSessions || remainingMinutes <= 0) break;
+                        let wStartMins = timeToMins(w.start);
+                        let wEndMins = timeToMins(w.end);
+
+                        if (isToday) {
+                            if (wEndMins <= currentMinsNow) continue; 
+                            if (wStartMins < currentMinsNow) {
+                                wStartMins = currentMinsNow + 15; 
+                            }
+                        }
+
+                        const windowDuration = wEndMins - wStartMins;
+
+                        if (windowDuration >= 30) {
+                            const sessionDuration = Math.min(windowDuration, remainingMinutes, chunkMinutes); 
+                            remainingMinutes -= sessionDuration;
+
+                            sessions.push({
+                                id: 'ses_' + Date.now() + Math.random(),
+                                date: current.toISOString().split('T')[0],
+                                startTime: minsToTime(wStartMins),
+                                endTime: minsToTime(wStartMins + sessionDuration),
+                                duration: sessionDuration
+                            });
+                            sessionCounter++;
+                        }
+                    }
+                }
+
+                setExamPlannerData({...examPlannerData, step: 2, sessions, remainingMinutes});
+            };
+
+            const handleConfirmStudyPlan = () => {
+                const sub = activeUserData.subjects.find(s => s.id === examPlannerData.subjectId);
+                const newExamId = 'ex_' + Date.now();
+                const examTitle = examPlannerData.examName || 'מבחן';
+                
+                const newTasks = examPlannerData.sessions.map((ses, idx) => ({
+                    id: 't_' + Date.now() + idx,
+                    examId: newExamId,
+                    subjectId: examPlannerData.subjectId,
+                    title: `למידה ל${examTitle} ב${sub?.name || 'כללי'} (מפגש ${idx+1}/${examPlannerData.sessions.length})`,
+                    lessonTopic: `הכנה למבחן: ${examTitle}`,
+                    createdAt: new Date().toISOString(),
+                    completed: false,
+                    isLessonLog: false,
+                    isExamPrep: true,
+                    givenDate: new Date().toISOString().split('T')[0],
+                    dueDate: ses.date,
+                    startTime: ses.startTime,
+                    dueTime: ses.endTime
+                }));
+
+                updateUserData(prev => ({
+                    ...prev,
+                    tasks: [...prev.tasks, ...newTasks],
+                    exams: [...(prev.exams || []), { id: newExamId, examName: examTitle, subjectId: examPlannerData.subjectId, date: examPlannerData.date, targetHours: examPlannerData.hours, sessionsCount: examPlannerData.sessions.length, cancellations: 0 }]
+                }));
+
+                toggleModal('examPlanner', false);
+                showToast(`שובצו ${examPlannerData.sessions.length} מפגשי למידה בהצלחה! תוכלי לראות אותם במשימות. 🧠`, 'success');
+                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 });
             };
 
             if (printMode && examPlanData) {
@@ -673,12 +936,12 @@
 
             if (!globalState.activeUser || !activeUserData) {
                 return (
-                    <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] p-4 pt-[env(safe-area-inset-top)] pb-[env(safe-area-inset-bottom)]" dir="rtl">
+                    <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] p-4" dir="rtl">
                         <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] w-full max-w-sm border border-stone-100 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full blur-3xl -mr-16 -mt-16 opacity-60 pointer-events-none"></div>
                             <div className="absolute bottom-0 left-0 w-32 h-32 bg-rose-100 rounded-full blur-3xl -ml-16 -mb-16 opacity-60 pointer-events-none"></div>
                             
-                            <div className="text-center mb-8 relative z-10 select-none">
+                            <div className="text-center mb-8 relative z-10">
                                 <span className="text-5xl inline-block mb-4 drop-shadow-sm">✨</span>
                                 <h1 className="text-3xl font-bold text-stone-800 tracking-tight">StudyStreak Pro</h1>
                                 <p className="text-sm text-stone-500 font-medium mt-1">מנהלים את שנת י"ב בסטייל</p>
@@ -695,19 +958,19 @@
 
                             <form onSubmit={handleLogin} className="space-y-5 relative z-10">
                                 <div>
-                                    <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">שם משתמש</label>
+                                    <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">שם משתמש / אימייל</label>
                                     <input name="username" type="text" dir="rtl" required className="w-full text-right p-4 bg-stone-50 rounded-xl border border-stone-200 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400 focus:bg-white transition-all outline-none" placeholder="הקלידי שם..." />
                                 </div>
                                 <div>
                                     <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">סיסמה</label>
                                     <input name="password" type="password" dir="rtl" required className="w-full text-right p-4 bg-stone-50 rounded-xl border border-stone-200 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400 focus:bg-white transition-all outline-none" placeholder="הקלידי סיסמה..." />
                                 </div>
-                                <button type="submit" className="w-full py-4 bg-gradient-to-r from-purple-500 to-fuchsia-500 hover:from-purple-600 hover:to-fuchsia-600 text-white rounded-xl font-bold shadow-md shadow-purple-500/20 transition-all mt-4 text-sm tracking-wide">
-                                    כניסה / הרשמה
+                                <button type="submit" className="w-full py-4 bg-gradient-to-r from-purple-500 to-fuchsia-500 hover:from-purple-600 hover:to-fuchsia-600 text-white rounded-xl font-bold shadow-md shadow-purple-500/20 transition-all mt-4 text-sm tracking-wide active:scale-95">
+                                    כניסה / הרשמה (מסונכרן לענן)
                                 </button>
                             </form>
-                            <div className="text-center text-[11px] text-stone-400 mt-6 font-medium relative z-10 select-none">
-                                משתמשת חדשה? פשוט הקלידי שם וסיסמה והחשבון ייווצר אוטומטית.
+                            <div className="text-center text-[11px] text-stone-400 mt-6 font-medium relative z-10">
+                                משתמשת חדשה? הקלידי שם וסיסמה והחשבון ייווצר בענן.
                             </div>
                         </div>
                     </div>
@@ -715,7 +978,7 @@
             }
 
             const Navigation = () => (
-                <nav className="flex md:flex-col gap-2 flex-1 w-full hide-scrollbar select-none">
+                <nav className="flex md:flex-col gap-2 flex-1 w-full hide-scrollbar">
                     {[
                         { id: 'dashboard', label: 'ראשי', icon: IconSparkle },
                         { id: 'tasks', label: 'משימות', icon: IconList },
@@ -730,10 +993,10 @@
                         const isActive = activeTab === item.id;
                         return (
                             <button key={item.id} onClick={() => setActiveTab(item.id)}
-                                className={`flex flex-col md:flex-row items-center md:justify-start justify-center gap-1.5 md:gap-3 px-4 py-3 md:py-3.5 rounded-2xl text-[11px] md:text-sm font-semibold transition-all flex-shrink-0 min-w-[76px] md:min-w-0 ${
+                                className={`flex flex-col md:flex-row items-center md:justify-start justify-center gap-1.5 md:gap-3 px-4 py-3 md:py-3.5 rounded-2xl text-[11px] md:text-sm font-semibold transition-all flex-shrink-0 min-w-[72px] md:min-w-0 active:scale-95 ${
                                     isActive ? 'bg-purple-50 text-purple-700 font-bold' : 'text-stone-500 hover:bg-stone-50 hover:text-stone-800'
                                 }`}>
-                                <Icon className={`w-6 h-6 md:w-5 md:h-5 ${isActive ? 'text-purple-600' : 'text-stone-400'}`} />
+                                <Icon className={`w-5 h-5 md:w-5 md:h-5 ${isActive ? 'text-purple-600' : 'text-stone-400'}`} />
                                 <span className="whitespace-nowrap">{item.label}</span>
                             </button>
                         );
@@ -742,11 +1005,11 @@
             );
 
             return (
-                <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print bg-[#fafaf9]" dir="rtl">
+                <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print" dir="rtl">
                     
                     {/* Toast Notification */}
                     {toastMessage && (
-                        <div className="fixed top-[env(safe-area-inset-top,1rem)] left-1/2 -translate-x-1/2 z-[80] max-w-sm w-11/12 animate-[bounce_0.5s_ease-out] mt-4">
+                        <div className="fixed top-safe-top left-1/2 -translate-x-1/2 mt-4 z-[80] max-w-sm w-11/12 animate-[bounce_0.5s_ease-out]">
                             <div className={`flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-lg border text-sm font-semibold ${
                                 toastMessage.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
                                 toastMessage.type === 'error' ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-amber-50 text-amber-700 border-amber-200'
@@ -758,7 +1021,7 @@
                     )}
 
                     {/* Desktop Sidebar */}
-                    <aside className="hidden md:flex flex-col w-72 bg-white/80 backdrop-blur-xl border-l border-stone-200 p-6 sticky top-0 h-screen overflow-y-auto custom-scrollbar select-none pt-[env(safe-area-inset-top,1.5rem)]">
+                    <aside className="hidden md:flex flex-col w-72 bg-white/80 backdrop-blur-xl border-l border-stone-200 p-6 sticky top-0 h-screen overflow-y-auto custom-scrollbar">
                         <div className="flex items-center justify-between mb-10">
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-rose-100 rounded-xl flex items-center justify-center text-xl shadow-sm">✨</div>
@@ -769,55 +1032,53 @@
                             </div>
                         </div>
 
-                        <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-5 rounded-3xl mb-8 cursor-pointer hover:shadow-lg transition-all shadow-md group relative overflow-hidden" 
+                        <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-5 rounded-3xl mb-8 cursor-pointer hover:shadow-lg transition-all shadow-md group relative overflow-hidden active:scale-95" 
                              onClick={() => toggleModal('streakHistory', true)}>
-                            <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10"></div>
-                            <div className="text-xs text-stone-400 font-medium mb-1 relative z-10 flex justify-between items-center">
-                                <span>מד רצף משימות</span>
+                            <div className="absolute top-0 right-0 w-24 h-24 bg-white/5 rounded-full blur-2xl -mr-10 -mt-10 pointer-events-none"></div>
+                            <div className="relative z-10 flex justify-between items-center mb-1">
+                                <span className="text-xs text-stone-400 font-medium">מד רצף משימות</span>
                             </div>
-                            <div className="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-rose-300 relative z-10 group-hover:scale-105 transition-transform origin-right flex items-center gap-2">
-                                <span>{activeUserData.taskStreak}</span> <span>🔥</span>
+                            <div className="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-purple-300 to-rose-300 relative z-10 group-hover:scale-105 transition-transform origin-right flex items-center gap-2 drop-shadow-sm">
+                                <span className="text-white drop-shadow-md">{activeUserData.taskStreak}</span> <span className="text-3xl drop-shadow-md">🔥</span>
                             </div>
                         </div>
 
                         <Navigation />
                         
-                        <div className="mt-auto pt-6 pb-[env(safe-area-inset-bottom,1rem)]">
-                            <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all">
+                        <div className="mt-auto pt-6">
+                            <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all active:scale-95">
                                 <IconPlus className="w-4 h-4" /> הוספת שיעור/משימה
                             </button>
-                            <button onClick={handleLogout} className="w-full mt-3 py-3 text-sm text-stone-500 hover:text-rose-600 font-semibold bg-stone-50 hover:bg-rose-50 rounded-2xl transition-colors flex items-center justify-center gap-2">
+                            <button onClick={handleLogout} className="w-full mt-3 py-3 text-sm text-stone-500 hover:text-rose-600 font-semibold bg-stone-50 hover:bg-rose-50 rounded-2xl transition-colors flex items-center justify-center gap-2 active:scale-95">
                                 התנתקות
                             </button>
                         </div>
                     </aside>
 
-                    {/* Mobile Header */}
-                    <header className="md:hidden flex justify-between items-center bg-white/90 backdrop-blur-md p-4 sticky top-0 z-40 border-b border-stone-100 select-none pt-[calc(env(safe-area-inset-top,0px)+1rem)]">
+                    {/* Mobile Header & Bottom Nav */}
+                    <header className="md:hidden flex justify-between items-center bg-white/90 backdrop-blur-md p-4 sticky top-0 z-40 border-b border-stone-100 pt-safe-top">
                         <div className="flex items-center gap-2.5">
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
                         </div>
                         <div className="flex gap-2 items-center">
-                            <button onClick={()=>toggleModal('streakHistory', true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95 transition-transform">
+                            <button onClick={()=>toggleModal('streakHistory', true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95">
                                 <span>🔥</span> {activeUserData.taskStreak}
                             </button>
-                            <button onClick={handleLogout} className="bg-stone-50 text-stone-500 p-2 rounded-xl active:bg-stone-100"><IconX className="w-4 h-4"/></button>
+                            <button onClick={handleLogout} className="bg-stone-50 text-stone-500 p-2 rounded-xl active:bg-stone-100 active:scale-95"><IconX className="w-4 h-4"/></button>
                         </div>
                     </header>
-
-                    {/* Mobile Bottom Nav - With safe area padding for modern phones (PWA behavior) */}
-                    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-xl border-t border-stone-200 z-40 no-print shadow-[0_-10px_40px_rgba(0,0,0,0.05)] pb-[env(safe-area-inset-bottom)] overflow-x-auto hide-scrollbar flex px-2 pt-2 select-none">
+                    <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-stone-200 z-40 no-print shadow-[0_-10px_40px_rgba(0,0,0,0.05)] pb-safe-bottom overflow-x-auto hide-scrollbar flex px-2 pt-2">
                         <Navigation />
                     </nav>
 
-                    {/* Main Content Area */}
-                    <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 lg:p-10 relative z-10 pb-[calc(env(safe-area-inset-bottom)+5rem)] md:pb-10">
+                    <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-8 lg:p-10 relative z-10">
                         
+                        {/* TAB: Dashboard */}
                         {activeTab === 'dashboard' && (
                             <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
                                 <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors group flex flex-col justify-between" onClick={() => toggleModal('streakHistory', true)}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors group flex flex-col justify-between active:scale-95" onClick={() => toggleModal('streakHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2 flex items-center justify-between">
                                             <span>מד משימות</span>
                                             <IconFlame className="w-4 h-4 text-rose-400 group-hover:scale-110 transition-transform" />
@@ -826,15 +1087,15 @@
                                             <div className="text-3xl font-bold text-stone-800">{activeUserData.taskStreak}</div>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors" onClick={() => toggleModal('pointsHistory', true)}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
                                         <div className="text-3xl font-bold text-purple-600">{activeUserData.weeklyPoints}</div>
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors" onClick={() => toggleModal('pointsHistory', true)}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
                                         <div className="text-3xl font-bold text-emerald-600">{activeUserData.totalPoints}</div>
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors" onClick={() => setActiveTab('tasks')}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => setActiveTab('tasks')}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">משימות פתוחות</div>
                                         <div className="text-3xl font-bold text-rose-500">{activeUserData.tasks.filter(t => !t.completed).length}</div>
                                     </div>
@@ -850,7 +1111,14 @@
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        {activeUserData.tasks.filter(t => !t.completed).sort((a,b) => new Date(`${a.dueDate}T${a.dueTime}`) - new Date(`${b.dueDate}T${b.dueTime}`)).slice(0,4).map(task => {
+                                        {activeUserData.tasks
+                                            .filter(t => !t.completed)
+                                            .sort((a,b) => {
+                                                const timeA = (a.dueDate && a.dueTime) ? new Date(`${a.dueDate}T${a.dueTime}`).getTime() : Infinity;
+                                                const timeB = (b.dueDate && b.dueTime) ? new Date(`${b.dueDate}T${b.dueTime}`).getTime() : Infinity;
+                                                return timeA - timeB;
+                                            })
+                                            .slice(0,4).map(task => {
                                             const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                             const isLate = task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
                                             return (
@@ -861,13 +1129,13 @@
                                                                 {sub?.emoji} {sub?.name || 'ללא מקצוע'}
                                                             </span>
                                                             <span className={`text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1.5 border ${isLate ? 'text-rose-600 bg-rose-50 border-rose-100/50' : 'text-stone-600 bg-stone-50 border-stone-200/50'}`}>
-                                                                <IconCalendar className="w-3.5 h-3.5"/> <span dir="ltr">{task.dueDate ? `${new Date(task.dueDate).toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'})} • ${task.dueTime}` : 'לא הוגדר'}</span>
+                                                                <IconCalendar className="w-3.5 h-3.5"/> <span dir="rtl">{task.dueDate ? `${new Date(task.dueDate).toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'})} • ${task.startTime ? `מ-${task.startTime} עד ` : ''}${task.dueTime}` : 'לא הוגדר'}</span>
                                                             </span>
                                                         </div>
                                                         <div className="font-bold text-stone-800 text-base">{task.title}</div>
                                                         {task.lessonTopic && <div className="text-sm text-stone-500 mt-1">{task.lessonTopic}</div>}
                                                     </div>
-                                                    <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`w-full border px-4 py-3 rounded-xl transition-colors font-bold text-sm flex items-center justify-center gap-2 active:scale-[0.98] ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
+                                                    <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`w-full border px-4 py-3 rounded-xl transition-colors font-bold text-sm flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                         <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
                                                     </button>
                                                 </div>
@@ -884,20 +1152,61 @@
                             </div>
                         )}
 
-                        {activeTab === 'tasks' && (
+                        {/* TAB: Tasks */}
+                        {activeTab === 'tasks' && (() => {
+                            const mainTasksList = activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed));
+                            const taskSubjects = [...new Set(mainTasksList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
+                            
+                            const sortedFilteredTasks = mainTasksList
+                                .filter(t => taskFilter === 'all' ? true : t.subjectId === taskFilter)
+                                .sort((a, b) => {
+                                    if (a.completed && !b.completed) return 1;
+                                    if (!a.completed && b.completed) return -1;
+                                    if (!a.completed && !b.completed) {
+                                        const timeA = (a.dueDate && a.dueTime) ? new Date(`${a.dueDate}T${a.dueTime}`).getTime() : Infinity;
+                                        const timeB = (b.dueDate && b.dueTime) ? new Date(`${b.dueDate}T${b.dueTime}`).getTime() : Infinity;
+                                        return timeA - timeB;
+                                    }
+                                    if (a.completed && b.completed) {
+                                        return new Date(b.completedAt).getTime() - new Date(a.completedAt).getTime();
+                                    }
+                                    return 0;
+                                });
+
+                            return (
                             <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                                 <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4 bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div>
                                         <h2 className="text-2xl font-bold text-stone-800 tracking-tight">רשימת משימות ושיעורי בית</h2>
-                                        <p className="text-sm text-stone-500 mt-1">כל שיעורי הבית שלך שצריך להגיש (לנושאי לימוד נטו - היכנסי ליומן שיעורים).</p>
+                                        <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות (מועד ההגשה הקרוב ביותר למעלה).</p>
                                     </div>
                                     <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
                                         <IconPlus className="w-4 h-4"/> הוספת חדש
                                     </button>
                                 </div>
                                 
+                                {taskSubjects.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 pb-2">
+                                        <button 
+                                            onClick={() => setTaskFilter('all')}
+                                            className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${taskFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                        >
+                                            הכל ביחד
+                                        </button>
+                                        {taskSubjects.map(sub => (
+                                            <button 
+                                                key={sub.id}
+                                                onClick={() => setTaskFilter(sub.id)}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${taskFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                            >
+                                                <span>{sub.emoji}</span> {sub.name}
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+
                                 <div className="grid grid-cols-1 gap-4">
-                                    {activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed)).map(task => {
+                                    {sortedFilteredTasks.map(task => {
                                         const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                         const isLate = !task.completed && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
                                         return (
@@ -908,9 +1217,14 @@
                                                             <span className="text-xs px-2 py-1 rounded-lg font-bold shadow-sm" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
                                                                 {sub?.emoji} {sub?.name || 'כללי'}
                                                             </span>
+                                                            {task.isExamPrep && (
+                                                                <span className="text-[10px] font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
+                                                                    <span>🎯</span> סשן למידה
+                                                                </span>
+                                                            )}
                                                             {!task.isLessonLog && !task.completed && task.dueDate && (
                                                                 <span className={`text-xs font-medium px-2 py-1 rounded-lg ${isLate ? 'text-rose-600 bg-rose-100 border border-rose-200 font-bold' : 'text-stone-500 bg-stone-100'}`}>
-                                                                    {isLate ? 'זמן ההגשה עבר: ' : 'להגשה: '} <span dir="ltr">{new Date(task.dueDate).toLocaleDateString('he-IL')} {task.dueTime}</span>
+                                                                    {isLate ? (task.isExamPrep ? 'זמן הלמידה עבר: ' : 'זמן ההגשה עבר: ') : (task.isExamPrep ? 'מתוכנן ל: ' : 'להגשה: ')} <span dir="rtl">{new Date(task.dueDate).toLocaleDateString('he-IL')} {task.startTime ? `מ-${task.startTime} עד ` : ''}{task.dueTime}</span>
                                                                 </span>
                                                             )}
                                                             {task.completed && !task.isLessonLog && (
@@ -942,25 +1256,33 @@
                                                     
                                                     <div className="flex md:flex-col gap-2 w-full md:w-auto shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4">
                                                         {!task.completed && (
-                                                            <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 md:flex-none border px-4 py-3 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 active:scale-[0.98] ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
+                                                            <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 md:flex-none border px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
                                                                 <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי'}
                                                             </button>
                                                         )}
-                                                        <button onClick={() => handleDeleteTask(task.id)} className="flex-1 md:flex-none bg-stone-50 text-stone-500 border border-stone-200 p-3 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-[0.98]">
-                                                            <IconTrash className="w-4 h-4"/> מחיקה
-                                                        </button>
+                                                        {task.isExamPrep ? (
+                                                            <button onClick={() => { setTaskToCancel(task); toggleModal('cancelExam', true); }} className="flex-1 md:flex-none bg-stone-50 text-rose-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
+                                                                <IconTrash className="w-4 h-4"/> ביטול למידה
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={() => handleDeleteTask(task.id)} className="flex-1 md:flex-none bg-stone-50 text-stone-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
+                                                                <IconTrash className="w-4 h-4"/> מחיקה
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             </div>
                                         )
                                     })}
-                                    {activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed)).length === 0 && <div className="text-stone-400 text-base font-medium text-center py-16 bg-white rounded-3xl border border-stone-200 border-dashed">אין משימות ברשימה. הוספי משימה חדשה כדי להתחיל!</div>}
+                                    {sortedFilteredTasks.length === 0 && <div className="text-stone-400 text-base font-medium text-center py-16 bg-white rounded-3xl border border-stone-200 border-dashed">אין משימות ברשימה. הוספי משימה חדשה כדי להתחיל!</div>}
                                 </div>
                             </div>
-                        )}
+                            )
+                        })()}
 
+                        {/* TAB: Lesson Log */}
                         {activeTab === 'lesson_log' && (() => {
-                            const lessonTasks = activeUserData.tasks.filter(t => t.lessonTopic && t.lessonTopic.trim() !== '');
+                            const lessonTasks = activeUserData.tasks.filter(t => t.lessonTopic && t.lessonTopic.trim() !== '' && !t.isExamPrep);
                             const logSubjects = [...new Set(lessonTasks.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
                             const filteredLogs = lessonLogFilter === 'all' ? lessonTasks : lessonTasks.filter(t => t.subjectId === lessonLogFilter);
 
@@ -977,7 +1299,7 @@
                                         <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-stone-100">
                                             <button 
                                                 onClick={() => setLessonLogFilter('all')}
-                                                className={`px-4 py-2 rounded-full text-sm font-bold transition-all border ${lessonLogFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${lessonLogFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                             >
                                                 הכל ביחד
                                             </button>
@@ -985,7 +1307,7 @@
                                                 <button 
                                                     key={sub.id}
                                                     onClick={() => setLessonLogFilter(sub.id)}
-                                                    className={`px-4 py-2 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 ${lessonLogFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                                    className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${lessonLogFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                                 >
                                                     <span>{sub.emoji}</span> {sub.name}
                                                 </button>
@@ -1029,6 +1351,7 @@
                             );
                         })()}
 
+                        {/* TAB: Settings */}
                         {activeTab === 'settings' && (
                             <div className="space-y-8 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
@@ -1037,7 +1360,7 @@
                                             <h2 className="text-xl font-bold text-stone-800 tracking-tight">מקצועות וכללי הגשה</h2>
                                             <p className="text-sm text-stone-500 mt-1">הגדירי אילו מקצועות את לומדת ומתי מגישים בהם שיעורים.</p>
                                         </div>
-                                        <button onClick={() => { setEditingSubject(null); setTempRules([]); toggleModal('subject', true); }} className="bg-purple-100 text-purple-700 px-4 py-2.5 rounded-xl text-sm font-bold shadow-sm hover:bg-purple-200 transition-colors flex items-center gap-2 active:scale-95">
+                                        <button onClick={() => { setEditingSubject(null); setTempRules([]); toggleModal('subject', true); }} className="bg-purple-100 text-purple-700 px-4 py-3 rounded-xl text-sm font-bold shadow-sm hover:bg-purple-200 transition-colors flex items-center gap-2 active:scale-95">
                                             <IconPlus className="w-4 h-4"/> הוספת מקצוע
                                         </button>
                                     </div>
@@ -1051,8 +1374,8 @@
                                                         {sub.emoji} {sub.name}
                                                     </div>
                                                     <div className="flex gap-1.5">
-                                                        <button onClick={() => { setEditingSubject(sub); setTempRules(sub.rules || []); toggleModal('subject', true); }} className="text-stone-500 text-xs font-bold bg-white border border-stone-200 px-3 py-1.5 rounded-lg hover:bg-stone-100 transition-colors active:scale-95">עריכה</button>
-                                                        <button onClick={() => handleDeleteSubject(sub.id)} className="text-rose-500 text-xs font-bold bg-white border border-rose-100 px-3 py-1.5 rounded-lg hover:bg-rose-50 transition-colors active:scale-95"><IconTrash className="w-3.5 h-3.5"/></button>
+                                                        <button onClick={() => { setEditingSubject(sub); setTempRules(sub.rules || []); toggleModal('subject', true); }} className="text-stone-500 text-xs font-bold bg-white border border-stone-200 px-3 py-2 rounded-lg hover:bg-stone-100 transition-colors active:scale-95">עריכה</button>
+                                                        <button onClick={() => handleDeleteSubject(sub.id)} className="text-rose-500 text-xs font-bold bg-white border border-rose-100 px-3 py-2 rounded-lg hover:bg-rose-50 transition-colors active:scale-95"><IconTrash className="w-3.5 h-3.5"/></button>
                                                     </div>
                                                 </div>
                                                 <div className="bg-white rounded-xl p-3 text-xs text-stone-600 space-y-1.5 border border-stone-100">
@@ -1081,7 +1404,7 @@
                                             <button 
                                                 key={idx} 
                                                 onClick={() => setSelectedSettingsDay(idx)}
-                                                className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${selectedSettingsDay === idx ? 'bg-purple-100 border-purple-300 text-purple-800 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}
+                                                className={`px-4 py-2.5 rounded-xl text-sm font-bold transition-all border active:scale-95 ${selectedSettingsDay === idx ? 'bg-purple-100 border-purple-300 text-purple-800 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}
                                             >
                                                 {day}
                                                 {activeUserData.scheduleSettings[idx].schoolEndTime && <div className="w-1.5 h-1.5 bg-emerald-400 rounded-full inline-block mr-2"></div>}
@@ -1090,11 +1413,10 @@
                                     </div>
 
                                     <div className="bg-stone-50 p-6 rounded-2xl border border-stone-200 animate-[fadeIn_0.2s_ease-out]">
-                                        <div className="flex justify-between items-center mb-6 border-b border-stone-200/60 pb-4">
+                                        <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 border-b border-stone-200/60 pb-4">
                                             <h3 className="font-bold text-lg text-stone-800">הגדרות ליום {DAYS_HE[selectedSettingsDay]}</h3>
                                             <div className="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-stone-200 shadow-sm">
-                                                <label className="text-sm font-bold text-stone-600 hidden sm:block">שעת סיום בי"ס:</label>
-                                                <label className="text-sm font-bold text-stone-600 sm:hidden">בי"ס עד:</label>
+                                                <label className="text-sm font-bold text-stone-600">שעת סיום בי"ס:</label>
                                                 <input type="time" value={activeUserData.scheduleSettings[selectedSettingsDay].schoolEndTime} onChange={(e) => handleSchoolTimeChange(selectedSettingsDay, e.target.value)} className="p-1 border-b-2 border-stone-200 text-sm font-bold bg-transparent outline-none w-24 focus:border-purple-400 transition-colors" />
                                             </div>
                                         </div>
@@ -1109,10 +1431,10 @@
                                             <div className="space-y-2">
                                                 {activeUserData.scheduleSettings[selectedSettingsDay].anchors.length === 0 ? <div className="text-sm text-stone-400 font-medium py-4 text-center bg-white rounded-xl border border-dashed border-stone-200">אין התחייבויות קבועות ביום זה.</div> : (
                                                     activeUserData.scheduleSettings[selectedSettingsDay].anchors.map(a => (
-                                                        <div key={a.id} className="flex justify-between items-center bg-white border border-stone-200 px-4 py-3 rounded-xl shadow-sm">
+                                                        <div key={a.id} className="flex flex-col sm:flex-row sm:justify-between sm:items-center bg-white border border-stone-200 px-4 py-3 rounded-xl shadow-sm gap-2">
                                                             <span className="font-bold text-stone-700">{a.title}</span>
-                                                            <div className="flex items-center gap-3">
-                                                                <span className="text-stone-600 font-bold bg-stone-50 border border-stone-100 px-2 py-1 rounded-lg text-xs" dir="ltr">{a.start}-{a.end}</span>
+                                                            <div className="flex items-center gap-4 justify-between w-full sm:w-auto">
+                                                                <span className="text-stone-600 font-bold bg-stone-50 border border-stone-100 px-3 py-1 rounded-lg text-sm" dir="ltr">מ-{a.start} עד {a.end}</span>
                                                                 <button onClick={() => handleDeleteAnchor(selectedSettingsDay, a.id)} className="text-stone-400 hover:text-rose-500 transition-colors p-2 bg-stone-50 rounded-lg active:scale-95"><IconTrash className="w-4 h-4"/></button>
                                                             </div>
                                                         </div>
@@ -1125,6 +1447,7 @@
                             </div>
                         )}
 
+                        {/* TAB: Schedule Planning */}
                         {activeTab === 'schedule' && (
                             <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
@@ -1152,7 +1475,7 @@
                                                                 {dayPlan.anchors.map(a => (
                                                                     <div key={a.id} className="bg-white border border-stone-200 px-3 py-2 rounded-xl text-xs flex justify-between items-center shadow-sm">
                                                                         <span className="font-bold text-stone-700">{a.title}</span>
-                                                                        <span className="text-stone-500 font-medium bg-stone-50 px-1.5 py-0.5 rounded" dir="ltr">{a.start} - {a.end}</span>
+                                                                        <span className="text-stone-500 font-medium bg-stone-50 px-1.5 py-0.5 rounded" dir="rtl">מ-{a.start} עד {a.end}</span>
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -1160,8 +1483,8 @@
                                                         
                                                         <div className="mt-auto pt-4">
                                                             {isFreeDay && dayPlan.anchors.length === 0 ? (
-                                                                <div className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded-2xl border border-emerald-100 font-bold flex items-center gap-2 text-center">
-                                                                    <span>🎉</span> אין עוגנים היום. כל היום פנוי ללמידה!
+                                                                <div className="text-xs text-emerald-700 bg-emerald-50 p-3 rounded-2xl border border-emerald-100 font-bold flex items-center gap-2 text-center justify-center">
+                                                                    <span>🎉</span> אין עוגנים. יום פנוי ללמידה!
                                                                 </div>
                                                             ) : windows && windows.length > 0 ? (
                                                                 <div className="bg-purple-50/80 border border-purple-100 p-3 rounded-2xl">
@@ -1171,14 +1494,14 @@
                                                                     <div className="space-y-2">
                                                                         {windows.map((w, i) => (
                                                                             <div key={i} className="flex justify-between items-center text-xs bg-white/60 p-2 rounded-xl">
-                                                                                <span className="font-bold text-purple-700 bg-white px-2 py-1 rounded-lg shadow-sm border border-purple-100/50" dir="ltr">{w.start} - {w.end}</span>
+                                                                                <span className="font-bold text-purple-700 bg-white px-2 py-1 rounded-lg shadow-sm border border-purple-100/50" dir="rtl">מ-{w.start} עד {w.end}</span>
                                                                                 <span className="text-[10px] text-purple-600/80 font-medium">{w.reason}</span>
                                                                             </div>
                                                                         ))}
                                                                     </div>
                                                                 </div>
                                                             ) : !isFreeDay ? (
-                                                                <div className="text-xs text-rose-600 bg-rose-50 p-3 rounded-2xl border border-rose-100 font-bold flex items-center gap-2">
+                                                                <div className="text-xs text-rose-600 bg-rose-50 p-3 rounded-2xl border border-rose-100 font-bold flex items-center gap-2 justify-center">
                                                                     <span>⚠️</span> יום צפוף. אין חלון רציף של 45 דק'.
                                                                 </div>
                                                             ) : null}
@@ -1192,6 +1515,7 @@
                             </div>
                         )}
 
+                        {/* TAB: Exam Prep */}
                         {activeTab === 'exam_prep' && (() => {
                             const hardExercisesList = activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '');
                             const subjectsWithArchive = [...new Set(hardExercisesList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1202,13 +1526,54 @@
 
                             return (
                             <div className="space-y-8 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                                
+                                {/* 🎯 מחולל למידה חכם (Study Planner) */}
+                                <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] relative overflow-hidden group">
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-50 rounded-full blur-3xl -mr-20 -mt-20 pointer-events-none transition-transform group-hover:scale-110"></div>
+                                    <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 relative z-10">
+                                        <div>
+                                            <h2 className="text-2xl font-bold text-stone-800 tracking-tight flex items-center gap-2">
+                                                <span>🗓️</span> מחולל למידה אוטומטי
+                                            </h2>
+                                            <p className="text-sm text-stone-500 mt-2 max-w-xl leading-relaxed">
+                                                הזיני מבחן קרוב. המערכת תסרוק את הלו"ז שלך (שעות בי"ס ועוגנים) ותשבץ עבורך זמני למידה אידיאליים בחלונות הפנויים בימים שלפני המבחן.
+                                            </p>
+                                        </div>
+                                        <button onClick={() => toggleModal('examPlanner', true)} className="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-6 py-4 rounded-2xl text-sm font-bold shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 shrink-0">
+                                            <IconSparkle className="w-4 h-4"/> תכנון למידה חכם
+                                        </button>
+                                    </div>
+
+                                    {(activeUserData.exams || []).length > 0 && (
+                                        <div className="mt-6 pt-6 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 relative z-10">
+                                            {(activeUserData.exams || []).sort((a,b) => new Date(a.date) - new Date(b.date)).map(exam => {
+                                                const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
+                                                const isPassed = new Date(exam.date) < new Date();
+                                                return (
+                                                    <div key={exam.id} className={`p-4 rounded-2xl border ${isPassed ? 'bg-stone-50 border-stone-200 opacity-70' : 'bg-white border-indigo-100 shadow-sm'}`}>
+                                                        <div className="flex justify-between items-start mb-1">
+                                                            <div className="text-xs font-bold text-stone-500" dir="ltr">{new Date(exam.date).toLocaleDateString('he-IL')}</div>
+                                                            {exam.cancellations > 0 && !isPassed && <div className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 rounded">ביטולים: {exam.cancellations}/3</div>}
+                                                        </div>
+                                                        <div className={`font-bold text-base ${isPassed ? 'text-stone-600' : 'text-stone-800'}`}>{exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}</div>
+                                                        <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
+                                                            תוכננו {exam.sessionsCount} מפגשים ({exam.targetHours} שעות)
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* הפקת דוח למבחן PDF */}
                                 <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 md:p-8 rounded-3xl border border-purple-100 shadow-sm relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-64 h-64 bg-white/40 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
                                     <h2 className="text-2xl font-bold mb-3 text-stone-800 flex items-center gap-3 relative z-10">
                                         <span className="text-3xl">📄</span> הפקת דוח הכנה למבחן
                                     </h2>
                                     <p className="text-sm text-stone-600 mb-6 font-medium max-w-2xl relative z-10 leading-relaxed">
-                                        בנינו אלגוריתם שמרכז את כל שיעורי הבית שעשית. בחרי מקצוע, והמערכת תפיק מסמך מרוכז (PDF/הדפסה) שכולל את הנושאים שבהם דירגת הבנה נמוכה, וריכוז של כל התרגילים שסימנת כקשים במהלך השנה.
+                                        בנינו אלגוריתם שמרכז את כל שיעורי הבית שעשית. בחרי מקצוע, והמערכת תפיק מסמך מרוכז להדפסה שכולל את הנושאים החלשים ותרגילים שסומנו כקשים.
                                     </p>
                                     <div className="flex flex-col sm:flex-row gap-3 relative z-10 bg-white/60 p-2 rounded-2xl backdrop-blur-sm border border-white/40 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)]">
                                         <select id="examSub" className="p-4 border-none bg-transparent rounded-xl flex-1 text-sm text-stone-800 font-bold outline-none cursor-pointer focus:ring-2 focus:ring-purple-200 transition-all">
@@ -1221,20 +1586,20 @@
                                     </div>
                                 </div>
 
+                                {/* ארכיון תרגילים */}
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 gap-4">
                                         <div>
-                                            <h3 className="text-xl font-bold text-stone-800 tracking-tight">בנק תרגילים מאתגרים (ארכיון אישי)</h3>
+                                            <h3 className="text-xl font-bold text-stone-800 tracking-tight">בנק תרגילים מאתגרים (ארכיון)</h3>
                                             <p className="text-sm text-stone-500 mt-1">כל מה שסימנת שקשה לך, ממוין לפי מקצוע.</p>
                                         </div>
                                     </div>
 
-                                    {/* Archive Filter Pills */}
                                     {subjectsWithArchive.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mb-6 pb-4 border-b border-stone-100">
                                             <button 
                                                 onClick={() => setArchiveFilter('all')}
-                                                className={`px-4 py-2 rounded-full text-sm font-bold transition-all border ${archiveFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                                className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border active:scale-95 ${archiveFilter === 'all' ? 'bg-stone-800 text-white border-stone-800 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                             >
                                                 הכל ביחד
                                             </button>
@@ -1242,7 +1607,7 @@
                                                 <button 
                                                     key={sub.id}
                                                     onClick={() => setArchiveFilter(sub.id)}
-                                                    className={`px-4 py-2 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 ${archiveFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
+                                                    className={`px-4 py-2.5 rounded-full text-sm font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${archiveFilter === sub.id ? 'bg-purple-100 text-purple-800 border-purple-200 shadow-sm' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-stone-100'}`}
                                                 >
                                                     <span>{sub.emoji}</span> {sub.name}
                                                 </button>
@@ -1276,12 +1641,13 @@
                             )
                         })()}
 
+                        {/* TAB: Social */}
                         {activeTab === 'social' && (
                             <div className="space-y-8 animate-[fadeIn_0.3s_ease-out]">
                                 <div className="flex flex-col md:flex-row justify-between md:items-end gap-4 bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div>
                                         <h2 className="text-2xl font-bold text-stone-800 tracking-tight">החברות שלי</h2>
-                                        <p className="text-sm text-stone-500 mt-1">עקבי אחרי ההתקדמות של החברות, שלחי תזכורות, ולימדו ביחד למועדים הקרובים.</p>
+                                        <p className="text-sm text-stone-500 mt-1">עקבי אחרי ההתקדמות של החברות, שלחי תזכורות, ולימדו ביחד.</p>
                                     </div>
                                     <button onClick={() => toggleModal('addFriend', true)} className="bg-gradient-to-r from-purple-500 to-pink-500 text-white px-6 py-4 rounded-2xl text-sm font-bold shadow-md hover:from-purple-600 hover:to-pink-600 transition-all flex items-center justify-center gap-2 active:scale-95">
                                         <IconPlus className="w-4 h-4"/> הוספת חברה
@@ -1290,8 +1656,8 @@
                                 
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
                                     {activeUserData.friends.map(friend => (
-                                        <div key={friend.id} className="bg-white p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
-                                            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-150"></div>
+                                        <div key={friend.id} className="bg-white p-6 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
+                                            <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-150 pointer-events-none"></div>
                                             <div className="flex items-center gap-4 relative z-10">
                                                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-100 to-rose-100 flex items-center justify-center text-xl font-black text-purple-700 shadow-sm border border-white">
                                                     {friend.name.charAt(0)}
@@ -1314,45 +1680,52 @@
                             </div>
                         )}
 
+                        {/* TAB: Profile */}
                         {activeTab === 'profile' && (
-                            <div className="space-y-8 max-w-lg mx-auto animate-[fadeIn_0.3s_ease-out]">
-                                <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] text-center border border-stone-100 relative overflow-hidden">
-                                    <div className="absolute top-0 left-0 w-full h-32 bg-gradient-to-br from-purple-100/50 to-pink-100/50 pointer-events-none"></div>
+                            <div className="space-y-4 max-w-3xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                                <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
+                                    <div className="absolute top-0 left-0 w-full h-40 bg-gradient-to-br from-purple-100/50 to-pink-100/50 pointer-events-none"></div>
                                     
-                                    <div className="w-24 h-24 bg-white text-purple-600 border-4 border-white shadow-md rounded-3xl mx-auto flex items-center justify-center text-4xl mb-4 font-black relative z-10">
-                                        {activeUserData.name.charAt(0)}
+                                    <div className="relative z-10 flex flex-col md:flex-row items-center md:items-start gap-6 mb-8 text-center md:text-right">
+                                        <div className="w-24 h-24 bg-white text-purple-600 border-4 border-white shadow-md rounded-[28px] flex items-center justify-center text-4xl font-black shrink-0">
+                                            {activeUserData.name.charAt(0)}
+                                        </div>
+                                        <div className="mt-1 md:mt-3">
+                                            <h2 className="text-3xl font-black text-stone-800 tracking-tight" dir="auto">{activeUserData.name}</h2>
+                                            <p className="text-stone-500 text-sm font-semibold mt-1" dir="auto">@{globalState.activeUser}</p>
+                                        </div>
                                     </div>
-                                    <h2 className="text-3xl font-bold text-stone-800 tracking-tight relative z-10" dir="auto">{activeUserData.name}</h2>
-                                    <p className="text-stone-400 text-sm mb-8 font-semibold relative z-10" dir="auto">@{globalState.activeUser}</p>
                                     
-                                    <div className="grid grid-cols-2 gap-4 mb-4 relative z-10">
-                                        <button className="bg-white hover:bg-stone-50 p-4 rounded-2xl border border-stone-200 shadow-sm transition-all group flex flex-col justify-center items-center active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
-                                            <div className="text-3xl font-black text-emerald-500 mb-1 group-hover:scale-105 transition-transform">{activeUserData.totalPoints}</div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
+                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
+                                            <div className="text-4xl font-black text-emerald-500 mb-2 group-hover:scale-105 transition-transform">{activeUserData.totalPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">סה"כ נקודות</div>
                                         </button>
-                                        <button className="bg-white hover:bg-stone-50 p-4 rounded-2xl border border-stone-200 shadow-sm transition-all group flex flex-col justify-center items-center active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
-                                            <div className="text-3xl font-black text-purple-500 mb-1 group-hover:scale-105 transition-transform">{activeUserData.highestWeeklyPoints || activeUserData.weeklyPoints}</div>
-                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">שיא שבועי</div>
-                                            <div className="text-[10px] text-stone-400 mt-1">(השבוע: {activeUserData.weeklyPoints})</div>
+                                        
+                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
+                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform">{activeUserData.weeklyPoints}</div>
+                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
+                                            <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
+                                        </button>
+                                        
+                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-rose-50 hover:border-rose-200 active:scale-[0.98]" onClick={()=>toggleModal('streakHistory', true)}>
+                                            <div className="text-4xl font-black text-rose-500 mb-2 group-hover:scale-110 transition-transform flex items-center gap-2">{activeUserData.longestStreak} <span className="text-2xl drop-shadow-sm">🔥</span></div>
+                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">שיא רצף נוכחי</div>
+                                            <div className="text-[10px] text-stone-400 mt-1 font-medium">לחצי להיסטוריה</div>
                                         </button>
                                     </div>
-                                    <button className="w-full bg-stone-50 border border-stone-200 p-4 rounded-2xl mb-8 relative z-10 flex items-center justify-between hover:bg-rose-50 hover:border-rose-100 transition-colors group active:scale-[0.98]" onClick={()=>toggleModal('streakHistory', true)}>
-                                        <div className="text-right">
-                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide mb-0.5 group-hover:text-rose-600 transition-colors">שיא רצף נוכחי</div>
-                                            <div className="text-sm font-medium text-stone-700">לחצי כדי לראות את היסטוריית הרצפים</div>
-                                        </div>
-                                        <div className="text-3xl font-black text-rose-500 group-hover:scale-110 transition-transform">{activeUserData.longestStreak} <span className="text-xl">🔥</span></div>
-                                    </button>
 
-                                    <div className="bg-stone-50/50 p-6 rounded-3xl border border-stone-200 text-right space-y-5 relative z-10 text-right">
-                                        <div className="font-bold text-base text-stone-800 border-b border-stone-200 pb-2">הגדרות חשבון אישי</div>
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-2">שם תצוגה (איך חברות יראו אותך)</label>
-                                            <input type="text" dir="auto" value={activeUserData.name} onChange={(e) => updateUserData({ name: e.target.value })} className="w-full p-4 bg-white border border-stone-200 rounded-xl text-sm outline-none font-bold focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-2">סיסמה (נשמרת במכשיר בלבד)</label>
-                                            <input type="text" dir="auto" value={activeUserData.password} onChange={(e) => updateUserData({ password: e.target.value })} className="w-full p-4 bg-white border border-stone-200 rounded-xl text-sm outline-none font-medium text-stone-700 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm" />
+                                    <div className="bg-stone-50/70 p-6 rounded-3xl border border-stone-200 text-right relative z-10">
+                                        <div className="font-bold text-base text-stone-800 border-b border-stone-200 pb-3 mb-4">הגדרות חשבון אישי</div>
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-[11px] font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">שם תצוגה</label>
+                                                <input type="text" dir="auto" value={activeUserData.name} onChange={(e) => updateUserData({ name: e.target.value })} className="w-full p-3.5 bg-white border border-stone-200 rounded-xl text-sm outline-none font-bold focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm" />
+                                            </div>
+                                            <div>
+                                                <label className="text-[11px] font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">סיסמה</label>
+                                                <input type="text" dir="auto" value={activeUserData.password} onChange={(e) => updateUserData({ password: e.target.value })} className="w-full p-3.5 bg-white border border-stone-200 rounded-xl text-sm outline-none font-medium text-stone-700 focus:border-purple-400 focus:ring-2 focus:ring-purple-100 transition-all shadow-sm" />
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -1360,13 +1733,11 @@
                         )}
                     </main>
 
-                    {/* Modals Zone - Safe Area Spacing fixed for mobile (pb-[calc(env(safe-area-inset-bottom)+1rem)]) */}
-
                     {/* Modal: Add Task */}
                     {modals.task && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
-                                <div className="flex justify-between items-center mb-6">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
+                                <div className="flex justify-between items-center mb-5">
                                     <h3 className="font-bold text-xl text-stone-800 flex items-center gap-2">
                                         <div className="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600"><IconPlus className="w-4 h-4"/></div>
                                         הוספת שיעור / משימה
@@ -1383,83 +1754,86 @@
                                         dueTime: taskFormHasHW ? (e.target.time?.value || null) : null, 
                                         lessonTopic: e.target.topic.value
                                     }, taskFormHasHW);
-                                }} className="space-y-4">
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">מקצוע</label>
-                                        <select name="subId" required className="w-full p-4 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-2xl text-sm outline-none font-bold focus:border-purple-400 transition-all cursor-pointer" onChange={(e)=>{
-                                            if (!taskFormHasHW) return;
-                                            const sub = activeUserData.subjects.find(s=>s.id === e.target.value);
-                                            const calcDate = calculateSpecificDueDate(sub, taskGivenDate);
-                                            if (calcDate) {
-                                                if(document.getElementById('taskDate')) document.getElementById('taskDate').value = calcDate.date;
-                                                if(document.getElementById('taskTime')) document.getElementById('taskTime').value = calcDate.time;
-                                            } else {
-                                                if(document.getElementById('taskDate')) document.getElementById('taskDate').value = '';
-                                                if(document.getElementById('taskTime')) document.getElementById('taskTime').value = '';
-                                            }
-                                        }}>
-                                            <option value="">בחרי מקצוע...</option>
-                                            {activeUserData.subjects.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-                                        </select>
+                                }} className="space-y-3.5">
+                                    
+                                    <div className="flex gap-3">
+                                        <div className="flex-1">
+                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">מקצוע</label>
+                                            <select name="subId" required className="w-full p-3 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-2xl text-sm outline-none font-bold focus:border-purple-400 transition-all cursor-pointer" onChange={(e)=>{
+                                                if (!taskFormHasHW) return;
+                                                const sub = activeUserData.subjects.find(s=>s.id === e.target.value);
+                                                const calcDate = calculateSpecificDueDate(sub, taskGivenDate);
+                                                if (calcDate) {
+                                                    if(document.getElementById('taskDate')) document.getElementById('taskDate').value = calcDate.date;
+                                                    if(document.getElementById('taskTime')) document.getElementById('taskTime').value = calcDate.time;
+                                                } else {
+                                                    if(document.getElementById('taskDate')) document.getElementById('taskDate').value = '';
+                                                    if(document.getElementById('taskTime')) document.getElementById('taskTime').value = '';
+                                                }
+                                            }}>
+                                                <option value="">מקצוע...</option>
+                                                {activeUserData.subjects.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                                            </select>
+                                        </div>
+                                        
+                                        <div className="flex-1">
+                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">תאריך השיעור</label>
+                                            <input type="date" required value={taskGivenDate} onChange={(e) => {
+                                                setTaskGivenDate(e.target.value);
+                                                if (!taskFormHasHW) return;
+                                                const subId = document.querySelector('select[name="subId"]').value;
+                                                const sub = activeUserData.subjects.find(s=>s.id === subId);
+                                                const calcDate = calculateSpecificDueDate(sub, e.target.value);
+                                                if (calcDate) {
+                                                    if(document.getElementById('taskDate')) document.getElementById('taskDate').value = calcDate.date;
+                                                    if(document.getElementById('taskTime')) document.getElementById('taskTime').value = calcDate.time;
+                                                } else {
+                                                    if(document.getElementById('taskDate')) document.getElementById('taskDate').value = '';
+                                                    if(document.getElementById('taskTime')) document.getElementById('taskTime').value = '';
+                                                }
+                                            }} className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
+                                        </div>
                                     </div>
                                     
                                     <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">תאריך השיעור (מתי למדתם?)</label>
-                                        <input type="date" required value={taskGivenDate} onChange={(e) => {
-                                            setTaskGivenDate(e.target.value);
-                                            if (!taskFormHasHW) return;
-                                            const subId = document.querySelector('select[name="subId"]').value;
-                                            const sub = activeUserData.subjects.find(s=>s.id === subId);
-                                            const calcDate = calculateSpecificDueDate(sub, e.target.value);
-                                            if (calcDate) {
-                                                if(document.getElementById('taskDate')) document.getElementById('taskDate').value = calcDate.date;
-                                                if(document.getElementById('taskTime')) document.getElementById('taskTime').value = calcDate.time;
-                                            } else {
-                                                if(document.getElementById('taskDate')) document.getElementById('taskDate').value = '';
-                                                if(document.getElementById('taskTime')) document.getElementById('taskTime').value = '';
-                                            }
-                                        }} className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 focus:ring-4 focus:ring-purple-50 transition-all shadow-sm" />
-                                    </div>
-                                    
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">נושא השיעור (למחולל המבחנים)</label>
-                                        <input name="topic" required placeholder="למשל: אינטגרלים, אוטופיה..." className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 focus:ring-4 focus:ring-purple-50 transition-all shadow-sm" />
+                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">נושא השיעור (למחולל המבחנים)</label>
+                                        <input name="topic" required placeholder="למשל: אינטגרלים, אוטופיה..." className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
                                     </div>
 
                                     <div className="pt-2 border-t border-stone-100">
-                                        <label className="text-sm font-bold text-stone-800 block mb-3">האם קיבלתם שיעורי בית?</label>
-                                        <div className="flex gap-3">
-                                            <button type="button" onClick={()=>setTaskFormHasHW(true)} className={`flex-1 py-4 rounded-xl border font-bold text-sm transition-all ${taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>כן, יש משימה</button>
-                                            <button type="button" onClick={()=>setTaskFormHasHW(false)} className={`flex-1 py-4 rounded-xl border font-bold text-sm transition-all ${!taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>לא, רק לתעד</button>
+                                        <label className="text-sm font-bold text-stone-800 block mb-2">האם קיבלתם שיעורי בית?</label>
+                                        <div className="flex gap-2">
+                                            <button type="button" onClick={()=>setTaskFormHasHW(true)} className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all ${taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>כן, יש משימה</button>
+                                            <button type="button" onClick={()=>setTaskFormHasHW(false)} className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all ${!taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>לא, רק לתעד</button>
                                         </div>
                                     </div>
 
                                     {taskFormHasHW && (
-                                        <div className="space-y-4 animate-[fadeIn_0.3s_ease-out]">
+                                        <div className="space-y-3.5 animate-[fadeIn_0.3s_ease-out]">
                                             <div>
-                                                <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">מה צריך לעשות? (עמודים, תרגילים)</label>
-                                                <input name="title" required={taskFormHasHW} placeholder="למשל: תרגילים 1-5 עמ 14" className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 focus:ring-4 focus:ring-purple-50 transition-all shadow-sm" />
+                                                <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">מה צריך לעשות?</label>
+                                                <input name="title" required={taskFormHasHW} placeholder="למשל: תרגילים 1-5 עמ 14" className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
                                             </div>
                                             
-                                            <div className="bg-purple-50/50 p-4 rounded-2xl border border-purple-100">
-                                                <div className="text-xs text-purple-800 font-bold mb-3 flex items-center gap-1.5"><IconCalendar className="w-4 h-4"/> הגשה (לפי החוקים שהוגדרו):</div>
+                                            <div className="bg-purple-50/50 p-3 rounded-2xl border border-purple-100">
+                                                <div className="text-xs text-purple-800 font-bold mb-2 flex items-center gap-1.5"><IconCalendar className="w-4 h-4"/> הגשה (לפי החוקים שהוגדרו):</div>
                                                 <div className="grid grid-cols-2 gap-3">
-                                                    <input id="taskDate" name="date" type="date" required={taskFormHasHW} className="w-full p-4 bg-white border border-purple-100 rounded-xl text-sm outline-none font-medium shadow-sm focus:border-purple-400" />
-                                                    <input id="taskTime" name="time" type="time" required={taskFormHasHW} className="w-full p-4 bg-white border border-purple-100 rounded-xl text-sm outline-none font-medium shadow-sm focus:border-purple-400" />
+                                                    <input id="taskDate" name="date" type="date" required={taskFormHasHW} className="w-full p-3 bg-white border border-purple-100 rounded-xl text-sm outline-none font-medium shadow-sm focus:border-purple-400" />
+                                                    <input id="taskTime" name="time" type="time" required={taskFormHasHW} className="w-full p-3 bg-white border border-purple-100 rounded-xl text-sm outline-none font-medium shadow-sm focus:border-purple-400" />
                                                 </div>
-                                                <div className="text-[10px] text-purple-600/70 mt-2 font-medium">אם השדות ריקים, סימן שאין חוק הגשה ליום הזה, מלאי ידנית.</div>
+                                                <div className="text-[10px] text-purple-600/70 mt-1.5 font-medium leading-tight">אם השדות ריקים, סימן שאין חוק הגשה ליום הזה, מלאי ידנית.</div>
                                             </div>
                                         </div>
                                     )}
 
                                     {!taskFormHasHW && (
-                                        <div className="bg-emerald-50 text-emerald-700 p-4 rounded-2xl border border-emerald-100 text-sm font-medium animate-[fadeIn_0.3s_ease-out]">
+                                        <div className="bg-emerald-50 text-emerald-700 p-3 rounded-2xl border border-emerald-100 text-sm font-medium animate-[fadeIn_0.3s_ease-out]">
                                             <span className="font-bold block mb-1">איזה כיף! אין שיעורי בית. 🥳</span>
-                                            שמירת הנושא תכניס אותו אוטומטית למחולל המבחנים כדי שלא תשכחי לחזור עליו לקראת הבגרות/מתכונת.
+                                            שמירת הנושא תכניס אותו למחולל המבחנים כדי שתחזרי עליו לקראת המתכונת.
                                         </div>
                                     )}
 
-                                    <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-4 font-bold text-sm shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-[0.98]">
+                                    <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-3.5 font-bold text-base shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-95">
                                         {taskFormHasHW ? 'שמירת משימה' : 'תיעוד שיעור'}
                                     </button>
                                 </form>
@@ -1473,7 +1847,7 @@
                         
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
-                                <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                                <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                     <div className={`absolute top-0 left-0 w-full h-2 ${activeTaskIsLate ? 'bg-rose-400' : 'bg-emerald-400'}`}></div>
                                     <div className="flex justify-between items-start mb-2 mt-2">
                                         <h3 className="font-bold text-xl text-stone-800">סיום משימה:<br/><span className={activeTaskIsLate ? 'text-rose-600' : 'text-emerald-600'}>{activeTask.title}</span></h3>
@@ -1486,7 +1860,7 @@
                                         </div>
                                     )}
 
-                                    <p className="text-sm text-stone-500 mb-6 font-medium leading-relaxed">תעדי את ההבנה והקשיים שלך עכשיו, כדי שמחולל המבחנים יידע לבנות לך תוכנית חזרה מושלמת לקראת המתכונת.</p>
+                                    <p className="text-sm text-stone-500 mb-6 font-medium leading-relaxed">תעדי את ההבנה והקשיים שלך עכשיו, כדי שמחולל המבחנים יידע לבנות לך תוכנית חזרה מושלמת.</p>
                                     
                                     <form onSubmit={(e) => {
                                         e.preventDefault();
@@ -1502,17 +1876,17 @@
                                             <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
                                                 <label className="text-sm font-bold text-stone-800 mb-3 block">למה המשימה מוגשת באיחור?</label>
                                                 <div className="grid grid-cols-2 gap-2 mb-2">
-                                                    {['התעצלתי', 'שכחתי', 'לא הספקתי מעומס', 'אחר'].map(reason => (
+                                                    {['התעצלתי', 'שכחתי', 'לא הספקתי', 'אחר'].map(reason => (
                                                         <label key={reason} className="cursor-pointer">
                                                             <input type="radio" name="lateReason" value={reason} required className="peer sr-only" onChange={(e) => setLateReason(e.target.value)} />
-                                                            <div className="text-xs font-bold text-center py-3 px-1 border border-stone-200 bg-white rounded-lg peer-checked:bg-rose-50 peer-checked:text-rose-700 peer-checked:border-rose-200 transition-colors">
+                                                            <div className="text-xs font-bold text-center py-2.5 px-1 border border-stone-200 bg-white rounded-lg peer-checked:bg-rose-50 peer-checked:text-rose-700 peer-checked:border-rose-200 transition-colors">
                                                                 {reason}
                                                             </div>
                                                         </label>
                                                     ))}
                                                 </div>
                                                 {lateReason === 'אחר' && (
-                                                    <input type="text" placeholder="פרטי את הסיבה כאן..." value={otherLateReason} onChange={(e)=>setOtherLateReason(e.target.value)} required className="w-full p-4 mt-2 bg-white border border-stone-200 rounded-lg text-sm outline-none focus:border-rose-400" />
+                                                    <input type="text" placeholder="פרטי את הסיבה כאן..." value={otherLateReason} onChange={(e)=>setOtherLateReason(e.target.value)} required className="w-full p-3 mt-2 bg-white border border-stone-200 rounded-lg text-sm outline-none focus:border-rose-400" />
                                                 )}
                                             </div>
                                         )}
@@ -1523,7 +1897,7 @@
                                                 {[1,2,3,4,5].map(n => (
                                                     <label key={n} className="flex-1 text-center cursor-pointer group">
                                                         <input type="radio" name="rating" value={n} required className="peer sr-only" />
-                                                        <div className="py-4 border border-stone-200 bg-stone-50 rounded-xl peer-checked:bg-emerald-500 peer-checked:text-white peer-checked:border-emerald-600 font-bold text-base transition-all peer-checked:shadow-md">
+                                                        <div className="py-3 border border-stone-200 bg-stone-50 rounded-xl peer-checked:bg-emerald-500 peer-checked:text-white peer-checked:border-emerald-600 font-bold text-base transition-all peer-checked:shadow-md active:scale-95">
                                                             {n}
                                                         </div>
                                                     </label>
@@ -1536,9 +1910,9 @@
                                         </div>
                                         <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100">
                                             <label className="text-sm font-bold text-rose-700 mb-2 block flex items-center gap-2"><span>📌</span> אילו תרגילים היו קשים? (לא חובה)</label>
-                                            <textarea name="hard" rows="2" placeholder="למשל: סעיף ד' בשאלה 5, צריך לחזור על נוסחת השורשים..." className="w-full p-3 border border-rose-200 bg-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-200 resize-none shadow-sm"></textarea>
+                                            <textarea name="hard" rows="2" placeholder="למשל: סעיף ד' בשאלה 5..." className="w-full p-4 border border-rose-200 bg-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-200 resize-none shadow-sm"></textarea>
                                         </div>
-                                        <button type="submit" className={`w-full text-white rounded-2xl py-4 font-bold text-base shadow-md transition-all flex justify-center items-center gap-2 active:scale-[0.98] ${activeTaskIsLate ? 'bg-stone-800 hover:bg-stone-900' : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600'}`}>
+                                        <button type="submit" className={`w-full text-white rounded-2xl py-4 font-bold text-base shadow-md transition-all flex justify-center items-center gap-2 active:scale-95 ${activeTaskIsLate ? 'bg-stone-800 hover:bg-stone-900' : 'bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600'}`}>
                                             {activeTaskIsLate ? 'סיום באיחור ושמירת נתונים' : 'אשרי סיום וקבלי נקודות! 🎉'}
                                         </button>
                                     </form>
@@ -1547,10 +1921,165 @@
                         )
                     })()}
 
+                    {/* Modal: Cancel Exam Session */}
+                    {modals.cancelExam && taskToCancel && (
+                        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out]">
+                                <div className="w-16 h-16 bg-rose-100 rounded-full flex items-center justify-center text-rose-600 mb-4 mx-auto">
+                                    <IconTrash className="w-8 h-8"/>
+                                </div>
+                                <h3 className="font-black text-xl text-stone-800 text-center mb-2">ביטול מפגש למידה?</h3>
+                                <p className="text-sm text-stone-500 text-center mb-4 font-medium">
+                                    ביטול למידה שנקבעה מראש עולה <strong>4 נקודות</strong>.<br/><br/>
+                                    <span className="text-rose-600 font-bold bg-rose-50 px-2 py-1.5 rounded-lg block mt-1 border border-rose-100">אזהרה: ביטול של 3 מפגשים לאותו מבחן ישבור את הרצף שלך!</span>
+                                </p>
+                                <div className="flex gap-3 mt-6">
+                                    <button onClick={()=> { toggleModal('cancelExam', false); setTaskToCancel(null); }} className="flex-1 bg-stone-100 text-stone-600 font-bold py-3.5 rounded-xl text-sm transition-colors active:scale-95 hover:bg-stone-200">
+                                        התחרטתי
+                                    </button>
+                                    <button onClick={handleCancelExamSessionConfirm} className="flex-[1.5] bg-rose-500 text-white font-bold py-3.5 rounded-xl text-sm transition-colors shadow-md hover:bg-rose-600 active:scale-95">
+                                        כן, בטלי (-4)
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Modal: Exam Planner */}
+                    {modals.examPlanner && (
+                        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-lg p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
+                                <div className="flex justify-between items-center mb-6">
+                                    <h3 className="font-bold text-xl text-stone-800 flex items-center gap-2">
+                                        <div className="w-8 h-8 rounded-full bg-indigo-100 flex items-center justify-center text-indigo-600"><IconBrain className="w-4 h-4"/></div>
+                                        תכנון למידה למבחן
+                                    </h3>
+                                    <button onClick={()=>toggleModal('examPlanner',false)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
+                                </div>
+
+                                {examPlannerData.step === 1 ? (
+                                    <form onSubmit={handleGenerateStudyPlan} className="space-y-5">
+                                        <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 text-sm font-medium text-indigo-800 leading-relaxed">
+                                            המערכת תסרוק את שעות בית הספר והעוגנים שלך ותבנה לך תוכנית למידה מסודרת לחלונות הזמן הפנויים.
+                                        </div>
+                                        
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">מקצוע המבחן</label>
+                                            <select 
+                                                value={examPlannerData.subjectId} 
+                                                onChange={e => setExamPlannerData({...examPlannerData, subjectId: e.target.value})} 
+                                                required 
+                                                className="w-full p-4 bg-stone-50 hover:bg-stone-100 border border-stone-200 rounded-2xl text-sm outline-none font-bold focus:border-indigo-400 transition-all cursor-pointer"
+                                            >
+                                                <option value="">בחרי מקצוע...</option>
+                                                {activeUserData.subjects.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
+                                            </select>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">נושא / שם המבחן (למשל: מתכונת במכניקה)</label>
+                                            <input 
+                                                type="text" 
+                                                value={examPlannerData.examName} 
+                                                onChange={e => setExamPlannerData({...examPlannerData, examName: e.target.value})} 
+                                                required 
+                                                placeholder="על מה המבחן?"
+                                                className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
+                                            />
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">תאריך המבחן</label>
+                                            <input 
+                                                type="date" 
+                                                value={examPlannerData.date} 
+                                                onChange={e => setExamPlannerData({...examPlannerData, date: e.target.value})} 
+                                                required 
+                                                min={new Date().toISOString().split('T')[0]} 
+                                                className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
+                                            />
+                                        </div>
+
+                                        <div className="grid grid-cols-2 gap-4">
+                                            <div>
+                                                <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">כמה שעות למידה?</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="range" min="1" max="20" step="1" value={examPlannerData.hours} onChange={(e) => setExamPlannerData({...examPlannerData, hours: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
+                                                    <div className="w-12 text-center font-black text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg py-2">{examPlannerData.hours} ש'</div>
+                                                </div>
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">בכמה מפגשים?</label>
+                                                <div className="flex items-center gap-2">
+                                                    <input type="range" min="1" max="10" step="1" value={examPlannerData.targetSessions} onChange={(e) => setExamPlannerData({...examPlannerData, targetSessions: Number(e.target.value)})} className="flex-1 accent-indigo-500" />
+                                                    <div className="w-12 text-center font-black text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg py-2">{examPlannerData.targetSessions}</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-4 font-bold text-base shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-95">
+                                            בניית תוכנית אוטומטית ⚡
+                                        </button>
+                                    </form>
+                                ) : (
+                                    <div className="space-y-5 animate-[fadeIn_0.3s_ease-out]">
+                                        <div className="text-sm font-bold text-stone-800">
+                                            <span className="text-lg">✨</span> הנה הזמנים הפנויים שמצאנו לך:
+                                        </div>
+                                        
+                                        <div className="space-y-3 max-h-64 overflow-y-auto pr-2 custom-scrollbar border border-stone-200 rounded-2xl p-2 bg-stone-50">
+                                            {examPlannerData.sessions.length === 0 ? (
+                                                <div className="text-center py-6 text-sm text-rose-500 font-bold">לא מצאנו זמן פנוי לפני המבחן! אולי הלו"ז צפוף מדי או שהמבחן מחר?</div>
+                                            ) : (
+                                                examPlannerData.sessions.map((ses, idx) => {
+                                                    const d = new Date(ses.date);
+                                                    return (
+                                                        <div key={ses.id} className="bg-white p-3 rounded-xl border border-stone-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                                            <div className="flex flex-col">
+                                                                <span className="text-xs font-bold text-indigo-600">מפגש {idx + 1} • יום {DAYS_HE[d.getDay()]}</span>
+                                                                <input 
+                                                                    type="date" 
+                                                                    value={ses.date} 
+                                                                    onChange={(e) => { const n = [...examPlannerData.sessions]; n[idx].date = e.target.value; setExamPlannerData({...examPlannerData, sessions: n}); }}
+                                                                    className="text-sm font-bold text-stone-800 bg-transparent outline-none border-b border-dashed border-stone-300 focus:border-indigo-400 mt-1 pb-0.5" 
+                                                                />
+                                                            </div>
+                                                            <div className="flex gap-2 items-center text-xs font-bold bg-stone-50 border border-stone-100 rounded-lg p-2 justify-center w-full sm:w-auto" dir="rtl">
+                                                                <span>מ-</span>
+                                                                <input type="time" value={ses.startTime} onChange={(e) => { const n = [...examPlannerData.sessions]; n[idx].startTime = e.target.value; setExamPlannerData({...examPlannerData, sessions: n}); }} className="bg-transparent outline-none text-center focus:text-indigo-600" />
+                                                                <span>עד</span>
+                                                                <input type="time" value={ses.endTime} onChange={(e) => { const n = [...examPlannerData.sessions]; n[idx].endTime = e.target.value; setExamPlannerData({...examPlannerData, sessions: n}); }} className="bg-transparent outline-none text-center focus:text-indigo-600" />
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })
+                                            )}
+                                        </div>
+
+                                        {examPlannerData.remainingMinutes > 0 && (
+                                            <div className="bg-rose-50 text-rose-700 p-3 rounded-xl border border-rose-100 text-xs font-bold">
+                                                ⚠️ הלו"ז עמוס! לא הצלחנו לשבץ את כל השעות שביקשת בימים הפנויים.
+                                            </div>
+                                        )}
+
+                                        <div className="flex gap-3 pt-2">
+                                            <button onClick={() => setExamPlannerData({...examPlannerData, step: 1})} className="flex-1 bg-stone-50 border border-stone-200 text-stone-600 font-bold py-4 rounded-xl text-sm transition-colors active:scale-95 hover:bg-stone-100">
+                                                חזרה לעריכה
+                                            </button>
+                                            <button onClick={handleConfirmStudyPlan} disabled={examPlannerData.sessions.length === 0} className="flex-[2] bg-gradient-to-r from-indigo-500 to-purple-600 text-white font-bold py-4 rounded-xl text-sm transition-all shadow-md active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                                                אישור והוספה למשימות
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    )}
+
                     {/* Modal: Subject */}
                     {modals.subject && (
-                        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="font-bold text-xl text-stone-800">{editingSubject ? 'עריכת מקצוע' : 'מקצוע חדש'}</h3>
                                     <button type="button" onClick={()=>toggleModal('subject',false)} className="text-stone-400 bg-stone-100 p-2 rounded-full active:scale-95"><IconX className="w-4 h-4"/></button>
@@ -1561,8 +2090,8 @@
                                 }} className="space-y-6">
                                     <div className="grid grid-cols-5 gap-3">
                                         <div className="col-span-3">
-                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase">שם המקצוע</label>
-                                            <input name="name" defaultValue={editingSubject?.name} required placeholder="למשל: פיזיקה..." className="w-full p-4 bg-white border border-stone-200 rounded-xl text-sm outline-none font-bold shadow-sm focus:border-purple-400" />
+                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase">שם</label>
+                                            <input name="name" defaultValue={editingSubject?.name} required placeholder="פיזיקה..." className="w-full p-4 bg-white border border-stone-200 rounded-xl text-sm outline-none font-bold shadow-sm focus:border-purple-400" />
                                         </div>
                                         <div className="col-span-1">
                                             <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase text-center">אימוג'י</label>
@@ -1570,7 +2099,7 @@
                                         </div>
                                         <div className="col-span-1">
                                             <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase text-center">צבע</label>
-                                            <input name="color" type="color" defaultValue={editingSubject?.color || '#a855f7'} className="w-full h-[52px] p-0 border-0 rounded-xl cursor-pointer shadow-sm overflow-hidden" />
+                                            <input name="color" type="color" defaultValue={editingSubject?.color || '#a855f7'} className="w-full h-14 p-0 border-0 rounded-xl cursor-pointer shadow-sm overflow-hidden" />
                                         </div>
                                     </div>
 
@@ -1581,22 +2110,22 @@
                                         </div>
                                         <div className="space-y-3">
                                             {tempRules.map((rule, idx) => (
-                                                <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-3 rounded-xl border border-stone-200 text-xs shadow-sm">
-                                                    <select value={rule.assignDay} onChange={(e) => { const n = [...tempRules]; n[idx].assignDay = e.target.value; setTempRules(n); }} className="p-3 border border-stone-100 rounded-lg bg-stone-50 flex-1 outline-none font-bold focus:border-purple-300">
+                                                <div key={idx} className="flex flex-wrap sm:flex-nowrap items-center gap-2 bg-white p-2 md:p-3 rounded-xl border border-stone-200 text-xs shadow-sm">
+                                                    <select value={rule.assignDay} onChange={(e) => { const n = [...tempRules]; n[idx].assignDay = e.target.value; setTempRules(n); }} className="p-2 border border-stone-100 rounded-lg bg-stone-50 flex-1 outline-none font-bold focus:border-purple-300">
                                                         {DAYS_HE.map((d,i)=><option key={i} value={i}>מיום {d}</option>)}
                                                     </select>
                                                     <span className="text-stone-300 font-black px-1 hidden sm:inline">עד</span>
-                                                    <select value={rule.dueDay} onChange={(e) => { const n = [...tempRules]; n[idx].dueDay = e.target.value; setTempRules(n); }} className="p-3 border border-stone-100 rounded-lg bg-stone-50 flex-1 outline-none font-bold focus:border-purple-300">
+                                                    <select value={rule.dueDay} onChange={(e) => { const n = [...tempRules]; n[idx].dueDay = e.target.value; setTempRules(n); }} className="p-2 border border-stone-100 rounded-lg bg-stone-50 flex-1 outline-none font-bold focus:border-purple-300">
                                                         {DAYS_HE.map((d,i)=><option key={i} value={i}>יום {d}</option>)}
                                                     </select>
-                                                    <input type="time" value={rule.dueTime} onChange={(e) => { const n = [...tempRules]; n[idx].dueTime = e.target.value; setTempRules(n); }} className="p-3 border border-stone-100 rounded-lg bg-stone-50 w-24 outline-none font-bold text-center focus:border-purple-300" />
-                                                    <button type="button" onClick={() => setTempRules(tempRules.filter((_, i) => i !== idx))} className="text-rose-400 hover:text-rose-600 p-3 bg-stone-50 rounded-lg w-full sm:w-auto flex justify-center"><IconX className="w-4 h-4"/></button>
+                                                    <input type="time" value={rule.dueTime} onChange={(e) => { const n = [...tempRules]; n[idx].dueTime = e.target.value; setTempRules(n); }} className="p-2 border border-stone-100 rounded-lg bg-stone-50 w-20 outline-none font-bold text-center focus:border-purple-300" />
+                                                    <button type="button" onClick={() => setTempRules(tempRules.filter((_, i) => i !== idx))} className="text-rose-400 hover:text-rose-600 p-2 bg-stone-50 rounded-lg w-full sm:w-auto flex justify-center active:scale-95"><IconX className="w-4 h-4"/></button>
                                                 </div>
                                             ))}
                                             {tempRules.length === 0 && <div className="text-xs text-stone-400 text-center py-2 font-medium">לא הוגדרו כללים למקצוע זה. הגשה תצטרך להיות מוגדרת ידנית בכל פעם.</div>}
                                         </div>
                                     </div>
-                                    <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-4 font-bold text-sm shadow-md hover:bg-stone-900 transition-colors active:scale-[0.98]">שמירת מקצוע</button>
+                                    <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-4 font-bold text-sm shadow-md hover:bg-stone-900 transition-colors active:scale-95">שמירת מקצוע</button>
                                 </form>
                             </div>
                         </div>
@@ -1605,7 +2134,7 @@
                     {/* Modal: Add Anchor */}
                     {modals.addAnchor && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="font-bold text-xl text-stone-800">הוספת עוגן - יום {DAYS_HE[activeDayIndex]}</h3>
                                     <button onClick={()=>toggleModal('addAnchor',false)} className="bg-stone-100 p-2 rounded-full text-stone-400 active:scale-95"><IconX className="w-4 h-4"/></button>
@@ -1616,7 +2145,7 @@
                                         <div className="flex-1"><label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">התחלה</label><input type="time" name="start" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-purple-400 font-bold" /></div>
                                         <div className="flex-1"><label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">סיום</label><input type="time" name="end" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-purple-400 font-bold" /></div>
                                     </div>
-                                    <button type="submit" className="w-full bg-stone-800 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors active:scale-[0.98]">הוספה ללו"ז השבועי</button>
+                                    <button type="submit" className="w-full bg-stone-800 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors active:scale-95">הוספה ללו"ז השבועי</button>
                                 </form>
                             </div>
                         </div>
@@ -1625,7 +2154,7 @@
                     {/* Modal: Add Friend */}
                     {modals.addFriend && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6">
                                     <h3 className="font-bold text-xl text-stone-800">הוספת חברה</h3>
                                     <button onClick={()=>toggleModal('addFriend',false)} className="bg-stone-100 p-2 rounded-full text-stone-400 active:scale-95"><IconX className="w-4 h-4"/></button>
@@ -1635,7 +2164,7 @@
                                         <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">שם משתמש של החברה</label>
                                         <input type="text" name="username" dir="auto" placeholder="הקלידי שם משתמש..." required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-purple-400 font-bold" />
                                     </div>
-                                    <button type="submit" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:from-purple-600 hover:to-pink-600 transition-all active:scale-[0.98]">שליחת בקשת חברות</button>
+                                    <button type="submit" className="w-full bg-gradient-to-r from-purple-500 to-pink-500 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:from-purple-600 hover:to-pink-600 transition-all active:scale-95">שליחת בקשת חברות</button>
                                 </form>
                             </div>
                         </div>
@@ -1644,7 +2173,7 @@
                     {/* Modal: Points History */}
                     {modals.pointsHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6 pb-4 border-b border-stone-100">
                                     <h3 className="font-bold text-xl text-stone-800">היסטוריית נקודות 🏆</h3>
                                     <button onClick={()=>toggleModal('pointsHistory',false)} className="bg-stone-100 p-2 rounded-full text-stone-500 hover:bg-stone-200 transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
@@ -1674,7 +2203,7 @@
                     {/* Modal: Streak History */}
                     {modals.streakHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6 pb-4 border-b border-stone-100">
                                     <h3 className="font-bold text-xl text-stone-800">היסטוריית רצפים 🔥</h3>
                                     <button onClick={()=>toggleModal('streakHistory',false)} className="bg-stone-100 p-2 rounded-full text-stone-500 hover:bg-stone-200 transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
@@ -1684,7 +2213,7 @@
                                     {/* Current Streak */}
                                     {activeUserData.taskStreak > 0 && (
                                         <div className="p-5 rounded-2xl border-2 border-purple-200 bg-gradient-to-br from-purple-50 to-pink-50 flex flex-col shadow-sm relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-20 h-20 bg-white/40 rounded-bl-full -mr-10 -mt-10"></div>
+                                            <div className="absolute top-0 right-0 w-20 h-20 bg-white/40 rounded-bl-full -mr-10 -mt-10 pointer-events-none"></div>
                                             <div className="flex justify-between items-center mb-2 relative z-10">
                                                 <div className="font-black text-sm text-purple-800 uppercase tracking-wide">רצף פעיל עכשיו!</div>
                                                 <div className="text-3xl font-black text-purple-600 drop-shadow-sm" dir="ltr">{activeUserData.taskStreak}</div>
@@ -1735,8 +2264,8 @@
                     {/* Modal: Friend Info */}
                     {modals.friend && activeFriend && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-8 text-center shadow-2xl border border-stone-100 relative overflow-hidden animate-[slideUp_0.3s_ease-out] pb-[calc(env(safe-area-inset-bottom)+1.5rem)] md:pb-8">
-                                <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10"></div>
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-8 text-center shadow-2xl border border-stone-100 relative overflow-hidden animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
+                                <div className="absolute top-0 right-0 w-32 h-32 bg-purple-50 rounded-bl-full -mr-10 -mt-10 pointer-events-none"></div>
                                 <button onClick={()=>toggleModal('friend', false)} className="absolute top-4 left-4 bg-stone-50 p-2 rounded-full text-stone-400 z-10 active:scale-95"><IconX className="w-4 h-4"/></button>
                                 
                                 <div className="w-20 h-20 bg-gradient-to-br from-purple-100 to-rose-100 rounded-[28px] mx-auto mb-4 flex items-center justify-center text-3xl font-black text-purple-600 shadow-inner relative z-10">{activeFriend.name.charAt(0)}</div>
@@ -1766,10 +2295,10 @@
                                 </div>
 
                                 <div className="space-y-3 relative z-10">
-                                    <button onClick={() => { showToast('Nudge נשלח בהצלחה! 🔔', 'success'); toggleModal('friend', false); }} className="w-full bg-stone-800 hover:bg-stone-900 text-white font-bold py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 active:scale-[0.98]">
+                                    <button onClick={() => { showToast('Nudge נשלח בהצלחה! 🔔', 'success'); toggleModal('friend', false); }} className="w-full bg-stone-800 hover:bg-stone-900 text-white font-bold py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 active:scale-95">
                                         שליחת הודעת "מה עם השיעורים?" 💬
                                     </button>
-                                    <button onClick={()=>{ handleRemoveFriend(activeFriend.id); }} className="w-full bg-white text-rose-500 font-bold py-4 rounded-xl border border-rose-100 text-sm hover:bg-rose-50 transition-colors active:scale-[0.98]">
+                                    <button onClick={()=>{ handleRemoveFriend(activeFriend.id); }} className="w-full bg-white text-rose-500 font-bold py-4 rounded-xl border border-rose-100 text-sm hover:bg-rose-50 transition-colors active:scale-95">
                                         הסרת חברה מהרשימה
                                     </button>
                                 </div>
