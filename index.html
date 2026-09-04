@@ -239,6 +239,7 @@
         };
 
         function App() {
+            // Initial state from LocalStorage (acts as cache)
             const [globalState, setGlobalState] = useState(() => {
                 const saved = localStorage.getItem('studyStreakData_DB_v7');
                 if (saved) {
@@ -247,10 +248,48 @@
                 return { users: {}, activeUser: null };
             });
 
-            // Firebase Sync Effect
+            // LocalStorage Sync Effect (Backup)
             useEffect(() => {
                 localStorage.setItem('studyStreakData_DB_v7', JSON.stringify(globalState));
             }, [globalState]);
+
+            // --- 🚀 LIVE SYNC EFFECT (REAL-TIME FIREBASE) 🚀 ---
+            useEffect(() => {
+                if (!globalState.activeUser || !window.db) return;
+
+                const userRef = db.collection("users").doc(globalState.activeUser);
+                
+                // הירשמות לשינויים בזמן אמת במסמך של המשתמש בענן
+                const unsubscribe = userRef.onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const liveData = doc.data();
+                        
+                        setGlobalState(prev => {
+                            const currentUserData = prev.users[prev.activeUser];
+                            
+                            // מניעת רינדור כפול אם הנתונים זהים לחלוטין (קורה מיד אחרי עדכון מקומי שלנו)
+                            if (JSON.stringify(currentUserData) === JSON.stringify(liveData)) {
+                                return prev;
+                            }
+                            
+                            // עדכון הסטייט המקומי עם הנתונים העדכניים מהענן
+                            return {
+                                ...prev,
+                                users: {
+                                    ...prev.users,
+                                    [prev.activeUser]: liveData
+                                }
+                            };
+                        });
+                    }
+                }, (error) => {
+                    console.error("Live sync error:", error);
+                });
+
+                // ניקוי ההאזנה כשיוצאים או מחליפים משתמש
+                return () => unsubscribe();
+            }, [globalState.activeUser]);
+
 
             const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
 
@@ -260,12 +299,13 @@
                     const user = prev.users[prev.activeUser];
                     const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
                     
-                    // סנכרון שקט לפיירבייס בענן בכל עדכון
+                    // סנכרון לפיירבייס בענן בכל עדכון
                     if (window.db) {
                         db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
                           .catch(err => console.error("Error saving to Firebase: ", err));
                     }
 
+                    // עדכון מיידי של ה-UI (Optimistic Update)
                     return {
                         ...prev,
                         users: {
@@ -397,7 +437,6 @@
                 const pass = e.target.password.value;
                 if(!user) return;
 
-                // שילוב בדיקת פיירבייס בענן למשתמש
                 if (window.db) {
                     const userRef = db.collection("users").doc(user);
                     userRef.get().then((doc) => {
@@ -407,6 +446,7 @@
                                 showToast('סיסמה שגויה למשתמש הקיים!', 'error');
                                 return;
                             }
+                            // קביעת activeUser תפעיל אוטומטית את onSnapshot Effect
                             setGlobalState(prev => ({...prev, users: {...prev.users, [user]: data}, activeUser: user}));
                             showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
                         } else {
@@ -418,7 +458,6 @@
                         }
                     }).catch(error => {
                         console.log("Fallback to local due to error:", error);
-                        // גיבוי לוקאלי אם אין רשת או שהפיירבייס לא הוגדר נכון עדין
                         setGlobalState(prev => {
                             const users = { ...prev.users };
                             if (users[user]) {
