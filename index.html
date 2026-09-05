@@ -495,13 +495,22 @@
                 const dtend = formatICSDate(endDate);
 
                 let alarms = '';
-                if (task.isExamPrep || title.includes('מבחן') || title.includes('מתכונת') || title.includes('למידה ל')) {
-                    // התראה לכל יומיים שנותרו עד המבחן
-                    for (let i = 2; i <= 14; i += 2) {
-                        alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title}\nTRIGGER:-P${i}D\nEND:VALARM`;
+                if (task.isExamPrep || title.includes('מבחן') || title.includes('מתכונת')) {
+                    let examTargetDate = dueDate;
+                    if (task.examId && activeUserData.exams) {
+                        const relatedExam = activeUserData.exams.find(e => e.id === task.examId);
+                        if (relatedExam) {
+                             examTargetDate = new Date(relatedExam.date);
+                        }
                     }
+                    const daysUntil = Math.max(1, Math.floor((examTargetDate - new Date()) / (1000 * 60 * 60 * 24)));
+                    
+                    [1, 2, 4, 6, 8, 10, 14].forEach(days => {
+                        if (days <= daysUntil + 1) {
+                            alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת למידה: ${title} מתקרב!\nTRIGGER:-P${days}D\nEND:VALARM`;
+                        }
+                    });
                 } else {
-                    // התראה לשיעורי בית
                     alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: משימה להגשה בקרוב!\nTRIGGER:-P2D\nEND:VALARM`;
                 }
 
@@ -519,23 +528,32 @@
             };
 
             const [liveFriends, setLiveFriends] = useState({});
+            
+            // תוקן החיבור למסד הנתונים של חברים - פועל ברקע ומכניס את ה-username פנימה!
             useEffect(() => {
-                if (activeTab === 'social' && activeUserData?.friends?.length > 0 && window.db) {
-                    const fetchFriends = async () => {
-                        const friendsData = {};
-                        for (let f of activeUserData.friends) {
-                            try {
-                                const doc = await db.collection("users").doc(f.username).get();
+                if (activeUserData?.friends?.length > 0 && typeof db !== 'undefined') {
+                    const unsubscribes = [];
+                    // מניעת כפילויות בהאזנה על ידי שימוש בסט של שמות משתמש
+                    const friendUsernames = [...new Set(activeUserData.friends.map(f => f.username))];
+                    
+                    friendUsernames.forEach(username => {
+                        try {
+                            const unsub = db.collection("users").doc(username).onSnapshot(doc => {
                                 if (doc.exists) {
-                                    friendsData[f.username] = doc.data();
+                                    // מכניסים את השם המשתמש במפורש פנימה אל תוך הדאטה!
+                                    setLiveFriends(prev => ({
+                                        ...prev, 
+                                        [username]: { ...doc.data(), username: username }
+                                    }));
                                 }
-                            } catch (e) { console.error(e); }
-                        }
-                        setLiveFriends(friendsData);
-                    };
-                    fetchFriends();
+                            });
+                            unsubscribes.push(unsub);
+                        } catch (e) { console.error(e); }
+                    });
+                    
+                    return () => { unsubscribes.forEach(u => u && u()); };
                 }
-            }, [activeTab, activeUserData?.friends]);
+            }, [activeUserData?.friends]);
 
             useEffect(() => {
                 if (activeUserData && activeUserData.notifications) {
@@ -1103,7 +1121,7 @@
                     return;
                 }
 
-                if (window.db) {
+                if (typeof db !== 'undefined') {
                     db.collection("users").doc(username).get().then((doc) => {
                         if (doc.exists) {
                             const friendData = doc.data();
@@ -1116,7 +1134,8 @@
                             toggleModal('addFriend', false);
                             showToast(`איזה כיף! ${friendData.name || username} התווסף/ה לרשימה.`, 'success');
                             
-                            setLiveFriends(prev => ({...prev, [username]: friendData}));
+                            // שינוי קריטי: הוספת username פנימה ישר בעת ההוספה.
+                            setLiveFriends(prev => ({...prev, [username]: { ...friendData, username: username }}));
                         } else {
                             showToast('לא קיים משתמש עם השם הזה במערכת 😢', 'error');
                         }
@@ -1127,7 +1146,7 @@
             };
 
             const handleSendNudge = async (friendUsername) => {
-                if (!window.db) return;
+                if (typeof db === 'undefined') return;
                 try {
                     const friendRef = db.collection("users").doc(friendUsername);
                     const doc = await friendRef.get();
@@ -1407,7 +1426,14 @@
                 const endDate = new Date(dueDate.getTime() + 2 * 60 * 60 * 1000); 
                 const dtend = formatICSDate(endDate);
 
-                const alarms = `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} בעוד שבוע!\nTRIGGER:-P7D\nEND:VALARM\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} בעוד 3 ימים!\nTRIGGER:-P3D\nEND:VALARM\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} מחר! בהצלחה!\nTRIGGER:-PT15H\nEND:VALARM`;
+                let alarms = '';
+                const daysUntil = Math.max(1, Math.floor((dueDate - new Date()) / (1000 * 60 * 60 * 24)));
+                
+                [1, 2, 3, 5, 7, 10, 14].forEach(days => {
+                    if (days <= daysUntil + 1) {
+                        alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: ${title} בעוד ${days} ימים!\nTRIGGER:-P${days}D\nEND:VALARM`;
+                    }
+                });
 
                 const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//StudyStreak//HE\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:${exam.id}@studystreak.app\nDTSTAMP:${formatICSDate(new Date())}\nDTSTART:${dtstart}\nDTEND:${dtend}\nSUMMARY:${title}\nDESCRIPTION:בהצלחה במבחן!${alarms}\nEND:VEVENT\nEND:VCALENDAR`;
 
@@ -1691,6 +1717,7 @@
 
                     <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-6 lg:p-8 relative z-10">
                         
+                        {}
                         {activeTab === 'dashboard' && (
                             <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                                 <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1705,11 +1732,11 @@
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
-                                        <div className="text-3xl font-bold text-purple-600">{activeUserData.weeklyPoints}</div>
+                                        <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{activeUserData.weeklyPoints}</div>
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
-                                        <div className="text-3xl font-bold text-emerald-600">{activeUserData.totalPoints}</div>
+                                        <div className="text-3xl font-bold text-emerald-600 text-right" dir="ltr">{activeUserData.totalPoints}</div>
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => setActiveTab('exam_prep')}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">תרגילים בארכיון</div>
@@ -1778,6 +1805,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'tasks' && (() => {
                             const mainTasksList = activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed));
                             const taskSubjects = [...new Set(mainTasksList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1920,6 +1948,7 @@
                             )
                         })()}
 
+                        {}
                         {activeTab === 'lesson_log' && (() => {
                             const lessonTasks = activeUserData.tasks.filter(t => t.lessonTopic && t.lessonTopic.trim() !== '' && !t.isExamPrep);
                             const logSubjects = [...new Set(lessonTasks.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -1990,6 +2019,7 @@
                             );
                         })()}
 
+                        {}
                         {activeTab === 'settings' && (
                             <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
                                 <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
@@ -2095,6 +2125,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'schedule' && (
                             <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
@@ -2162,6 +2193,7 @@
                             </div>
                         )}
 
+                        {}
                         {activeTab === 'exam_prep' && (() => {
                             const hardExercisesList = activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '');
                             const subjectsWithArchive = [...new Set(hardExercisesList.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
@@ -2309,16 +2341,34 @@
                             )
                         })()}
 
+                        {}
                         {activeTab === 'social' && (() => {
-                            const topUserPoints = Math.max(...[activeUserData, ...Object.values(liveFriends).filter(f => f && f.username)].map(u => u.totalPoints || 0), 0);
+                            // סינון חברות כפולות והבטחה שרק מי שברשימת החברים הנוכחית מופיע בטבלה
+                            const uniqueFriendsMap = new Map();
+                            if (activeUserData && activeUserData.friends) {
+                                activeUserData.friends.forEach(f => {
+                                    if (f && f.username && f.username !== globalState.activeUser) {
+                                        // שואבים נתונים חיים רק עבור מי שמוגדרת כחברה כרגע
+                                        const liveData = liveFriends[f.username] || {};
+                                        uniqueFriendsMap.set(f.username, {
+                                            ...f, // הבסיס מהרשימה המקומית (שם וכו')
+                                            ...liveData, // נתונים חיים אם ישנם (נקודות, רצף וכו')
+                                            username: f.username // וידוא סופי לשם המשתמש כדי למנוע באגים
+                                        });
+                                    }
+                                });
+                            }
                             
                             const allUsers = [
-                                { ...activeUserData, isMe: true },
-                                ...Object.values(liveFriends).filter(f => f && f.username)
+                                { ...activeUserData, isMe: true, username: globalState.activeUser },
+                                ...Array.from(uniqueFriendsMap.values())
                             ];
                             
-                            const sortedByPoints = [...allUsers].sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0));
-                            const sortedByStreak = [...allUsers].sort((a,b) => (b.taskStreak || 0) - (a.taskStreak || 0));
+                            const topUserPoints = Math.max(...allUsers.map(u => u?.totalPoints || 0), 0);
+                            
+                            // חיתוך למקומות ראשון, שני ושלישי בלבד (Top 3)
+                            const sortedByPoints = [...allUsers].sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0)).slice(0, 3);
+                            const sortedByStreak = [...allUsers].sort((a,b) => (b.taskStreak || 0) - (a.taskStreak || 0)).slice(0, 3);
 
                             return (
                             <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
@@ -2332,39 +2382,93 @@
                                     </button>
                                 </div>
                                 
-                                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                                    <div className="bg-white rounded-3xl p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
-                                        <h3 className="font-bold text-lg text-stone-800 mb-4 flex items-center gap-2">🏆 טבלת אלופות (ניקוד)</h3>
-                                        <div className="space-y-2">
-                                            {sortedByPoints.slice(0, 5).map((u, i) => {
-                                                const gap = topUserPoints - (u.totalPoints || 0);
+                                <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
+                                    <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-40 h-40 bg-amber-50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
+                                        <h3 className="font-black text-2xl text-stone-800 mb-6 flex items-center gap-3 relative z-10">
+                                            <span className="text-3xl drop-shadow-sm">🏆</span> טבלת אלופות (ניקוד)
+                                        </h3>
+                                        <div className="space-y-4 relative z-10">
+                                            {sortedByPoints.map((u, i) => {
+                                                const points = u.totalPoints || 0;
+                                                const topPoints = Math.max(sortedByPoints[0]?.totalPoints || 1, 1);
+                                                const progressPct = Math.max(2, (points / topPoints) * 100);
+                                                const gap = topUserPoints - points;
+                                                
                                                 return (
-                                                <div key={u.isMe ? 'me' : u.username} className={`flex items-center justify-between p-3 rounded-2xl border ${u.isMe ? 'bg-emerald-50 border-emerald-100' : 'bg-stone-50 border-stone-100'}`}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="text-lg font-black w-6 text-center">{i===0 ? '🥇' : i===1 ? '🥈' : i===2 ? '🥉' : `${i+1}.`}</div>
-                                                        <div>
-                                                            <div className={`font-bold ${u.isMe ? 'text-emerald-700' : 'text-stone-700'}`}>{u.name} {u.isMe && '(אני)'}</div>
-                                                            {i > 0 && gap > 0 && <div className="text-[10px] text-stone-400 font-bold">רחוקה {gap} נק' מהמקום הראשון</div>}
+                                                <div key={u.isMe ? 'me' : u.username} className={`relative flex flex-col p-5 rounded-2xl border transition-all ${u.isMe ? 'bg-purple-50/40 border-purple-200 shadow-sm' : 'bg-stone-50 border-stone-200 hover:border-stone-300'}`}>
+                                                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between mb-4 gap-3">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="text-3xl font-black w-10 text-center flex justify-center items-center drop-shadow-sm shrink-0">
+                                                                {i===0 ? '🥇' : i===1 ? '🥈' : '🥉'}
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-purple-100 to-rose-100 flex items-center justify-center text-lg font-black text-purple-700 shadow-inner border-2 border-white shrink-0">
+                                                                    {(u.name || 'א').charAt(0)}
+                                                                </div>
+                                                                <div>
+                                                                    <div className={`font-bold text-base md:text-lg flex items-center gap-2 ${u.isMe ? 'text-purple-800' : 'text-stone-800'}`}>
+                                                                        {u.name} {u.isMe && <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">אני</span>}
+                                                                    </div>
+                                                                    <div className="text-xs text-stone-400 font-medium mt-0.5" dir="ltr">@{u.isMe ? globalState.activeUser : (u.username || 'user')}</div>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="font-black text-xl bg-white px-5 py-2 rounded-xl shadow-sm border border-stone-100 flex items-center gap-1.5 shrink-0" dir="ltr">
+                                                            {points} <span className="text-sm text-stone-400 font-bold">נק'</span>
                                                         </div>
                                                     </div>
-                                                    <div className="font-black text-emerald-600 bg-white px-3 py-1 rounded-lg shadow-sm border border-emerald-100/50" dir="ltr">{u.totalPoints || 0} נק'</div>
+                                                    <div className="w-full bg-stone-200/80 rounded-full h-3 mb-1.5 relative overflow-hidden shadow-inner">
+                                                        <div className={`h-full rounded-full transition-all duration-1000 ease-out ${u.isMe ? 'bg-purple-500' : i === 0 ? 'bg-amber-400' : 'bg-stone-400'}`} style={{ width: `${progressPct}%` }}></div>
+                                                    </div>
+                                                    {i > 0 && gap > 0 && (
+                                                        <div className="text-xs text-stone-500 font-bold mt-1">
+                                                            רחוקה ב-<span className="text-stone-800 px-1">{gap}</span> נקודות מהמקום הראשון
+                                                        </div>
+                                                    )}
                                                 </div>
                                             )})}
+                                            {sortedByPoints.length === 0 && <div className="text-center py-6 text-stone-400 font-medium">אין משתמשים בטבלה עדיין.</div>}
                                         </div>
                                     </div>
 
-                                    <div className="bg-white rounded-3xl p-5 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
-                                        <h3 className="font-bold text-lg text-stone-800 mb-4 flex items-center gap-2">🔥 מלכות הרצף</h3>
-                                        <div className="space-y-2">
-                                            {sortedByStreak.slice(0, 5).map((u, i) => (
-                                                <div key={u.isMe ? 'me' : u.username} className={`flex items-center justify-between p-3 rounded-2xl border ${u.isMe ? 'bg-rose-50 border-rose-100' : 'bg-stone-50 border-stone-100'}`}>
-                                                    <div className="flex items-center gap-3">
-                                                        <div className="text-lg font-black w-6 text-center">{i===0 ? '👑' : `${i+1}.`}</div>
-                                                        <div className={`font-bold ${u.isMe ? 'text-rose-700' : 'text-stone-700'}`}>{u.name} {u.isMe && '(אני)'}</div>
+                                    <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
+                                        <div className="absolute top-0 right-0 w-40 h-40 bg-rose-50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
+                                        <h3 className="font-black text-2xl text-stone-800 mb-6 flex items-center gap-3 relative z-10">
+                                            <span className="text-3xl drop-shadow-sm">🔥</span> מלכות הרצף
+                                        </h3>
+                                        <div className="space-y-4 relative z-10">
+                                            {sortedByStreak.map((u, i) => {
+                                                const streak = u.taskStreak || 0;
+                                                const topStreak = Math.max(sortedByStreak[0]?.taskStreak || 1, 1);
+                                                const progressPct = Math.max(2, (streak / topStreak) * 100);
+
+                                                return (
+                                                <div key={u.isMe ? 'me' : u.username} className={`relative flex flex-col p-5 rounded-2xl border transition-all ${u.isMe ? 'bg-rose-50/40 border-rose-200 shadow-sm' : 'bg-stone-50 border-stone-200 hover:border-stone-300'}`}>
+                                                    <div className="flex flex-wrap sm:flex-nowrap items-center justify-between mb-4 gap-3">
+                                                        <div className="flex items-center gap-4">
+                                                            <div className="text-3xl font-black w-10 text-center flex justify-center items-center drop-shadow-sm shrink-0">
+                                                                {i===0 ? '👑' : i===1 ? '🥈' : '🥉'}
+                                                            </div>
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-rose-100 to-orange-100 flex items-center justify-center text-lg font-black text-rose-700 shadow-inner border-2 border-white shrink-0">
+                                                                    {(u.name || 'א').charAt(0)}
+                                                                </div>
+                                                                <div className={`font-bold text-base md:text-lg flex items-center gap-2 ${u.isMe ? 'text-rose-800' : 'text-stone-800'}`}>
+                                                                    {u.name} {u.isMe && <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">אני</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div className="font-black text-xl text-rose-600 bg-white px-5 py-2 rounded-xl shadow-sm border border-stone-100 flex items-center gap-1.5 shrink-0" dir="ltr">
+                                                            {streak} <span className="text-xl drop-shadow-sm">🔥</span>
+                                                        </div>
                                                     </div>
-                                                    <div className="font-black text-rose-500 bg-white px-3 py-1 rounded-lg shadow-sm border border-rose-100/50" dir="ltr">{u.taskStreak || 0} 🔥</div>
+                                                    <div className="w-full bg-stone-200/80 rounded-full h-3 relative overflow-hidden shadow-inner">
+                                                        <div className={`h-full rounded-full transition-all duration-1000 ease-out ${u.isMe ? 'bg-rose-500' : i === 0 ? 'bg-gradient-to-r from-rose-400 to-orange-400' : 'bg-stone-400'}`} style={{ width: `${progressPct}%` }}></div>
+                                                    </div>
                                                 </div>
-                                            ))}
+                                            )})}
+                                            {sortedByStreak.length === 0 && <div className="text-center py-6 text-stone-400 font-medium">אין משתמשים בטבלה עדיין.</div>}
                                         </div>
                                     </div>
                                 </div>
@@ -2400,6 +2504,7 @@
                             )
                         })()}
 
+                        {}
                         {activeTab === 'profile' && (() => {
                             const userBadges = activeUserData.badges || [];
                             
@@ -2499,6 +2604,7 @@
                         })()}
                     </main>
 
+                    {}
                     {modals.task && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2606,6 +2712,7 @@
                         </div>
                     )}
 
+                    {}
                     {modals.complete && activeTask && (() => {
                         const activeTaskIsLate = activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
                         
@@ -2687,6 +2794,7 @@
                         )
                     })()}
 
+                    {}
                     {modals.giveUp && taskToGiveUp && (
                         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out] text-center">
@@ -2755,6 +2863,7 @@
                         </div>
                     )}
 
+                    {}
                     {modals.quickExam && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2919,6 +3028,7 @@
                         </div>
                     )}
 
+                    {}
                     {modals.subject && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -2992,6 +3102,7 @@
                         </div>
                     )}
 
+                    {}
                     {modals.addFriend && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
