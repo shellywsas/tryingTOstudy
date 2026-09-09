@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head>
@@ -8,8 +7,11 @@
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <title>StudyStreak Pro - ניהול למידה חכם</title>
+    
     <link rel="icon" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'/%3E%3C/svg%3E" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z'/%3E%3C/svg%3E" />
     <link id="manifest-link" rel="manifest">
+    
     <script>
         const generatePWA = () => {
             const manifest = {
@@ -30,9 +32,13 @@
         };
         generatePWA();
     </script>
+
+    <!-- Firebase Compat SDKs (CDN) -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-auth-compat.js"></script>
+
+    <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -46,15 +52,22 @@
             }
         }
     </script>
+    
+    <!-- React & ReactDOM -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <!-- Babel -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    
+    <!-- Fonts -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    
     <style>
-body { 
+        body { 
             font-family: 'Heebo', sans-serif;
             -webkit-tap-highlight-color: transparent;
             user-select: none;
@@ -82,13 +95,12 @@ body {
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
     </style>
-
-    </style>
 </head>
 <body class="bg-stone-50 text-stone-800 min-h-screen selection:bg-purple-200 selection:text-purple-900 pt-safe-top pb-safe-bottom">
     <div id="root"></div>
-    <script>
-const firebaseConfig = {
+
+    <script type="text/babel">
+        const firebaseConfig = {
             apiKey: "AIzaSyBMfjLTktAFc5uFRN8Oda8-_u29KykDAYA",
             authDomain: "loos-77484.firebaseapp.com",
             projectId: "loos-77484",
@@ -102,10 +114,23 @@ const firebaseConfig = {
         }
         const db = firebase.firestore();
 
-    </script>
-    <script>
-const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+        const { useState, useEffect, useMemo, useRef } = React;
 
+        const IconFlame = ({ className = "w-5 h-5" }) => <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 23c-4.97 0-9-3.58-9-8 0-4.19 3.01-7.26 5.88-9.84.58-.52 1.17-1.04 1.72-1.58.37-.36.93-.38 1.32-.05.39.33.47.89.18 1.32-.88 1.31-1.68 2.65-1.92 4.15 1.48-1.05 3.19-1.99 5.02-2.73.43-.18.93-.01 1.16.39.23.4.12.91-.25 1.18C14.05 9.3 12.5 11.2 12.5 13.5c0 1.38.56 2.63 1.46 3.54.4.4.4 1.05 0 1.45-.4.4-1.05.4-1.45 0C11.1 17.08 10.5 15.36 10.5 13.5c0-1.4.58-2.67 1.5-3.6-2.12 1.14-3.8 2.87-4.5 5.1-.15.48-.59.8-1.08.8-.75 0-1.28-.7-1.05-1.41.86-2.68 2.86-4.78 5.37-6.03.35-.17.77-.07.99.25.22.32.13.76-.2 1.08-.85.83-1.6 1.77-2.15 2.81 2.37-1.63 5.3-2.6 8.3-2.6 1.1 0 2.18.13 3.22.39.46.12.75.58.64 1.04-.11.46-.57.75-1.03.64-1.28-.32-2.58-.43-3.83-.34 2.85.95 4.8 3.58 4.8 6.6 0 4.42-4.03 8-9 8z"/></svg>;
+        const IconSparkle = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
+        const IconSettings = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>;
+        const IconCalendar = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
+        const IconBook = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path strokeLinecap="round" strokeLinejoin="round" d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>;
+        const IconUsers = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 0 0-3-3.87"/><path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
+        const IconPlus = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
+        const IconUser = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
+        const IconX = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
+        const IconCheck = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>;
+        const IconTrash = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>;
+        const IconBrain = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"/><path strokeLinecap="round" strokeLinejoin="round" d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"/></svg>;
+        const IconList = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
+
+        const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
         const getUserLevel = (points) => {
             if (points <= 50) return { title: 'תלמידה מתחילה', icon: '🌱' };
@@ -116,7 +141,6 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return { title: 'פרופסורית (Top 1%)', icon: '🎓' };
         };
 
-
         const getNextSaturdayNight = () => {
             const now = new Date();
             const daysUntilSaturday = 6 - now.getDay();
@@ -126,20 +150,17 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return nextSaturday.getTime();
         };
 
-
         const timeToMins = (t) => {
             if (!t) return 0;
             const [h, m] = t.split(':').map(Number);
             return h * 60 + m;
         };
 
-
         const minsToTime = (m) => {
             const h = Math.floor(m / 60);
             const mins = m % 60;
             return `${String(h).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
         };
-
 
         const calculateSpecificDueDate = (subject, givenDateStr) => {
             if (!subject || !subject.rules || subject.rules.length === 0) return null; 
@@ -163,7 +184,6 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return null; 
         };
 
-
         const calculateSmartWindows = (schoolEndTimeStr, anchors) => {
             if (!schoolEndTimeStr || schoolEndTimeStr === '00:00') return null;
             
@@ -171,16 +191,13 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             let currentMins = schoolEndMins + 45; 
             const endOfDayMins = timeToMins('22:00'); 
 
-
             const sortedAnchors = [...anchors].sort((a, b) => timeToMins(a.start) - timeToMins(b.start));
             let windows = [];
-
 
             for (let anchor of sortedAnchors) {
                 const anchorStartMins = timeToMins(anchor.start);
                 const anchorEndMins = timeToMins(anchor.end);
                 const maxLearningEnd = anchorStartMins - 30;
-
 
                 if (maxLearningEnd - currentMins >= 45) { 
                     windows.push({
@@ -192,7 +209,6 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 currentMins = Math.max(currentMins, anchorEndMins + 30);
             }
 
-
             if (endOfDayMins - currentMins >= 45) {
                 windows.push({
                     start: minsToTime(currentMins),
@@ -203,7 +219,6 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return windows;
         };
 
-
         const ALL_BADGES = [
             { id: 'b_exam_90', icon: '🏆', title: 'מצטיינת מבחנים', description: 'קיבלת ב-4 מבחנים מעל 90', reqType: 'exams_90_plus', reqTarget: 4 },
             { id: 'b_on_time', icon: '⏱️', title: 'חסינת איחורים', description: 'הגשת בזמן במשך שבועיים רצוף', reqType: 'streak_days', reqTarget: 14 },
@@ -213,7 +228,6 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             { id: 'b_comeback', icon: '🔄', title: 'קאמבק של אלופות', description: 'איבדת רצף, ולא נשברת - הגשת משימה ביום שאחרי', reqType: 'comeback', reqTarget: 1 },
             { id: 'b_sprint', icon: '🏎️', title: 'עקיפה בסיבוב', description: 'עקפת חברה בנקודות ביום שישי לקראת סגירת השבוע', reqType: 'sprint', reqTarget: 1 },
         ];
-
 
         const DEFAULT_USER_STATE = {
             password: '',
@@ -245,328 +259,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             badges: [] 
         };
 
-    </script>
-    <script>
-/* StudyStreak sync helpers — plain JS, browser + node --test */
-(function (root) {
-    function isAutoHistoryId(id) {
-        const s = String(id || "");
-        return s.startsWith("ph_auto_") || s.startsWith("ph_refund_");
-    }
-
-    function taskLooksCompleted(task, pointsHistory) {
-        if (!task) return false;
-        if (task.completed || task.givenUp || task.completedAt) return true;
-        const hist = pointsHistory || [];
-        return hist.some(
-            (h) =>
-                h.taskId === task.id &&
-                h.id &&
-                !isAutoHistoryId(h.id)
-        );
-    }
-
-    function mergeTaskPair(localT, incomingT, pointsHistory) {
-        if (!localT) return incomingT;
-        if (!incomingT) return localT;
-        const localDone = taskLooksCompleted(localT, pointsHistory);
-        const incomingDone = taskLooksCompleted(incomingT, pointsHistory);
-        if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true };
-        if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true };
-        if (localDone && incomingDone) {
-            return { ...localT, ...incomingT, completed: true };
-        }
-        return { ...localT, ...incomingT };
-    }
-
-    function mergeTasks(localTasks, incomingTasks, pointsHistory) {
-        const local = Array.isArray(localTasks) ? localTasks : [];
-        const incoming = Array.isArray(incomingTasks) ? incomingTasks : [];
-        const byId = new Map();
-        for (const t of local) {
-            if (t && t.id) byId.set(t.id, t);
-        }
-        for (const t of incoming) {
-            if (!t || !t.id) continue;
-            byId.set(t.id, mergeTaskPair(byId.get(t.id), t, pointsHistory));
-        }
-        for (const t of local) {
-            if (!t || !t.id) continue;
-            if (!incoming.some((x) => x && x.id === t.id)) {
-                if (taskLooksCompleted(t, pointsHistory)) {
-                    byId.set(t.id, t);
-                }
-            }
-        }
-        return Array.from(byId.values());
-    }
-
-    function applyRemoteUser(local, remote, tabWrittenSync) {
-        if (!remote) return local;
-        if (!local) return remote;
-        const remoteSync = remote.lastSync || 0;
-        const localSync = local.lastSync || 0;
-        if (tabWrittenSync && remoteSync && remoteSync <= tabWrittenSync) {
-            return local;
-        }
-        if (!remoteSync && localSync) return local;
-        if (remoteSync && localSync && remoteSync < localSync) return local;
-        if (remoteSync && localSync && remoteSync === localSync) return local;
-        const hist = local.pointsHistory || remote.pointsHistory || [];
-        return {
-            ...remote,
-            tasks: mergeTasks(local.tasks || [], remote.tasks || [], hist),
-        };
-    }
-
-    function healCompletedFromHistory(user) {
-        if (!user || !Array.isArray(user.tasks)) return user;
-        const hist = user.pointsHistory || [];
-        let changed = false;
-        const tasks = user.tasks.map((t) => {
-            if (t.completed) return t;
-            if (taskLooksCompleted(t, hist)) {
-                changed = true;
-                return { ...t, completed: true };
-            }
-            return t;
-        });
-        return changed ? { ...user, tasks } : user;
-    }
-
-    function restoreOnDueEdit(prev, taskId, oldDue, newDue, now) {
-        if (!prev || !taskId || !newDue) return prev;
-        const nowDate = now instanceof Date ? now : new Date(now || Date.now());
-        const newMs = newDue instanceof Date ? newDue.getTime() : new Date(newDue).getTime();
-        if (!(newMs > nowDate.getTime())) return prev;
-
-        const tasks = (prev.tasks || []).map((t) =>
-            t.id === taskId ? { ...t, autoPenaltyApplied: false } : t
-        );
-        let totalPoints = prev.totalPoints || 0;
-        let weeklyPoints = prev.weeklyPoints || 0;
-        let pointsHistory = [...(prev.pointsHistory || [])];
-        const alreadyRefunded = pointsHistory.some(
-            (h) => h.taskId === taskId && String(h.id || "").startsWith("ph_refund_")
-        );
-        const autoLogs = pointsHistory.filter(
-            (h) =>
-                h.taskId === taskId &&
-                String(h.id || "").startsWith("ph_auto_") &&
-                (h.points || 0) < 0
-        );
-        if (autoLogs.length && !alreadyRefunded) {
-            const refund = autoLogs.reduce((s, h) => s + Math.abs(h.points), 0);
-            totalPoints += refund;
-            weeklyPoints += refund;
-            const sample = autoLogs[0];
-            pointsHistory = [
-                {
-                    id: "ph_refund_" + taskId,
-                    taskId: taskId,
-                    taskTitle: sample.taskTitle,
-                    subjectName: sample.subjectName,
-                    subjectEmoji: sample.subjectEmoji,
-                    points: refund,
-                    date: nowDate.toISOString(),
-                    details: "החזר קנס אוטומטי אחרי עדכון תאריך הגשה",
-                },
-                ...pointsHistory,
-            ];
-        }
-
-        let streakHistory = [...(prev.streakHistory || [])];
-        let taskStreak = prev.taskStreak;
-        let currentStreakStart = prev.currentStreakStart;
-        let currentStreakEmojis = prev.currentStreakEmojis;
-        const idx = streakHistory.findIndex((s) => s.brokenByTaskId === taskId);
-        if (idx !== -1 && (taskStreak || 0) === 0) {
-            const rec = streakHistory[idx];
-            streakHistory.splice(idx, 1);
-            taskStreak = rec.length || 0;
-            currentStreakStart = rec.startDate;
-            currentStreakEmojis = rec.emojis || [];
-        }
-
-        return {
-            ...prev,
-            tasks,
-            totalPoints,
-            weeklyPoints,
-            pointsHistory,
-            streakHistory,
-            taskStreak,
-            currentStreakStart,
-            currentStreakEmojis,
-        };
-    }
-
-    function onTimePointsForTask(task, completedAt, due) {
-        const createdAt = new Date(task.createdAt || completedAt);
-        const dueMs = due instanceof Date ? due.getTime() : new Date(due).getTime();
-        const doneMs = completedAt instanceof Date ? completedAt.getTime() : new Date(completedAt).getTime();
-        const totalDurationMs = dueMs - createdAt.getTime();
-        const usedDurationMs = doneMs - createdAt.getTime();
-        let points = 2;
-        if (usedDurationMs > Math.max(totalDurationMs / 2, 86400000)) points = 1;
-        if (task.isExamPrep) points += 1;
-        return points;
-    }
-
-    function wasRecordedLate(task) {
-        if (!task || task.timingCorrected) return false;
-        if (task.lateReason) return true;
-        if (task.autoPenaltyApplied) return true;
-        if (task.pointsEarned != null && task.pointsEarned <= 0) return true;
-        return false;
-    }
-
-    function recomputeCompletedAsOnTime(prev, taskId, newDue, now) {
-        if (!prev || !taskId || !newDue) return prev;
-        const task = (prev.tasks || []).find((t) => t.id === taskId);
-        if (!task || !task.completed || task.givenUp || task.isLessonLog) return prev;
-        if (task.timingCorrected) return prev;
-
-        const nowDate = now instanceof Date ? now : new Date(now || Date.now());
-        const due = newDue instanceof Date ? newDue : new Date(newDue);
-        const completedAt = new Date(task.completedAt || nowDate);
-        if (completedAt.getTime() > due.getTime()) return prev;
-        if (!wasRecordedLate(task)) return prev;
-
-        const desired = onTimePointsForTask(task, completedAt, due);
-        const hist = prev.pointsHistory || [];
-        const net = hist
-            .filter((h) => h.taskId === taskId)
-            .reduce((s, h) => s + (h.points || 0), 0);
-        const adj = desired - net;
-        let pointsHistory = hist;
-        let totalPoints = prev.totalPoints || 0;
-        let weeklyPoints = prev.weeklyPoints || 0;
-        if (adj !== 0) {
-            const sample = hist.find((h) => h.taskId === taskId) || {};
-            totalPoints += adj;
-            weeklyPoints += adj;
-            pointsHistory = [
-                {
-                    id: "ph_ontime_" + taskId,
-                    taskId: taskId,
-                    taskTitle: task.title || sample.taskTitle,
-                    subjectName: sample.subjectName || "כללי",
-                    subjectEmoji: sample.subjectEmoji || "📚",
-                    points: adj,
-                    date: nowDate.toISOString(),
-                    details: "תיקון: ההגשה נספרת בזמן אחרי עדכון תאריך. הרצף והנקודות עודכנו.",
-                },
-                ...hist,
-            ];
-        }
-
-        let streakHistory = [...(prev.streakHistory || [])];
-        let taskStreak = prev.taskStreak || 0;
-        let currentStreakStart = prev.currentStreakStart;
-        let currentStreakEmojis = [...(prev.currentStreakEmojis || [])];
-        let longestStreak = prev.longestStreak || 0;
-        const liveStreak = prev.taskStreak || 0;
-        if (liveStreak > 0) {
-            taskStreak = liveStreak + 1;
-        } else {
-            let idx = streakHistory.findIndex((s) => s.brokenByTaskId === taskId);
-            if (idx === -1 && streakHistory.length > 0) {
-                idx = streakHistory.length - 1;
-            }
-            if (idx !== -1) {
-                const rec = streakHistory[idx];
-                streakHistory.splice(idx, 1);
-                taskStreak = rec.length || 0;
-                currentStreakStart = rec.startDate;
-                currentStreakEmojis = [...(rec.emojis || [])];
-            }
-            taskStreak += 1;
-            if (taskStreak === 1) {
-                currentStreakStart = completedAt.toISOString();
-            }
-        }
-        if (taskStreak > longestStreak) longestStreak = taskStreak;
-
-        const tasks = (prev.tasks || []).map((t) =>
-            t.id === taskId
-                ? {
-                      ...t,
-                      autoPenaltyApplied: false,
-                      lateReason: "",
-                      pointsEarned: desired,
-                      timingCorrected: true,
-                  }
-                : t
-        );
-
-        return {
-            ...prev,
-            tasks,
-            totalPoints,
-            weeklyPoints,
-            pointsHistory,
-            streakHistory,
-            taskStreak,
-            longestStreak,
-            currentStreakStart,
-            currentStreakEmojis,
-        };
-    }
-
-    function applyDueEditConsequences(prev, taskId, newDue, now) {
-        const task = (prev.tasks || []).find((t) => t.id === taskId);
-        if (!task) return prev;
-        if (task.completed && !task.givenUp && !task.isLessonLog) {
-            return recomputeCompletedAsOnTime(prev, taskId, newDue, now);
-        }
-        return restoreOnDueEdit(prev, taskId, null, newDue, now);
-    }
-
-    const api = {
-        mergeTasks,
-        applyRemoteUser,
-        healCompletedFromHistory,
-        restoreOnDueEdit,
-        recomputeCompletedAsOnTime,
-        applyDueEditConsequences,
-        onTimePointsForTask,
-        taskLooksCompleted,
-        isAutoHistoryId,
-    };
-
-    if (typeof module !== "undefined" && module.exports) {
-        module.exports = api;
-    }
-    root.mergeTasks = mergeTasks;
-    root.applyRemoteUser = applyRemoteUser;
-    root.healCompletedFromHistory = healCompletedFromHistory;
-    root.restoreOnDueEdit = restoreOnDueEdit;
-    root.recomputeCompletedAsOnTime = recomputeCompletedAsOnTime;
-    root.applyDueEditConsequences = applyDueEditConsequences;
-})(typeof globalThis !== "undefined" ? globalThis : this);
-
-    </script>
-    <script type="text/babel">
-const IconFlame = ({ className = "w-5 h-5" }) => <svg className={className} fill="currentColor" viewBox="0 0 24 24"><path d="M12 23c-4.97 0-9-3.58-9-8 0-4.19 3.01-7.26 5.88-9.84.58-.52 1.17-1.04 1.72-1.58.37-.36.93-.38 1.32-.05.39.33.47.89.18 1.32-.88 1.31-1.68 2.65-1.92 4.15 1.48-1.05 3.19-1.99 5.02-2.73.43-.18.93-.01 1.16.39.23.4.12.91-.25 1.18C14.05 9.3 12.5 11.2 12.5 13.5c0 1.38.56 2.63 1.46 3.54.4.4.4 1.05 0 1.45-.4.4-1.05.4-1.45 0C11.1 17.08 10.5 15.36 10.5 13.5c0-1.4.58-2.67 1.5-3.6-2.12 1.14-3.8 2.87-4.5 5.1-.15.48-.59.8-1.08.8-.75 0-1.28-.7-1.05-1.41.86-2.68 2.86-4.78 5.37-6.03.35-.17.77-.07.99.25.22.32.13.76-.2 1.08-.85.83-1.6 1.77-2.15 2.81 2.37-1.63 5.3-2.6 8.3-2.6 1.1 0 2.18.13 3.22.39.46.12.75.58.64 1.04-.11.46-.57.75-1.03.64-1.28-.32-2.58-.43-3.83-.34 2.85.95 4.8 3.58 4.8 6.6 0 4.42-4.03 8-9 8z"/></svg>;
-        const IconSparkle = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>;
-        const IconSettings = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><circle cx="12" cy="12" r="3"/></svg>;
-        const IconCalendar = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>;
-        const IconBook = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path strokeLinecap="round" strokeLinejoin="round" d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>;
-        const IconUsers = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path strokeLinecap="round" strokeLinejoin="round" d="M23 21v-2a4 4 0 0 0-3-3.87"/><path strokeLinecap="round" strokeLinejoin="round" d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>;
-        const IconPlus = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>;
-        const IconUser = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>;
-        const IconX = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>;
-        const IconCheck = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"/></svg>;
-        const IconTrash = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>;
-        const IconBrain = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" d="M9.5 2A2.5 2.5 0 0 1 12 4.5v15a2.5 2.5 0 0 1-4.96.44 2.5 2.5 0 0 1-2.96-3.08 3 3 0 0 1-.34-5.58 2.5 2.5 0 0 1 1.32-4.24 2.5 2.5 0 0 1 4.44-2.04"/><path strokeLinecap="round" strokeLinejoin="round" d="M14.5 2A2.5 2.5 0 0 0 12 4.5v15a2.5 2.5 0 0 0 4.96.44 2.5 2.5 0 0 0 2.96-3.08 3 3 0 0 0 .34-5.58 2.5 2.5 0 0 0-1.32-4.24 2.5 2.5 0 0 0-4.44-2.04"/></svg>;
-        const IconList = ({ className = "w-5 h-5" }) => <svg className={className} fill="none" stroke="currentColor" strokeWidth="2" viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>;
-
-
-const { useState, useEffect, useMemo, useRef } = React;
-
-
-function App() {
+        function App() {
             const [globalState, setGlobalState] = useState(() => {
                 const saved = localStorage.getItem('studyStreakData_DB_v7');
                 if (saved) {
@@ -574,17 +267,13 @@ function App() {
                 }
                 return { users: {}, activeUser: null };
             });
-            const pendingWriteSync = useRef(0);
-
 
             useEffect(() => {
                 localStorage.setItem('studyStreakData_DB_v7', JSON.stringify(globalState));
             }, [globalState]);
 
-
             useEffect(() => {
                 if (!globalState.activeUser || !db) return;
-
 
                 const userRef = db.collection("users").doc(globalState.activeUser);
                 
@@ -594,14 +283,20 @@ function App() {
                         
                         setGlobalState(prev => {
                             const currentUserData = prev.users[prev.activeUser];
-                            const applied = applyRemoteUser(currentUserData, liveData, pendingWriteSync.current);
-                            const healed = healCompletedFromHistory(applied || liveData);
-                            if (currentUserData && JSON.stringify(currentUserData) === JSON.stringify(healed)) return prev;
+                            
+                            if (currentUserData) {
+                                if (liveData.lastSync && currentUserData.lastSync) {
+                                    if (liveData.lastSync === currentUserData.lastSync) return prev;
+                                } else if (JSON.stringify(currentUserData) === JSON.stringify(liveData)) {
+                                    return prev;
+                                }
+                            }
+                            
                             return {
                                 ...prev,
                                 users: {
                                     ...prev.users,
-                                    [prev.activeUser]: healed
+                                    [prev.activeUser]: liveData
                                 }
                             };
                         });
@@ -610,37 +305,23 @@ function App() {
                     console.error("Live sync error:", error);
                 });
 
-
                 return () => unsubscribe();
             }, [globalState.activeUser]);
 
-
             const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
-
-            useEffect(() => {
-                if (!activeUserData) return;
-                const healed = healCompletedFromHistory(activeUserData);
-                if (healed !== activeUserData) {
-                    updateUserData(() => healed);
-                }
-            }, [globalState.activeUser]);
-
 
             const updateUserData = (updater) => {
                 setGlobalState(prev => {
                     if (!prev.activeUser) return prev;
                     const user = prev.users[prev.activeUser];
                     const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
-                    if (updatedUser === user) return prev;
                     
                     updatedUser.lastSync = Date.now();
-                    pendingWriteSync.current = updatedUser.lastSync;
                     
                     if (db) {
                         db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
                           .catch(err => console.error("Error saving to Firebase: ", err));
                     }
-
 
                     return {
                         ...prev,
@@ -651,7 +332,6 @@ function App() {
                     };
                 });
             };
-
 
             const checkAndAwardBadges = (userData) => {
                 if(!userData) return userData;
@@ -686,13 +366,11 @@ function App() {
                     }
                 }
 
-
                 if (earnedNew) {
                     return { ...userData, badges: newBadges };
                 }
                 return userData;
             };
-
 
             useEffect(() => {
                 if (activeUserData) {
@@ -708,34 +386,33 @@ function App() {
                 }
             }, [globalState.activeUser, activeUserData?.nextWeeklyReset]);
 
-
             useEffect(() => {
-                if (!globalState.activeUser) return;
-                updateUserData(prev => {
-                    if (!prev || !prev.tasks) return prev;
-                    const now = new Date();
-                    let shouldBreakStreak = false;
-                    let oldestUncompletedDate = null;
-                    let oldestUncompletedTaskId = null;
-                    let needsUpdate = false;
-                    let pointsToDeduct = 0;
-                    let historyLogs = [];
+                if (!activeUserData || !activeUserData.tasks) return;
+                const now = new Date();
+                let shouldBreakStreak = false;
+                let oldestUncompletedDate = null;
+                let needsUpdate = false;
+                let updatedTasks = [...activeUserData.tasks];
+                let pointsToDeduct = 0;
+                let historyLogs = [];
 
-                    const updatedTasks = prev.tasks.map(task => {
-                        if (task.completed || task.isLessonLog || !task.dueDate || !task.dueTime) return task;
+                updatedTasks = updatedTasks.map(task => {
+                    if (!task.completed && !task.isLessonLog && task.dueDate && task.dueTime) {
                         const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
-                        if (now > dueDate && prev.taskStreak > 0) {
+                        
+                        if (now > dueDate && activeUserData.taskStreak > 0) {
                             shouldBreakStreak = true;
                             if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
                                 oldestUncompletedDate = dueDate;
-                                oldestUncompletedTaskId = task.id;
                             }
                         }
+
                         const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
                         if (hoursLate >= 3 && !task.autoPenaltyApplied) {
                             needsUpdate = true;
                             pointsToDeduct += 2;
-                            const sub = (prev.subjects || []).find(s => s.id === task.subjectId);
+                            
+                            const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                             historyLogs.push({
                                 id: 'ph_auto_' + task.id + '_' + Date.now(),
                                 taskId: task.id,
@@ -746,49 +423,52 @@ function App() {
                                 date: now.toISOString(),
                                 details: 'קנס אוטומטי! המשימה עברה את זמן ההגשה ביותר מ-3 שעות.'
                             });
+                            
                             return { ...task, autoPenaltyApplied: true };
                         }
-                        return task;
-                    });
-
-                    if (!shouldBreakStreak && !needsUpdate) return prev;
-
-                    let newStreakHistory = [...(prev.streakHistory || [])];
-                    let taskStreak = prev.taskStreak;
-                    let currentStreakStart = prev.currentStreakStart;
-                    let currentStreakEmojis = prev.currentStreakEmojis;
-
-                    if (shouldBreakStreak && taskStreak > 0) {
-                        newStreakHistory.push({
-                            id: 'sh_' + Date.now(),
-                            startDate: currentStreakStart,
-                            endDate: oldestUncompletedDate.toISOString(),
-                            length: taskStreak,
-                            emojis: [...(currentStreakEmojis || [])],
-                            brokenByTaskId: oldestUncompletedTaskId
-                        });
-                        taskStreak = 0;
-                        currentStreakStart = null;
-                        currentStreakEmojis = [];
-                        setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
                     }
-                    if (needsUpdate) {
-                        setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
-                    }
-                    return {
-                        ...prev,
-                        tasks: updatedTasks,
-                        totalPoints: prev.totalPoints - pointsToDeduct,
-                        weeklyPoints: prev.weeklyPoints - pointsToDeduct,
-                        pointsHistory: [...historyLogs, ...(prev.pointsHistory || [])],
-                        taskStreak,
-                        currentStreakStart,
-                        currentStreakEmojis,
-                        streakHistory: newStreakHistory
-                    };
+                    return task;
                 });
-            }, [globalState.activeUser, activeUserData?.tasks, activeUserData?.taskStreak]);
 
+                if (shouldBreakStreak || needsUpdate) {
+                    updateUserData(prev => {
+                        let newStreakHistory = [...(prev.streakHistory || [])];
+                        let taskStreak = prev.taskStreak;
+                        let currentStreakStart = prev.currentStreakStart;
+                        let currentStreakEmojis = prev.currentStreakEmojis;
+
+                        if (shouldBreakStreak && taskStreak > 0) {
+                            newStreakHistory.push({
+                                id: 'sh_' + Date.now(),
+                                startDate: currentStreakStart,
+                                endDate: oldestUncompletedDate.toISOString(),
+                                length: taskStreak,
+                                emojis: [...(currentStreakEmojis || [])]
+                            });
+                            taskStreak = 0;
+                            currentStreakStart = null;
+                            currentStreakEmojis = [];
+                            setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
+                        }
+
+                        if (needsUpdate) {
+                            setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
+                        }
+
+                        return {
+                            ...prev,
+                            tasks: updatedTasks,
+                            totalPoints: prev.totalPoints - pointsToDeduct,
+                            weeklyPoints: prev.weeklyPoints - pointsToDeduct,
+                            pointsHistory: [...historyLogs, ...(prev.pointsHistory || [])],
+                            taskStreak,
+                            currentStreakStart,
+                            currentStreakEmojis,
+                            streakHistory: newStreakHistory
+                        };
+                    });
+                }
+            }, [activeUserData?.tasks, activeUserData?.taskStreak]);
 
             const handleAddTaskToCalendar = (task) => {
                 const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
@@ -796,28 +476,23 @@ function App() {
                 const title = `${task.title}`;
                 const desc = `נושא: ${task.lessonTopic || 'לא צוין'}\\nנשמר דרך StudyStreak Pro ✨`;
 
-
                 if (!task.dueDate) {
                     showToast('לא הוגדר תאריך למשימה זו! עדכני תאריך לפני הוספה ליומן.', 'warning');
                     return;
                 }
-
 
                 const dueDate = new Date(task.dueDate);
                 let dueTimeStr = task.dueTime || '08:00';
                 const [hours, minutes] = dueTimeStr.split(':').map(Number);
                 dueDate.setHours(hours, minutes, 0);
 
-
                 const formatICSDate = (date) => {
                     return date.toISOString().replace(/-|:/g, '').split('.')[0] + 'Z';
                 };
 
-
                 const dtstart = formatICSDate(dueDate);
                 const endDate = new Date(dueDate.getTime() + 60 * 60 * 1000); 
                 const dtend = formatICSDate(endDate);
-
 
                 let alarms = '';
                 if (task.isExamPrep || title.includes('מבחן') || title.includes('מתכונת')) {
@@ -839,9 +514,7 @@ function App() {
                     alarms += `\nBEGIN:VALARM\nACTION:DISPLAY\nDESCRIPTION:תזכורת: משימה להגשה בקרוב!\nTRIGGER:-P2D\nEND:VALARM`;
                 }
 
-
                 const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//StudyStreak//HE\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:${task.id}@studystreak.app\nDTSTAMP:${formatICSDate(new Date())}\nDTSTART:${dtstart}\nDTEND:${dtend}\nSUMMARY:${title} (${subjectName})\nDESCRIPTION:${desc}${alarms}\nEND:VEVENT\nEND:VCALENDAR`;
-
 
                 const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
                 const link = document.createElement('a');
@@ -851,10 +524,8 @@ function App() {
                 link.click();
                 document.body.removeChild(link);
 
-
                 showToast('קובץ היומן ירד! פתחי אותו כדי להפעיל את התזכורות האוטומטיות 📅', 'success');
             };
-
 
             const [liveFriends, setLiveFriends] = useState({});
             
@@ -884,7 +555,6 @@ function App() {
                 }
             }, [activeUserData?.friends]);
 
-
             useEffect(() => {
                 if (activeUserData && activeUserData.notifications) {
                     const unread = activeUserData.notifications.filter(n => !n.read);
@@ -901,7 +571,6 @@ function App() {
                 }
             }, [activeUserData?.notifications]);
 
-
             const [activeTab, setActiveTab] = useState('dashboard');
             const [toastMessage, setToastMessage] = useState(null);
             const [printMode, setPrintMode] = useState(false);
@@ -909,17 +578,14 @@ function App() {
             const [examPlanData, setExamPlanData] = useState(null);
             const [weeklyReportData, setWeeklyReportData] = useState(null);
 
-
             const [modals, setModals] = useState({
                 task: false, complete: false, subject: false, 
                 friend: false, pointsHistory: false, streakHistory: false,
                 addFriend: false, addAnchor: false, examPlanner: false, cancelExam: false, giveUp: false,
-                examGrade: false, quickExam: false, edit: false
+                examGrade: false, quickExam: false
             });
 
-
             const [activeTask, setActiveTask] = useState(null);
-            const [editingTask, setEditingTask] = useState(null);
             const [taskToCancel, setTaskToCancel] = useState(null);
             const [taskToGiveUp, setTaskToGiveUp] = useState(null);
             const [activeExamForGrade, setActiveExamForGrade] = useState(null);
@@ -930,11 +596,9 @@ function App() {
             const [selectedSettingsDay, setSelectedSettingsDay] = useState(0);
             const [activeDayIndex, setActiveDayIndex] = useState(0);
 
-
             const [archiveFilter, setArchiveFilter] = useState('all');
             const [lessonLogFilter, setLessonLogFilter] = useState('all');
             const [taskFilter, setTaskFilter] = useState('all'); 
-
 
             const [taskFormHasHW, setTaskFormHasHW] = useState(true);
             const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -942,9 +606,8 @@ function App() {
             const [otherLateReason, setOtherLateReason] = useState('');
             
             const [examPlannerData, setExamPlannerData] = useState({ 
-                step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' 
+                step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 
             });
-
 
             const pieChartRef = useRef(null);
             const chartInstance = useRef(null);
@@ -1001,22 +664,18 @@ function App() {
                 };
             }, [activeTab, activeUserData?.tasks, activeUserData?.subjects]);
 
-
             const showToast = (text, type = 'info') => {
                 setToastMessage({ text, type });
                 setTimeout(() => setToastMessage(null), 4000);
             };
 
-
             const toggleModal = (modalName, val) => setModals(m => ({ ...m, [modalName]: val }));
-
 
             const handleLogin = (e) => {
                 e.preventDefault();
                 const user = e.target.username.value.trim();
                 const pass = e.target.password.value;
                 if(!user) return;
-
 
                 if (db) {
                     const userRef = db.collection("users").doc(user);
@@ -1027,10 +686,7 @@ function App() {
                                 showToast('סיסמה שגויה למשתמש הקיים!', 'error');
                                 return;
                             }
-                            setGlobalState(prev => {
-                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[user], data, null) || data);
-                                return {...prev, users: {...prev.users, [user]: merged}, activeUser: user};
-                            });
+                            setGlobalState(prev => ({...prev, users: {...prev.users, [user]: data}, activeUser: user}));
                             showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
                         } else {
                              const newUser = { ...DEFAULT_USER_STATE, password: pass, name: user };
@@ -1059,12 +715,10 @@ function App() {
                 }
             };
 
-
             const handleLogout = () => {
                 setGlobalState(prev => ({ ...prev, activeUser: null }));
                 setActiveTab('dashboard');
             };
-
 
             const handleAddTask = (taskData, hasHW) => {
                 const now = new Date();
@@ -1106,7 +760,6 @@ function App() {
                 }
             };
 
-
             const handleCompleteTask = (task, rating, hardExercises, chosenLateReason) => {
                 const now = new Date();
                 const createdAt = new Date(task.createdAt);
@@ -1119,7 +772,6 @@ function App() {
                     dueDate.setHours(23,59,59);
                 }
 
-
                 const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
                 const usedDurationMs = now.getTime() - createdAt.getTime();
@@ -1129,7 +781,6 @@ function App() {
                 let pointsDelta = 0;
                 let pointsText = '';
                 let streakBroken = false;
-
 
                 if (!isLate) {
                     if (usedDurationMs <= Math.max(totalDurationMs / 2, 86400000)) { 
@@ -1154,7 +805,6 @@ function App() {
                     }
                 }
 
-
                 const historyLog = {
                     id: 'ph_' + Date.now(),
                     taskId: task.id,
@@ -1166,14 +816,12 @@ function App() {
                     details: pointsText
                 };
 
-
                 let newStreak = activeUserData.taskStreak;
                 let newLongest = activeUserData.longestStreak || 0;
                 let newStreakStart = activeUserData.currentStreakStart;
                 let newStreakEmojis = [...(activeUserData.currentStreakEmojis || [])];
                 let newStreakHistory = [...(activeUserData.streakHistory || [])];
                 let streakMessage = '';
-
 
                 if (!streakBroken) {
                     newStreak += 1;
@@ -1191,8 +839,7 @@ function App() {
                             startDate: newStreakStart,
                             endDate: dueDate.toISOString(),
                             length: newStreak,
-                            emojis: newStreakEmojis,
-                            brokenByTaskId: task.id
+                            emojis: newStreakEmojis
                         });
                     }
                     newStreak = 0;
@@ -1200,7 +847,6 @@ function App() {
                     newStreakEmojis = [];
                     streakMessage = `הרצף נשבר בגלל האיחור 😢`;
                 }
-
 
                 updateUserData(prev => checkAndAwardBadges({
                     ...prev,
@@ -1218,7 +864,6 @@ function App() {
                     streakHistory: newStreakHistory
                 }));
 
-
                 toggleModal('complete', false);
                 setActiveTask(null);
                 
@@ -1228,7 +873,6 @@ function App() {
                     showToast(`המשימה הושלמה ${pointsDelta === 0 ? '(ללא קנס נוסף)' : 'וירדו נקודות'}. ${streakMessage}`, 'warning');
                 }
             };
-
 
             const handleGiveUpConfirm = () => {
                 if (!taskToGiveUp) return;
@@ -1249,7 +893,6 @@ function App() {
                         });
                     }
 
-
                     const historyLog = {
                         id: 'ph_' + Date.now(),
                         taskId: taskToGiveUp.id,
@@ -1260,7 +903,6 @@ function App() {
                         date: now.toISOString(),
                         details: 'ויתור סופי על המשימה 🏳️'
                     };
-
 
                     return {
                         ...prev,
@@ -1280,47 +922,10 @@ function App() {
                 showToast('ויתרת על המשימה. הרצף נשבר וירדו 10 נקודות 😢', 'error');
             };
 
-
             const handleDeleteTask = (taskId) => {
                 updateUserData(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== taskId) }));
                 showToast('משימה נמחקה', 'success');
             };
-
-
-            const handleEditTask = (e) => {
-                e.preventDefault();
-                if (!editingTask) return;
-                const oldDue = (editingTask.dueDate && editingTask.dueTime)
-                    ? new Date(`${editingTask.dueDate}T${editingTask.dueTime}`)
-                    : null;
-                const newDueDate = e.target.date.value;
-                const newDueTime = e.target.time.value;
-                const newDue = (newDueDate && newDueTime) ? new Date(`${newDueDate}T${newDueTime}`) : null;
-                updateUserData(prev => {
-                    let next = {
-                        ...prev,
-                        tasks: prev.tasks.map(t => t.id === editingTask.id ? {
-                            ...t,
-                            subjectId: e.target.subId.value,
-                            title: e.target.title.value,
-                            lessonTopic: e.target.topic.value,
-                            givenDate: e.target.givenDate.value,
-                            dueDate: newDueDate || t.dueDate,
-                            dueTime: newDueTime || t.dueTime,
-                            startTime: e.target.startTime && e.target.startTime.value ? e.target.startTime.value : t.startTime
-                        } : t)
-                    };
-                    if (newDue) {
-                        next = applyDueEditConsequences(next, editingTask.id, newDue, new Date());
-                    }
-                    return next;
-                });
-                const wasLateSubmit = !!(editingTask.completed && (editingTask.lateReason || editingTask.autoPenaltyApplied || (editingTask.pointsEarned != null && editingTask.pointsEarned <= 0)));
-                toggleModal('edit', false);
-                setEditingTask(null);
-                showToast(wasLateSubmit ? 'המשימה עודכנה. הרצף והנקודות תוקנו כהגשה בזמן.' : 'המשימה עודכנה', 'success');
-            };
-
 
             const handleCancelExamSessionConfirm = () => {
                 if (!taskToCancel) return;
@@ -1361,7 +966,6 @@ function App() {
                         examsCopy[examIndex] = exam;
                     }
 
-
                     const historyLog = {
                         id: 'ph_' + Date.now(),
                         taskId: taskToCancel.id,
@@ -1373,9 +977,7 @@ function App() {
                         details: 'קנס על ביטול מפגש למידה למבחן'
                     };
 
-
                     showToast(`המפגש בוטל. ירדו 4 נקודות.${streakMessage}`, 'warning');
-
 
                     return {
                         ...prev,
@@ -1395,12 +997,10 @@ function App() {
                 setTaskToCancel(null);
             };
 
-
             const handleSaveExamGrade = (e) => {
                 e.preventDefault();
                 const grade = Number(e.target.grade.value);
                 if (!activeExamForGrade) return;
-
 
                 let pointsDelta = 0;
                 let message = '';
@@ -1414,7 +1014,6 @@ function App() {
                     pointsDelta = 0;
                     message = `הציון הוזן (${grade}). כל הכבוד על המאמץ!`;
                 }
-
 
                 updateUserData(prev => {
                     const updatedExams = prev.exams.map(ex => 
@@ -1434,7 +1033,6 @@ function App() {
                         details: message
                     }, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []);
 
-
                     return checkAndAwardBadges({
                         ...prev,
                         exams: updatedExams,
@@ -1444,12 +1042,10 @@ function App() {
                     });
                 });
 
-
                 toggleModal('examGrade', false);
                 setActiveExamForGrade(null);
                 showToast(message, pointsDelta >= 0 ? 'success' : 'warning');
             };
-
 
             const handleRemoveFromLessonLog = (taskId) => {
                 updateUserData(prev => ({
@@ -1458,7 +1054,6 @@ function App() {
                 }));
                 showToast('נושא השיעור הוסר מהיומן', 'success');
             };
-
 
             const handleSaveSubject = (subData) => {
                 const subToSave = { ...subData, rules: tempRules };
@@ -1475,12 +1070,10 @@ function App() {
                 showToast('המקצוע נשמר בהצלחה', 'success');
             };
 
-
             const handleDeleteSubject = (id) => {
                 updateUserData(prev => ({ ...prev, subjects: prev.subjects.filter(s => s.id !== id) }));
                 showToast('מקצוע נמחק', 'success');
             };
-
 
             const handleSchoolTimeChange = (dayIndex, time) => {
                 updateUserData(prev => {
@@ -1489,7 +1082,6 @@ function App() {
                     return { ...prev, scheduleSettings: newSched };
                 });
             };
-
 
             const handleAddAnchor = (e) => {
                 e.preventDefault();
@@ -1506,7 +1098,6 @@ function App() {
                 showToast('עוגן קבוע נוסף ללו"ז', 'success');
             };
 
-
             const handleDeleteAnchor = (dayIdx, anchorId) => {
                 updateUserData(prev => {
                     const n = [...prev.scheduleSettings];
@@ -1515,12 +1106,10 @@ function App() {
                 });
             };
 
-
             const handleAddFriend = (e) => {
                 e.preventDefault();
                 const username = e.target.username.value.trim();
                 if(!username) return;
-
 
                 if (username === globalState.activeUser) {
                     showToast('אי אפשר להוסיף את עצמך 😅', 'warning');
@@ -1531,7 +1120,6 @@ function App() {
                     showToast('המשתמש/ת כבר ברשימת החברות שלך!', 'warning');
                     return;
                 }
-
 
                 if (typeof db !== 'undefined') {
                     db.collection("users").doc(username).get().then((doc) => {
@@ -1556,7 +1144,6 @@ function App() {
                     });
                 }
             };
-
 
             const handleSendNudge = async (friendUsername) => {
                 if (typeof db === 'undefined') return;
@@ -1587,13 +1174,11 @@ function App() {
                 }
             };
 
-
             const handleRemoveFriend = (id) => {
                 updateUserData(prev => ({ ...prev, friends: prev.friends.filter(f => f.id !== id) }));
                 toggleModal('friend', false);
                 showToast('חברה הוסרה', 'success');
             };
-
 
             const handleGenerateExam = (subjectId) => {
                 if (!subjectId) {
@@ -1607,7 +1192,6 @@ function App() {
                 const subObj = activeUserData.subjects.find(s=>s.id === subjectId);
                 const subjectName = subObj ? `${subObj.emoji || ''} ${subObj.name}` : 'כללי';
 
-
                 setExamPlanData({ subjectName, weakTasks, allTopics, hardEx, date: new Date().toLocaleDateString('he-IL') });
                 setPrintType('exam');
                 setPrintMode(true);
@@ -1617,7 +1201,6 @@ function App() {
                     setPrintType(null);
                 }, 500);
             };
-
 
             const handleGenerateWeeklyReport = () => {
                 const now = new Date();
@@ -1629,34 +1212,28 @@ function App() {
                 endOfWeek.setDate(startOfWeek.getDate() + 6);
                 endOfWeek.setHours(23,59,59,999);
 
-
                 const thisWeekTasks = activeUserData.tasks.filter(t => {
                     if (!t.completedAt) return false;
                     const d = new Date(t.completedAt);
                     return d >= startOfWeek && d <= endOfWeek;
                 });
 
-
                 const completedHW = thisWeekTasks.filter(t => !t.givenUp && !t.isExamPrep && !t.isLessonLog);
                 const givenUpHW = thisWeekTasks.filter(t => t.givenUp);
                 const examPrepDone = thisWeekTasks.filter(t => !t.givenUp && t.isExamPrep);
                 const lessonsLogged = thisWeekTasks.filter(t => t.isLessonLog);
-
 
                 const thisWeekExams = (activeUserData.exams || []).filter(e => {
                     const d = new Date(e.date);
                     return d >= startOfWeek && d <= endOfWeek;
                 });
 
-
                 const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
                     const d = new Date(h.date);
                     return d >= startOfWeek && d <= endOfWeek;
                 });
 
-
                 const totalPointsGained = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
-
 
                 setWeeklyReportData({
                     startDate: startOfWeek.toLocaleDateString('he-IL'),
@@ -1669,7 +1246,6 @@ function App() {
                     totalPointsGained
                 });
 
-
                 setPrintType('weekly');
                 setPrintMode(true);
                 setTimeout(() => {
@@ -1679,7 +1255,6 @@ function App() {
                 }, 500);
             };
 
-
             const handleGenerateStudyPlan = (e) => {
                 e.preventDefault();
                 const subId = examPlannerData.subjectId;
@@ -1687,19 +1262,15 @@ function App() {
                 const hours = examPlannerData.hours;
                 const targetSessions = examPlannerData.targetSessions;
 
-
                 if (!subId || !targetDate) { showToast('יש למלא מקצוע ותאריך', 'warning'); return; }
-
 
                 const totalMinutes = hours * 60;
                 const chunkMinutes = Math.ceil(totalMinutes / targetSessions);
-
 
                 const start = new Date();
                 start.setHours(0,0,0,0);
                 const end = new Date(targetDate);
                 end.setHours(0,0,0,0);
-
 
                 const daysDiff = Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
                 if (daysDiff <= 0) {
@@ -1707,14 +1278,11 @@ function App() {
                     return;
                 }
 
-
                 const nowTime = new Date();
                 const currentMinsNow = nowTime.getHours() * 60 + nowTime.getMinutes();
                 const todayStr = nowTime.toDateString();
 
-
                 let allAvailableWindows = [];
-
 
                 for (let i = 0; i < daysDiff; i++) {
                     const current = new Date();
@@ -1722,21 +1290,17 @@ function App() {
                     const dayOfWeek = current.getDay();
                     const isToday = current.toDateString() === todayStr;
 
-
                     const dayPlan = activeUserData.scheduleSettings[dayOfWeek];
                     const isFreeDay = !dayPlan.schoolEndTime;
                     const windows = isFreeDay && dayPlan.anchors.length === 0
                         ? [{ start: '08:00', end: '22:00' }]
                         : calculateSmartWindows(dayPlan.schoolEndTime || '08:30', dayPlan.anchors);
 
-
                     if (!windows) continue;
-
 
                     for (let w of windows) {
                         let wStartMins = timeToMins(w.start);
                         let wEndMins = timeToMins(w.end);
-
 
                         if (isToday) {
                             if (wEndMins <= currentMinsNow) continue; 
@@ -1744,7 +1308,6 @@ function App() {
                                 wStartMins = currentMinsNow + 15; 
                             }
                         }
-
 
                         const windowDuration = wEndMins - wStartMins;
                         if (windowDuration >= 30) {
@@ -1758,7 +1321,6 @@ function App() {
                     }
                 }
 
-
                 let selectedWindows = [];
                 if (allAvailableWindows.length <= targetSessions) {
                     selectedWindows = allAvailableWindows; 
@@ -1770,16 +1332,13 @@ function App() {
                     }
                 }
 
-
                 const sessions = [];
                 let remainingMinutes = totalMinutes;
-
 
                 for (let w of selectedWindows) {
                     if (remainingMinutes <= 0) break;
                     const sessionDuration = Math.min(w.duration, remainingMinutes, chunkMinutes); 
                     remainingMinutes -= sessionDuration;
-
 
                     sessions.push({
                         id: 'ses_' + Date.now() + Math.random(),
@@ -1790,20 +1349,17 @@ function App() {
                     });
                 }
 
-
                 setExamPlannerData({...examPlannerData, step: 2, sessions, remainingMinutes});
             };
 
-
             const handleConfirmStudyPlan = () => {
                 const sub = activeUserData.subjects.find(s => s.id === examPlannerData.subjectId);
+                const newExamId = 'ex_' + Date.now();
                 const examTitle = examPlannerData.examName || 'מבחן';
-                const reuseId = examPlannerData.existingExamId;
-                const examId = reuseId || ('ex_' + Date.now());
                 
                 const newTasks = examPlannerData.sessions.map((ses, idx) => ({
                     id: 't_' + Date.now() + idx,
-                    examId: examId,
+                    examId: newExamId,
                     subjectId: examPlannerData.subjectId,
                     title: `למידה ל${examTitle} ב${sub?.name || 'כללי'} (מפגש ${idx+1}/${examPlannerData.sessions.length})`,
                     lessonTopic: `הכנה למבחן: ${examTitle}`,
@@ -1818,33 +1374,16 @@ function App() {
                     autoPenaltyApplied: false
                 }));
 
-
-                updateUserData(prev => {
-                    const exams = [...(prev.exams || [])];
-                    if (reuseId) {
-                        return {
-                            ...prev,
-                            tasks: [...prev.tasks, ...newTasks],
-                            exams: exams.map(ex => ex.id === reuseId ? {
-                                ...ex,
-                                sessionsCount: (ex.sessionsCount || 0) + newTasks.length,
-                                targetHours: (ex.targetHours || 0) + examPlannerData.hours
-                            } : ex)
-                        };
-                    }
-                    return {
-                        ...prev,
-                        tasks: [...prev.tasks, ...newTasks],
-                        exams: [...exams, { id: examId, examName: examTitle, subjectId: examPlannerData.subjectId, date: examPlannerData.date, targetHours: examPlannerData.hours, sessionsCount: examPlannerData.sessions.length, cancellations: 0 }]
-                    };
-                });
-
+                updateUserData(prev => ({
+                    ...prev,
+                    tasks: [...prev.tasks, ...newTasks],
+                    exams: [...(prev.exams || []), { id: newExamId, examName: examTitle, subjectId: examPlannerData.subjectId, date: examPlannerData.date, targetHours: examPlannerData.hours, sessionsCount: examPlannerData.sessions.length, cancellations: 0 }]
+                }));
 
                 toggleModal('examPlanner', false);
                 showToast(`שובצו ${examPlannerData.sessions.length} מפגשי למידה בהצלחה! תוכלי לראות אותם במשימות. 🧠`, 'success');
-                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' });
+                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0 });
             };
-
 
             const handleAddQuickExam = (e) => {
                 e.preventDefault();
@@ -1871,7 +1410,6 @@ function App() {
                 showToast('המבחן נוסף למערכת בהצלחה! 🎉', 'success');
             };
 
-
             const handleAddExamToCalendar = (exam) => {
                 const sub = activeUserData.subjects.find(s => s.id === exam.subjectId);
                 const subjectName = sub ? sub.name : 'כללי';
@@ -1880,16 +1418,13 @@ function App() {
                 const dueDate = new Date(exam.date);
                 dueDate.setHours(8, 0, 0);
 
-
                 const formatICSDate = (date) => {
                     return date.toISOString().replace(/-|:/g, '').split('.')[0] + 'Z';
                 };
 
-
                 const dtstart = formatICSDate(dueDate);
                 const endDate = new Date(dueDate.getTime() + 2 * 60 * 60 * 1000); 
                 const dtend = formatICSDate(endDate);
-
 
                 let alarms = '';
                 const daysUntil = Math.max(1, Math.floor((dueDate - new Date()) / (1000 * 60 * 60 * 24)));
@@ -1900,9 +1435,7 @@ function App() {
                     }
                 });
 
-
                 const icsContent = `BEGIN:VCALENDAR\nVERSION:2.0\nPRODID:-//StudyStreak//HE\nCALSCALE:GREGORIAN\nBEGIN:VEVENT\nUID:${exam.id}@studystreak.app\nDTSTAMP:${formatICSDate(new Date())}\nDTSTART:${dtstart}\nDTEND:${dtend}\nSUMMARY:${title}\nDESCRIPTION:בהצלחה במבחן!${alarms}\nEND:VEVENT\nEND:VCALENDAR`;
-
 
                 const blob = new Blob([icsContent], { type: 'text/calendar;charset=utf-8' });
                 const link = document.createElement('a');
@@ -1912,10 +1445,8 @@ function App() {
                 link.click();
                 document.body.removeChild(link);
 
-
                 showToast('המבחן ירד כקובץ יומן! פתחי אותו כדי להוסיף ליומן שלך 📅', 'success');
             };
-
 
             if (printMode) {
                 if (printType === 'exam' && examPlanData) {
@@ -1925,7 +1456,6 @@ function App() {
                                 <h1 className="text-3xl font-bold mb-2">דוח הכנה ממוקד למבחן: {examPlanData.subjectName}</h1>
                                 <p className="text-sm text-stone-500">הופק בתאריך: {examPlanData.date} על ידי StudyStreak Pro</p>
                             </div>
-
 
                             <div className="mb-8">
                                 <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">נושאים לחיזוק דחוף (דירוג הבנה נמוך)</h2>
@@ -1937,7 +1467,6 @@ function App() {
                                     </ul>
                                 )}
                             </div>
-
 
                             <div className="mb-8">
                                 <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">תרגילים וסעיפים קשים לחזרה</h2>
@@ -1952,7 +1481,6 @@ function App() {
                                     </ul>
                                 )}
                             </div>
-
 
                             <div>
                                 <h2 className="text-xl font-bold bg-stone-100 p-2 mb-3 rounded">רשימת כל נושאי הלימוד שנלמדו השנה</h2>
@@ -1989,7 +1517,6 @@ function App() {
                                 </div>
                             </div>
 
-
                             <div className="mb-8">
                                 <h2 className="text-xl font-bold bg-stone-100 p-3 mb-4 rounded-xl border border-stone-200 flex items-center gap-2"><span>📚</span> שיעורי בית ומשימות שהוגשו השבוע</h2>
                                 {weeklyReportData.completedHW.length > 0 ? (
@@ -2002,7 +1529,6 @@ function App() {
                                 ) : <p className="text-base text-stone-500 italic">לא הושלמו משימות השבוע.</p>}
                             </div>
 
-
                             <div className="mb-8">
                                 <h2 className="text-xl font-bold bg-stone-100 p-3 mb-4 rounded-xl border border-stone-200 flex items-center gap-2"><span>🧠</span> הכנה למבחנים ולמידה עצמית</h2>
                                 {weeklyReportData.examPrepDone.length > 0 ? (
@@ -2013,7 +1539,6 @@ function App() {
                                     </ul>
                                 ) : <p className="text-base text-stone-500 italic">לא התקיימו מפגשי הכנה למבחנים השבוע.</p>}
                             </div>
-
 
                             {weeklyReportData.thisWeekExams.length > 0 && (
                                 <div className="mb-8">
@@ -2027,7 +1552,6 @@ function App() {
                                 </div>
                             )}
 
-
                             {weeklyReportData.givenUpHW.length > 0 && (
                                 <div className="mb-8">
                                     <h2 className="text-xl font-bold bg-rose-50 p-3 mb-4 rounded-xl border border-rose-200 text-rose-800 flex items-center gap-2"><span>⚠️</span> משימות שבוטלו / ויתור</h2>
@@ -2040,7 +1564,6 @@ function App() {
                                 </div>
                             )}
 
-
                             <div className="text-center mt-12 text-sm text-stone-400 font-bold border-t-2 border-stone-100 pt-6">
                                 הופק אוטומטית מ-StudyStreak Pro במטרה לעקוב ולשפר את הלמידה. כל הכבוד על המאמץ!
                             </div>
@@ -2048,7 +1571,6 @@ function App() {
                     );
                 }
             }
-
 
             if (!globalState.activeUser || !activeUserData) {
                 return (
@@ -2072,7 +1594,6 @@ function App() {
                                 </div>
                             )}
 
-
                             <form onSubmit={handleLogin} className="space-y-5 relative z-10">
                                 <div>
                                     <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">שם משתמש / אימייל</label>
@@ -2093,7 +1614,6 @@ function App() {
                     </div>
                 );
             }
-
 
             const Navigation = () => (
                 <nav className="flex md:flex-col gap-2 flex-1 w-full hide-scrollbar">
@@ -2122,13 +1642,11 @@ function App() {
                 </nav>
             );
 
-
             const myLevel = getUserLevel(activeUserData.totalPoints);
             
             // שימוש בטוח ברשימות כדי שלא יקרוס
             const safePointsHistory = activeUserData.pointsHistory || [];
             const safeStreakHistory = activeUserData.streakHistory || [];
-
 
             return (
                 <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print" dir="rtl">
@@ -2147,7 +1665,6 @@ function App() {
                         </div>
                     )}
 
-
                     <aside className="hidden md:flex flex-col w-72 bg-white/80 backdrop-blur-xl border-l border-stone-200 p-6 sticky top-0 h-screen overflow-y-auto custom-scrollbar">
                         <div className="flex items-center justify-between mb-8">
                             <div className="flex items-center gap-3">
@@ -2158,7 +1675,6 @@ function App() {
                                 </div>
                             </div>
                         </div>
-
 
                         <div className="bg-gradient-to-br from-stone-800 to-stone-900 text-white p-5 rounded-3xl mb-8 cursor-pointer hover:shadow-lg transition-all shadow-md group relative active:scale-95" 
                              onClick={() => toggleModal('streakHistory', true)}>
@@ -2171,7 +1687,6 @@ function App() {
                             </div>
                         </div>
 
-
                         <Navigation />
                         
                         <div className="mt-auto pt-6">
@@ -2183,7 +1698,6 @@ function App() {
                             </button>
                         </div>
                     </aside>
-
 
                     <header className="md:hidden flex justify-between items-center bg-white/90 backdrop-blur-md p-4 sticky top-0 z-40 border-b border-stone-100 pt-safe-top">
                         <div className="flex items-center gap-2.5">
@@ -2200,7 +1714,6 @@ function App() {
                     <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-xl border-t border-stone-200 z-40 no-print shadow-[0_-10px_40px_rgba(0,0,0,0.05)] pb-safe-bottom overflow-x-auto hide-scrollbar flex px-2 pt-2">
                         <Navigation />
                     </nav>
-
 
                     <main className="flex-1 w-full max-w-5xl mx-auto p-4 md:p-6 lg:p-8 relative z-10">
                         
@@ -2230,7 +1743,6 @@ function App() {
                                         <div className="text-3xl font-bold text-rose-500">{activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '').length}</div>
                                     </div>
                                 </section>
-
 
                                 <section>
                                     <div className="flex justify-between items-end mb-4 px-1">
@@ -2270,9 +1782,6 @@ function App() {
                                                         <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-[2] border px-4 py-3 rounded-xl transition-colors font-bold text-sm flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-600 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                             <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
                                                         </button>
-                                                        <button onClick={() => { setEditingTask(task); toggleModal('edit', true); }} className="flex-[1] px-2 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
-                                                            עריכה
-                                                        </button>
                                                         <button onClick={() => handleAddTaskToCalendar(task)} className="flex-[1] px-2 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
                                                             📅 ליומן
                                                         </button>
@@ -2296,7 +1805,6 @@ function App() {
                             </div>
                         )}
 
-
                         {}
                         {activeTab === 'tasks' && (() => {
                             const mainTasksList = activeUserData.tasks.filter(t => !t.isLessonLog || (t.isLessonLog && !t.completed));
@@ -2317,7 +1825,6 @@ function App() {
                                     }
                                     return 0;
                                 });
-
 
                             return (
                             <div className="space-y-5 animate-[fadeIn_0.3s_ease-out]">
@@ -2350,7 +1857,6 @@ function App() {
                                         ))}
                                     </div>
                                 )}
-
 
                                 <div className="grid grid-cols-1 gap-4">
                                     {sortedFilteredTasks.map(task => {
@@ -2412,9 +1918,6 @@ function App() {
                                                                 <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 md:flex-none border px-4 py-2.5 rounded-xl text-sm font-bold transition-colors flex items-center justify-center gap-2 active:scale-95 ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
                                                                     <IconCheck className="w-4 h-4"/> {isLate ? 'הגשה באיחור' : 'סיימתי'}
                                                                 </button>
-                                                                <button onClick={() => { setEditingTask(task); toggleModal('edit', true); }} className="flex-1 md:flex-none px-3 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
-                                                                    עריכה
-                                                                </button>
                                                                 <button onClick={() => handleAddTaskToCalendar(task)} className="flex-1 md:flex-none px-3 py-2 bg-indigo-50 text-indigo-600 hover:bg-indigo-100 hover:text-indigo-700 border border-indigo-200 rounded-xl transition-colors font-bold text-xs active:scale-95 flex items-center justify-center gap-1.5">
                                                                     📅 הוספה ליומן
                                                                 </button>
@@ -2430,16 +1933,9 @@ function App() {
                                                                 <IconTrash className="w-4 h-4"/> ביטול למידה
                                                             </button>
                                                         ) : task.completed ? (
-                                                            <>
-                                                                {!task.givenUp && !task.isLessonLog && (
-                                                                    <button onClick={() => { setEditingTask(task); toggleModal('edit', true); }} className="flex-1 md:flex-none px-3 py-2 bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 rounded-xl transition-colors font-bold text-xs active:scale-95">
-                                                                        עריכה
-                                                                    </button>
-                                                                )}
-                                                                <button onClick={() => handleDeleteTask(task.id)} className="flex-1 md:flex-none bg-stone-50 text-stone-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
-                                                                    <IconTrash className="w-4 h-4"/> מחיקה
-                                                                </button>
-                                                            </>
+                                                            <button onClick={() => handleDeleteTask(task.id)} className="flex-1 md:flex-none bg-stone-50 text-stone-500 border border-stone-200 p-2.5 rounded-xl hover:bg-rose-50 hover:text-rose-600 hover:border-rose-200 transition-colors flex items-center justify-center gap-2 text-sm font-medium active:scale-95">
+                                                                <IconTrash className="w-4 h-4"/> מחיקה
+                                                            </button>
                                                         ) : null}
                                                     </div>
                                                 </div>
@@ -2452,13 +1948,11 @@ function App() {
                             )
                         })()}
 
-
                         {}
                         {activeTab === 'lesson_log' && (() => {
                             const lessonTasks = activeUserData.tasks.filter(t => t.lessonTopic && t.lessonTopic.trim() !== '' && !t.isExamPrep);
                             const logSubjects = [...new Set(lessonTasks.map(t => t.subjectId))].map(id => activeUserData.subjects.find(s => s.id === id)).filter(Boolean);
                             const filteredLogs = lessonLogFilter === 'all' ? lessonTasks : lessonTasks.filter(t => t.subjectId === lessonLogFilter);
-
 
                             return (
                                 <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
@@ -2468,7 +1962,6 @@ function App() {
                                             <p className="text-sm text-stone-500 mt-1">ריכוז של כל מה שלמדת בכיתה, מסודר לפי תאריכים ומקצועות.</p>
                                         </div>
                                     </div>
-
 
                                     {logSubjects.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-stone-100">
@@ -2489,7 +1982,6 @@ function App() {
                                             ))}
                                         </div>
                                     )}
-
 
                                     <div className="grid grid-cols-1 gap-4">
                                         {filteredLogs.map(task => {
@@ -2526,7 +2018,6 @@ function App() {
                                 </div>
                             );
                         })()}
-
 
                         {}
                         {activeTab === 'settings' && (
@@ -2565,7 +2056,6 @@ function App() {
                                                     </span>
                                                 </div>
 
-
                                                 <div className="bg-white rounded-xl p-3 text-xs text-stone-600 space-y-1.5 border border-stone-100 relative z-10">
                                                     <div className="font-bold text-stone-800 mb-1">כללי הגשה אוטומטיים:</div>
                                                     {sub.rules && sub.rules.length > 0 ? sub.rules.map((r, i) => (
@@ -2580,7 +2070,6 @@ function App() {
                                         {activeUserData.subjects.length === 0 && <div className="text-sm text-stone-500 font-medium col-span-full py-8 bg-stone-50 rounded-2xl border border-dashed border-stone-300 text-center">עדיין לא הוגדרו מקצועות לימוד.</div>}
                                     </div>
                                 </div>
-
 
                                 <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="mb-6 pb-4 border-b border-stone-100">
@@ -2600,7 +2089,6 @@ function App() {
                                             </button>
                                         ))}
                                     </div>
-
 
                                     <div className="bg-stone-50 p-6 rounded-2xl border border-stone-200 animate-[fadeIn_0.2s_ease-out]">
                                         <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 border-b border-stone-200/60 pb-4">
@@ -2636,7 +2124,6 @@ function App() {
                                 </div>
                             </div>
                         )}
-
 
                         {}
                         {activeTab === 'schedule' && (
@@ -2706,7 +2193,6 @@ function App() {
                             </div>
                         )}
 
-
                         {}
                         {activeTab === 'exam_prep' && (() => {
                             const hardExercisesList = activeUserData.tasks.filter(t => t.completed && t.hardExercises && t.hardExercises.trim() !== '');
@@ -2715,7 +2201,6 @@ function App() {
                             const filteredArchive = archiveFilter === 'all' 
                                 ? hardExercisesList 
                                 : hardExercisesList.filter(t => t.subjectId === archiveFilter);
-
 
                             return (
                             <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -2741,7 +2226,6 @@ function App() {
                                         </div>
                                     </div>
 
-
                                     {(activeUserData.exams || []).length > 0 && (
                                         <div className="mt-6 pt-6 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
                                             {(activeUserData.exams || []).sort((a,b) => new Date(a.date) - new Date(b.date)).map(exam => {
@@ -2765,29 +2249,10 @@ function App() {
                                                             תוכננו {exam.sessionsCount || 0} מפגשים ({exam.targetHours || 0} שעות)
                                                         </div>
 
-
                                                         <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-100">
                                                             {!isPassed && (
                                                                 <button onClick={() => handleAddExamToCalendar(exam)} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-2">
                                                                     📅 הוספה ליומן 
-                                                                </button>
-                                                            )}
-                                                            {!isPassed && !exam.grade && (
-                                                                <button onClick={() => {
-                                                                    setExamPlannerData({
-                                                                        step: 1,
-                                                                        existingExamId: exam.id,
-                                                                        subjectId: exam.subjectId,
-                                                                        examName: exam.examName || '',
-                                                                        date: exam.date,
-                                                                        hours: 5,
-                                                                        targetSessions: 3,
-                                                                        sessions: [],
-                                                                        remainingMinutes: 0
-                                                                    });
-                                                                    toggleModal('examPlanner', true);
-                                                                }} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
-                                                                    תכנון למידה
                                                                 </button>
                                                             )}
                                                             {!exam.grade && (
@@ -2802,7 +2267,6 @@ function App() {
                                         </div>
                                     )}
                                 </div>
-
 
                                 <div className="bg-gradient-to-br from-purple-50 to-pink-50 p-6 rounded-3xl border border-purple-100 shadow-sm relative overflow-hidden">
                                     <div className="absolute top-0 left-0 w-64 h-64 bg-white/40 rounded-full blur-3xl -ml-20 -mt-20 pointer-events-none"></div>
@@ -2823,7 +2287,6 @@ function App() {
                                     </div>
                                 </div>
 
-
                                 <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="flex flex-col md:flex-row justify-between md:items-end mb-6 gap-4">
                                         <div>
@@ -2831,7 +2294,6 @@ function App() {
                                             <p className="text-sm text-stone-500 mt-1">כל מה שסימנת שקשה לך, ממוין לפי מקצוע.</p>
                                         </div>
                                     </div>
-
 
                                     {subjectsWithArchive.length > 0 && (
                                         <div className="flex flex-wrap gap-2 mb-4 pb-4 border-b border-stone-100">
@@ -2852,7 +2314,6 @@ function App() {
                                             ))}
                                         </div>
                                     )}
-
 
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {filteredArchive.map(t => {
@@ -2879,7 +2340,6 @@ function App() {
                             </div>
                             )
                         })()}
-
 
                         {}
                         {activeTab === 'social' && (() => {
@@ -2909,7 +2369,6 @@ function App() {
                             // חיתוך למקומות ראשון, שני ושלישי בלבד (Top 3)
                             const sortedByPoints = [...allUsers].sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0)).slice(0, 3);
                             const sortedByStreak = [...allUsers].sort((a,b) => (b.taskStreak || 0) - (a.taskStreak || 0)).slice(0, 3);
-
 
                             return (
                             <div className="space-y-6 animate-[fadeIn_0.3s_ease-out]">
@@ -2973,7 +2432,6 @@ function App() {
                                         </div>
                                     </div>
 
-
                                     <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-40 h-40 bg-rose-50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
                                         <h3 className="font-black text-2xl text-stone-800 mb-6 flex items-center gap-3 relative z-10">
@@ -2984,7 +2442,6 @@ function App() {
                                                 const streak = u.taskStreak || 0;
                                                 const topStreak = Math.max(sortedByStreak[0]?.taskStreak || 1, 1);
                                                 const progressPct = Math.max(2, (streak / topStreak) * 100);
-
 
                                                 return (
                                                 <div key={u.isMe ? 'me' : u.username} className={`relative flex flex-col p-5 rounded-2xl border transition-all ${u.isMe ? 'bg-rose-50/40 border-rose-200 shadow-sm' : 'bg-stone-50 border-stone-200 hover:border-stone-300'}`}>
@@ -3016,7 +2473,6 @@ function App() {
                                     </div>
                                 </div>
 
-
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {activeUserData.friends.map(friend => {
                                         const liveData = liveFriends[friend.username] || {};
@@ -3047,7 +2503,6 @@ function App() {
                             </div>
                             )
                         })()}
-
 
                         {}
                         {activeTab === 'profile' && (() => {
@@ -3098,7 +2553,6 @@ function App() {
                                         </div>
                                     </div>
 
-
                                     <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm relative z-10 mb-8">
                                         <h3 className="font-bold text-lg mb-4 text-stone-800">ארון התגים 🏅</h3>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -3115,7 +2569,6 @@ function App() {
                                         </div>
                                     </div>
 
-
                                     <div className="bg-gradient-to-br from-indigo-50 to-blue-50 p-6 rounded-3xl border border-indigo-100 shadow-sm relative z-10 mb-8">
                                         <div className="flex flex-col sm:flex-row justify-between items-center gap-4">
                                             <div>
@@ -3131,7 +2584,6 @@ function App() {
                                             </button>
                                         </div>
                                     </div>
-
 
                                     <div className="bg-stone-50/70 p-6 rounded-3xl border border-stone-200 text-right relative z-10">
                                         <div className="font-bold text-base text-stone-800 border-b border-stone-200 pb-3 mb-4">הגדרות חשבון אישי</div>
@@ -3151,7 +2603,6 @@ function App() {
                             )
                         })()}
                     </main>
-
 
                     {}
                     {modals.task && (
@@ -3220,7 +2671,6 @@ function App() {
                                         <input name="topic" required={false} placeholder="למשל: אינטגרלים, אוטופיה... (לא חובה)" className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" />
                                     </div>
 
-
                                     <div className="pt-2 border-t border-stone-100">
                                         <label className="text-sm font-bold text-stone-800 block mb-2">האם קיבלתם שיעורי בית?</label>
                                         <div className="flex gap-2">
@@ -3228,7 +2678,6 @@ function App() {
                                             <button type="button" onClick={()=>setTaskFormHasHW(false)} className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all ${!taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>לא, רק לתעד</button>
                                         </div>
                                     </div>
-
 
                                     {taskFormHasHW && (
                                         <div className="space-y-3.5 animate-[fadeIn_0.3s_ease-out]">
@@ -3248,14 +2697,12 @@ function App() {
                                         </div>
                                     )}
 
-
                                     {!taskFormHasHW && (
                                         <div className="bg-emerald-50 text-emerald-700 p-3 rounded-2xl border border-emerald-100 text-sm font-medium animate-[fadeIn_0.3s_ease-out]">
                                             <span className="font-bold block mb-1">איזה כיף! אין שיעורי בית. 🥳</span>
                                             שמירת הנושא תכניס אותו למחולל המבחנים כדי שתחזרי עליו לקראת המתכונת.
                                         </div>
                                     )}
-
 
                                     <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-3.5 font-bold text-base shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-95">
                                         {taskFormHasHW ? 'שמירת משימה' : 'תיעוד שיעור'}
@@ -3265,57 +2712,7 @@ function App() {
                         </div>
                     )}
 
-
                     {}
-
-                    {modals.edit && editingTask && (
-                        <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
-                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
-                                <div className="flex justify-between items-center mb-5">
-                                    <h3 className="font-bold text-xl text-stone-800">עריכת משימה</h3>
-                                    <button type="button" onClick={()=>{ toggleModal('edit', false); setEditingTask(null); }} className="text-stone-400 bg-stone-100 p-2 rounded-full active:scale-95"><IconX className="w-4 h-4"/></button>
-                                </div>
-                                <form onSubmit={handleEditTask} className="space-y-3.5">
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">מקצוע</label>
-                                        <select name="subId" defaultValue={editingTask.subjectId} required className="w-full p-3 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-bold">
-                                            {activeUserData.subjects.map(s => <option key={s.id} value={s.id}>{s.emoji} {s.name}</option>)}
-                                        </select>
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">תאריך השיעור / קבלה</label>
-                                        <input name="givenDate" type="date" defaultValue={editingTask.givenDate || ''} required className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">נושא השיעור</label>
-                                        <input name="topic" defaultValue={editingTask.lessonTopic || ''} className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
-                                    </div>
-                                    <div>
-                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">מה צריך לעשות?</label>
-                                        <input name="title" defaultValue={editingTask.title || ''} required className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">תאריך הגשה</label>
-                                            <input name="date" type="date" defaultValue={editingTask.dueDate || ''} required className="w-full p-3 bg-white border border-purple-100 rounded-xl text-sm" />
-                                        </div>
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">שעת הגשה</label>
-                                            <input name="time" type="time" defaultValue={editingTask.dueTime || ''} required className="w-full p-3 bg-white border border-purple-100 rounded-xl text-sm" />
-                                        </div>
-                                    </div>
-                                    {editingTask.isExamPrep && (
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">שעת התחלה</label>
-                                            <input name="startTime" type="time" defaultValue={editingTask.startTime || ''} className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
-                                        </div>
-                                    )}
-                                    <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-3.5 font-bold">שמירת עריכה</button>
-                                </form>
-                            </div>
-                        </div>
-                    )}
-
                     {modals.complete && activeTask && (() => {
                         const activeTaskIsLate = activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
                         
@@ -3335,7 +2732,6 @@ function App() {
                                                 : '⚠️ המשימה מוגשת באיחור. הרצף שלך עלול להישבר.'}
                                         </div>
                                     )}
-
 
                                     <p className="text-sm text-stone-500 mb-6 font-medium leading-relaxed">תעדי את ההבנה והקשיים שלך עכשיו, כדי שמחולל המבחנים יידע לבנות לך תוכנית חזרה מושלמת.</p>
                                     
@@ -3368,7 +2764,6 @@ function App() {
                                             </div>
                                         )}
 
-
                                         <div>
                                             <label className="text-sm font-bold text-stone-800 mb-3 block">איך הלך בשיעורי הבית? (רמת הבנה)</label>
                                             <div className="flex gap-2 justify-between">
@@ -3399,7 +2794,6 @@ function App() {
                         )
                     })()}
 
-
                     {}
                     {modals.giveUp && taskToGiveUp && (
                         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
@@ -3424,7 +2818,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.cancelExam && taskToCancel && (
                         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-center justify-center p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-[32px] w-full max-w-sm p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out]">
@@ -3448,7 +2841,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.examGrade && activeExamForGrade && (
                         <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl relative overflow-hidden animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -3470,7 +2862,6 @@ function App() {
                             </div>
                         </div>
                     )}
-
 
                     {}
                     {modals.quickExam && (
@@ -3507,7 +2898,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.examPlanner && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-lg p-6 md:p-8 shadow-2xl overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -3519,46 +2909,10 @@ function App() {
                                     <button onClick={()=>toggleModal('examPlanner',false)} className="text-stone-400 hover:text-stone-600 bg-stone-100 p-2 rounded-full transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
                                 </div>
 
-
                                 {examPlannerData.step === 1 ? (
                                     <form onSubmit={handleGenerateStudyPlan} className="space-y-5">
                                         <div className="bg-indigo-50 p-4 rounded-2xl border border-indigo-100 text-sm font-medium text-indigo-800 leading-relaxed">
                                             המערכת תסרוק את הלו"ז שלך ותפזר עבורך זמני למידה בחלונות הפנויים בכל הימים שנותרו עד המבחן.
-                                        </div>
-
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">מבחן קיים באתר</label>
-                                            <select
-                                                value={examPlannerData.existingExamId || ''}
-                                                onChange={e => {
-                                                    const id = e.target.value;
-                                                    if (!id) {
-                                                        setExamPlannerData({...examPlannerData, existingExamId: ''});
-                                                        return;
-                                                    }
-                                                    const exam = (activeUserData.exams || []).find(x => x.id === id);
-                                                    if (!exam) return;
-                                                    setExamPlannerData({
-                                                        ...examPlannerData,
-                                                        existingExamId: id,
-                                                        subjectId: exam.subjectId,
-                                                        examName: exam.examName || '',
-                                                        date: exam.date
-                                                    });
-                                                }}
-                                                className="w-full p-4 bg-white border border-indigo-200 rounded-2xl text-sm outline-none font-bold focus:border-indigo-400 transition-all cursor-pointer"
-                                            >
-                                                <option value="">מבחן חדש (מילוי ידני)</option>
-                                                {(activeUserData.exams || []).filter(ex => {
-                                                    if (ex.grade) return false;
-                                                    const d = new Date(ex.date); d.setHours(0,0,0,0);
-                                                    const today = new Date(); today.setHours(0,0,0,0);
-                                                    return d >= today;
-                                                }).map(ex => {
-                                                    const s = activeUserData.subjects.find(x => x.id === ex.subjectId);
-                                                    return <option key={ex.id} value={ex.id}>{(ex.examName || 'מבחן')} — {s ? s.name : 'כללי'} — {ex.date}</option>;
-                                                })}
-                                            </select>
                                         </div>
                                         
                                         <div>
@@ -3574,7 +2928,6 @@ function App() {
                                             </select>
                                         </div>
 
-
                                         <div>
                                             <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">נושא / שם המבחן (למשל: מתכונת במכניקה)</label>
                                             <input 
@@ -3587,7 +2940,6 @@ function App() {
                                             />
                                         </div>
 
-
                                         <div>
                                             <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">תאריך המבחן</label>
                                             <input 
@@ -3599,7 +2951,6 @@ function App() {
                                                 className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
                                             />
                                         </div>
-
 
                                         <div className="grid grid-cols-2 gap-4">
                                             <div>
@@ -3617,7 +2968,6 @@ function App() {
                                                 </div>
                                             </div>
                                         </div>
-
 
                                         <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-4 font-bold text-base shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-95">
                                             בניית תוכנית אוטומטית ⚡
@@ -3658,13 +3008,11 @@ function App() {
                                             )}
                                         </div>
 
-
                                         {examPlannerData.remainingMinutes > 0 && (
                                             <div className="bg-rose-50 text-rose-700 p-3 rounded-xl border border-rose-100 text-xs font-bold">
                                                 ⚠️ הלו"ז עמוס! לא הצלחנו לשבץ את כל השעות שביקשת בימים הפנויים.
                                             </div>
                                         )}
-
 
                                         <div className="flex gap-3 pt-2">
                                             <button onClick={() => setExamPlannerData({...examPlannerData, step: 1})} className="flex-1 bg-stone-50 border border-stone-200 text-stone-600 font-bold py-4 rounded-xl text-sm transition-colors active:scale-95 hover:bg-stone-100">
@@ -3679,7 +3027,6 @@ function App() {
                             </div>
                         </div>
                     )}
-
 
                     {}
                     {modals.subject && (
@@ -3707,7 +3054,6 @@ function App() {
                                             <input name="color" type="color" defaultValue={editingSubject?.color || '#a855f7'} className="w-full h-14 p-0 border-0 rounded-xl cursor-pointer shadow-sm overflow-hidden" />
                                         </div>
                                     </div>
-
 
                                     <div className="bg-stone-50 p-4 md:p-5 rounded-2xl border border-stone-200">
                                         <div className="flex justify-between items-center mb-4">
@@ -3737,7 +3083,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.addAnchor && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-sm p-6 md:p-8 shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -3757,7 +3102,6 @@ function App() {
                         </div>
                     )}
 
-
                     {}
                     {modals.addFriend && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
@@ -3776,7 +3120,6 @@ function App() {
                             </div>
                         </div>
                     )}
-
 
                     {modals.pointsHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
@@ -3807,7 +3150,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.streakHistory && (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
@@ -3835,7 +3177,6 @@ function App() {
                                             )}
                                         </div>
                                     )}
-
 
                                     {safeStreakHistory.length === 0 ? (
                                         activeUserData.taskStreak === 0 && <div className="text-center py-10 text-sm text-stone-400 font-medium">עדיין לא נשבר לך רצף (או שעוד לא התחלת)!</div>
@@ -3867,7 +3208,6 @@ function App() {
                         </div>
                     )}
 
-
                     {modals.friend && activeFriend && (() => {
                         const liveData = liveFriends[activeFriend.username] || {};
                         const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (activeFriend.streak || 0);
@@ -3895,7 +3235,6 @@ function App() {
                                     </div>
                                 </div>
 
-
                                 <div className="text-right bg-stone-50 p-5 rounded-2xl mb-6 border border-stone-200 relative z-10">
                                     <h4 className="font-bold text-sm mb-3 text-stone-800 flex items-center gap-2">משימות שפתוחות אצלה:</h4>
                                     {pendingTasks.length > 0 ? (
@@ -3906,7 +3245,6 @@ function App() {
                                         <p className="text-xs text-stone-400 font-medium italic">אין משימות פתוחות כרגע. הכל נקי!</p>
                                     )}
                                 </div>
-
 
                                 <div className="space-y-3 relative z-10">
                                     <button onClick={() => handleSendNudge(activeFriend.username)} className="w-full bg-stone-800 hover:bg-stone-900 text-white font-bold py-4 rounded-xl shadow-md text-sm transition-all flex items-center justify-center gap-2 active:scale-95">
@@ -3921,15 +3259,12 @@ function App() {
                         );
                     })()}
 
-
                 </div>
             );
         }
 
-
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
-
     </script>
 </body>
 </html>
