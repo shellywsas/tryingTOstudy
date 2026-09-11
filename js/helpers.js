@@ -97,6 +97,75 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return windows;
         };
 
+        const getUpcomingFreeWindows = (scheduleSettings, dueDateStr, maxDays = 5) => {
+            if (!scheduleSettings || scheduleSettings.length === 0) return [];
+            const now = new Date();
+            const currentMinsNow = now.getHours() * 60 + now.getMinutes();
+            
+            let daysLimit = maxDays;
+            if (dueDateStr) {
+                const due = new Date(dueDateStr);
+                const diffDays = Math.ceil((due.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays > 0) daysLimit = Math.min(maxDays, diffDays + 1);
+            }
+
+            const dayNames = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+            let resultWindows = [];
+
+            for (let i = 0; i < daysLimit; i++) {
+                const targetDate = new Date();
+                targetDate.setDate(targetDate.getDate() + i);
+                const dayIdx = targetDate.getDay();
+                const dayPlan = scheduleSettings[dayIdx];
+                if (!dayPlan) continue;
+
+                const isToday = i === 0;
+                const isFreeDay = !dayPlan.schoolEndTime;
+                const rawWindows = (isFreeDay && (!dayPlan.anchors || dayPlan.anchors.length === 0))
+                    ? [{ start: '09:00', end: '22:00', reason: 'יום חופשי מלא' }]
+                    : calculateSmartWindows(dayPlan.schoolEndTime || '08:30', dayPlan.anchors || []);
+
+                if (!rawWindows) continue;
+
+                for (let w of rawWindows) {
+                    const startM = timeToMins(w.start);
+                    const endM = timeToMins(w.end);
+
+                    if (isToday && endM <= currentMinsNow) continue;
+                    let actualStartM = startM;
+                    if (isToday && startM < currentMinsNow) {
+                        actualStartM = currentMinsNow + 10;
+                    }
+
+                    if (endM - actualStartM >= 30) {
+                        resultWindows.push({
+                            id: 'win_' + i + '_' + actualStartM,
+                            dateStr: targetDate.toISOString().split('T')[0],
+                            dayName: isToday ? 'היום' : (i === 1 ? 'מחר' : `יום ${dayNames[dayIdx]}`),
+                            start: minsToTime(actualStartM),
+                            end: w.end,
+                            durationMins: endM - actualStartM,
+                            reason: w.reason || 'זמן פנוי לפי הלו״ז'
+                        });
+                    }
+                }
+            }
+            return resultWindows;
+        };
+
+        const MOTIVATIONAL_TEMPLATES = [
+            (sub, title, topic, winText, name) => `היי ${name || 'אלופה'}! 🌸 שמתי לב שיש לך עכשיו חלון פנוי מעולה בלו״ז (${winText}). זה בדיוק הזמן לתקתק את שיעורי הבית ב${sub}${topic ? ` בנושא "${topic}"` : ''}! 25 דקות פוקוס ואת חופשייה לכל הערב. קטן עלייך! 🚀`,
+            (sub, title, topic, winText, name) => `תזכורת של אלופות 🏆: יש לך עכשיו זמן פנוי (${winText}). בואי ננצל אותו לסגור את "${title}" ב${sub}! תשמרי על ה-Streak ותרגישי הכי טוב שיש. מוזיקה טובה ומתחילים! ✨`,
+            (sub, title, topic, winText, name) => `הייוש! ☕ טיפ קטן להמשך היום: הזמן הפנוי שלך (${winText}) בדיוק התחיל. במקום לדחות ללילה, שווה לשבת עכשיו על ${sub}${topic ? ` (${topic})` : ''} ולסיים עם זה ברוגע. את תודי לעצמך אחר כך! 🎯`,
+            (sub, title, topic, winText, name) => `בוסט מוטיבציה קצר ⚡: פנויה עכשיו (${winText})? בואי נתקדם קצת ב${sub}! כל תרגיל שאת עושה עכשיו מוריד ממך לחץ ענק. יאללה, פוקוס מהיר וסיימת! 💪`,
+            (sub, title, topic, winText, name) => `רק קפצתי להזכיר בנחמדות 🌟: "${title}" ב${sub} מחכה לך, ועכשיו זה חלון זמן מושלם (${winText}) לעשות את זה בלי הפרעות. מאמינה בך בטירוף! 📚`,
+            (sub, title, topic, winText, name) => `היי ${name || ''}! ⏱️ 20 דקות עכשיו של ישיבה על ${sub}${topic ? ` בנושא ${topic}` : ''}, ואת עם ראש שקט לגמרי לכל שאר היום. שווה לנסות! 🔥`
+        ];
+
+        const getRandomMotivationalMessage = (sub, title, topic, winText, name) => {
+            const randomIndex = Math.floor(Math.random() * MOTIVATIONAL_TEMPLATES.length);
+            return MOTIVATIONAL_TEMPLATES[randomIndex](sub, title, topic, winText, name);
+        };
 
         const ALL_BADGES = [
             { id: 'b_exam_90', icon: '🏆', title: 'מצטיינת מבחנים', description: 'קיבלת ב-4 מבחנים מעל 90', reqType: 'exams_90_plus', reqTarget: 4 },
@@ -135,6 +204,17 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             streakHistory: [],
             friends: [],
             exams: [],
+            phoneNumber: '',
+            parentPhoneNumber: '',
+            parentPhoneNumber2: '',
+            whatsappGateway: {
+                instanceId: '',
+                apiToken: '',
+                host: 'https://api.green-api.com'
+            },
+            autoSendParentReport: true,
+            lastWeeklyReportSentWeek: '',
+            lastTaskRemindersSent: {},
             notifications: [],
             badges: [] 
         };

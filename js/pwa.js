@@ -1,4 +1,4 @@
-﻿/**
+/**
  * StudyStreak Pro - PWA Manifest Generator
  */
 const generatePWA = () => {
@@ -22,3 +22,12 @@ const generatePWA = () => {
     }
 };
 document.addEventListener('DOMContentLoaded', generatePWA);
+
+// Register Service Worker for Background Notifications & Lock-Screen Push
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js')
+            .then(reg => console.log('StudyStreak Service Worker active:', reg.scope))
+            .catch(err => console.warn('StudyStreak Service Worker init warning:', err));
+    });
+}

@@ -319,6 +319,429 @@ function App() {
                 showToast('הקובץ ירד! כולל תזכורות אוטומטיות ליומן כל יומיים עד ההגשה 📅', 'success');
             };
 
+            const sendToServiceWorker = (msg) => {
+                if ('serviceWorker' in navigator) {
+                    if (navigator.serviceWorker.controller) {
+                        navigator.serviceWorker.controller.postMessage(msg);
+                    } else if (navigator.serviceWorker.ready) {
+                        navigator.serviceWorker.ready.then(reg => {
+                            if (reg.active) reg.active.postMessage(msg);
+                        });
+                    }
+                }
+            };
+
+            const testInstantNotification = () => {
+                const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+                if (isIOSDevice && !isStandalone) {
+                    setNotificationHelpTab('ios');
+                    toggleModal('notificationHelp', true);
+                    return;
+                }
+
+                if (!("Notification" in window)) {
+                    toggleModal('notificationHelp', true);
+                    return;
+                }
+
+                if (Notification.permission === 'denied') {
+                    setNotificationHelpTab(isIOSDevice ? 'ios' : 'android');
+                    toggleModal('notificationHelp', true);
+                    return;
+                }
+
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        const testMsg = 'היי שלי! 🌸 זו התראת בדיקה של StudyStreak – ככה יקפצו לך תזכורות מעודדות על מסך הנעילה בזמנים הפנויים!';
+                        const showSuccess = () => showToast('התראת בדיקה נשלחה! בדקי את מסך הנעילה או וילון ההתראות 🔔', 'success');
+
+                        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                            navigator.serviceWorker.ready.then(reg => {
+                                reg.showNotification('התראת בדיקה מוצלחת! ✨', {
+                                    body: testMsg,
+                                    icon: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239333ea'%3E%3Cpath d='M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z'/%3E%3C/svg%3E",
+                                    vibrate: [250, 100, 250]
+                                }).then(showSuccess).catch(() => {
+                                    try {
+                                        new Notification('התראת בדיקה מוצלחת! ✨', { body: testMsg });
+                                        showSuccess();
+                                    } catch(e) {}
+                                });
+                            });
+                        } else {
+                            try {
+                                new Notification('התראת בדיקה מוצלחת! ✨', { body: testMsg });
+                                showSuccess();
+                            } catch (e) {
+                                showToast('לא ניתן היה להציג התראה כעת בדפדפן', 'warning');
+                            }
+                        }
+                    } else {
+                        setNotificationHelpTab(isIOSDevice ? 'ios' : 'android');
+                        toggleModal('notificationHelp', true);
+                    }
+                }).catch(err => {
+                    setNotificationHelpTab(isIOSDevice ? 'ios' : 'android');
+                    toggleModal('notificationHelp', true);
+                });
+            };
+
+            const toggleSmartReminders = (task) => {
+                const isCurrentlyActive = !!task.remindersEnabled;
+                const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
+                const subjectName = sub ? sub.name : 'כללי';
+                const topic = task.lessonTopic || task.title;
+                const userName = activeUserData.name || 'שלי';
+
+                if (isCurrentlyActive) {
+                    sendToServiceWorker({
+                        type: 'CANCEL_TASK_REMINDERS',
+                        taskId: task.id
+                    });
+                    updateUserData(prev => ({
+                        ...prev,
+                        tasks: (prev.tasks || []).map(t => t.id === task.id ? { ...t, remindersEnabled: false } : t)
+                    }));
+                    showToast(`תזכורות חכמות בוטלו עבור "${task.title}".`, 'info');
+                    return;
+                }
+
+                const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+                if (isIOSDevice && !isStandalone) {
+                    setNotificationHelpTab('ios');
+                    toggleModal('notificationHelp', true);
+                    return;
+                }
+
+                if (!("Notification" in window) || Notification.permission === 'denied') {
+                    setNotificationHelpTab(isIOSDevice ? 'ios' : 'android');
+                    toggleModal('notificationHelp', true);
+                    return;
+                }
+
+                Notification.requestPermission().then(permission => {
+                    if (permission === 'granted') {
+                        const freeWindows = getUpcomingFreeWindows(activeUserData.scheduleSettings, task.dueDate);
+                        const windowsToSchedule = freeWindows.length > 0 ? freeWindows.slice(0, 4) : [
+                            { dateStr: new Date().toISOString().split('T')[0], start: '16:30', end: '18:00', dayName: 'היום' },
+                            { dateStr: new Date().toISOString().split('T')[0], start: '20:00', end: '21:30', dayName: 'הערב' }
+                        ];
+
+                        // 1. Send scheduled reminders for each upcoming free window
+                        windowsToSchedule.forEach((win, index) => {
+                            const randomMsg = getRandomMotivationalMessage(subjectName, task.title, topic, `${win.dayName} (${win.start} - ${win.end})`, userName);
+                            let winTime = new Date(`${win.dateStr}T${win.start}`).getTime();
+                            let delayMs = winTime - Date.now();
+                            if (delayMs <= 0) {
+                                delayMs = 60000 + (index * 180000);
+                            }
+
+                            sendToServiceWorker({
+                                type: 'SCHEDULE_NOTIFICATION',
+                                title: `תזכורת שיעורי בית: ${subjectName} 📚`,
+                                body: randomMsg,
+                                delayMs: delayMs,
+                                tag: `task-${task.id}-win-${index}`,
+                                taskId: task.id
+                            });
+                        });
+
+                        // 2. Schedule a 15-second lock-screen test reminder so user can verify on mobile immediately
+                        const demoSampleMsg = getRandomMotivationalMessage(subjectName, task.title, topic, 'הזמן הפנוי שלך', userName);
+                        sendToServiceWorker({
+                            type: 'SCHEDULE_NOTIFICATION',
+                            title: `תזכורת חכמה: ${subjectName} ✨`,
+                            body: demoSampleMsg,
+                            delayMs: 15000,
+                            tag: `task-${task.id}-demo-15s`,
+                            taskId: task.id
+                        });
+
+                        updateUserData(prev => ({
+                            ...prev,
+                            tasks: (prev.tasks || []).map(t => t.id === task.id ? { ...t, remindersEnabled: true } : t)
+                        }));
+
+                        // 3. Immediate confirmation notification
+                        const instantMsg = `התזכורות הופעלו! תזכורת לדוגמה תופיע בעוד 15 שניות, ובהמשך לפי הלו״ז הפנוי שלך 🌟`;
+                        if (navigator.serviceWorker && navigator.serviceWorker.ready) {
+                            navigator.serviceWorker.ready.then(reg => {
+                                reg.showNotification(`תזכורות חכמות הופעלו: ${subjectName} 🚀`, {
+                                    body: instantMsg,
+                                    icon: "data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M12 22c1.1 0 2-.9 2-2h-4c0 1.1.9 2 2 2zm6-6v-5c0-3.07-1.63-5.64-4.5-6.32V4c0-.83-.67-1.5-1.5-1.5s-1.5.67-1.5 1.5v.68C7.64 5.36 6 7.92 6 11v5l-2 2v1h16v-1l-2-2z'/%3E%3C/svg%3E",
+                                    vibrate: [200, 100, 200]
+                                });
+                            });
+                        }
+
+                        showToast(`תזכורות חכמות הופעלו! נשלח תזכורות מעודדות מגוונות בחלונות הפנויים עד ההגשה 🔔`, 'success');
+                    } else {
+                        showToast('כדי לקבל תזכורות במסך הנעילה, נא לאשר קבלת התראות בדפדפן', 'warning');
+                    }
+                });
+            };
+
+            const getWeeklyReportData = () => {
+                if (!activeUserData) return null;
+                const now = new Date();
+                const startOfWeek = new Date(now);
+                startOfWeek.setDate(now.getDate() - now.getDay());
+                startOfWeek.setHours(0,0,0,0);
+                
+                const endOfWeek = new Date(startOfWeek);
+                endOfWeek.setDate(startOfWeek.getDate() + 6);
+                endOfWeek.setHours(23,59,59,999);
+
+                const thisWeekTasks = (activeUserData.tasks || []).filter(t => {
+                    if (!t.completedAt) return false;
+                    const d = new Date(t.completedAt);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const completedHW = thisWeekTasks.filter(t => !t.givenUp && !t.isExamPrep && !t.isLessonLog);
+                const givenUpHW = thisWeekTasks.filter(t => t.givenUp);
+                const examPrepDone = thisWeekTasks.filter(t => !t.givenUp && t.isExamPrep);
+                const lessonsLogged = thisWeekTasks.filter(t => t.isLessonLog);
+
+                const thisWeekExams = (activeUserData.exams || []).filter(e => {
+                    const d = new Date(e.date);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
+                    const d = new Date(h.date);
+                    return d >= startOfWeek && d <= endOfWeek;
+                });
+
+                const totalPointsGained = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
+
+                return {
+                    startDate: startOfWeek.toLocaleDateString('he-IL'),
+                    endDate: endOfWeek.toLocaleDateString('he-IL'),
+                    completedHW,
+                    givenUpHW,
+                    examPrepDone,
+                    lessonsLogged,
+                    thisWeekExams,
+                    totalPointsGained
+                };
+            };
+
+            const toggleWhatsAppTaskReminder = (task) => {
+                const isCurrentlyActive = !!task.whatsappRemindersEnabled;
+                const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
+                const subjectName = sub ? sub.name : 'כללי';
+                const userName = activeUserData.name || 'שלי';
+
+                if (isCurrentlyActive) {
+                    updateUserData(prev => ({
+                        ...prev,
+                        tasks: (prev.tasks || []).map(t => t.id === task.id ? { ...t, whatsappRemindersEnabled: false } : t)
+                    }));
+                    showToast(`תזכורות וואטסאפ בוטלו עבור "${task.title}".`, 'info');
+                    return;
+                }
+
+                let phone = activeUserData.phoneNumber;
+                if (!phone) {
+                    phone = prompt('נא להזין מספר טלפון לקבלת תזכורות בוואטסאפ (לדוגמה: 0501234567):', '');
+                    if (!phone) return;
+                    updateUserData(prev => ({
+                        ...prev,
+                        phoneNumber: phone
+                    }));
+                }
+
+                updateUserData(prev => ({
+                    ...prev,
+                    tasks: (prev.tasks || []).map(t => t.id === task.id ? { ...t, whatsappRemindersEnabled: true } : t)
+                }));
+
+                const reminderText = WhatsAppService.generateStudentReminderText({
+                    studentName: userName,
+                    subjectName: subjectName,
+                    taskTitle: task.title,
+                    dueDate: task.dueDate,
+                    dueTime: task.dueTime,
+                    freeSlotText: 'בזמן הפנוי שלך לפי הלו"ז'
+                });
+
+                WhatsAppService.sendMessage({
+                    to: phone,
+                    message: reminderText,
+                    gatewayConfig: activeUserData.whatsappGateway
+                }).then(res => {
+                    if (res && res.status === 'sent_gateway') {
+                        showToast(`תזכורת וואטסאפ הופעלה ונשלחה אוטומטית! 💬`, 'success');
+                    } else {
+                        showToast(`תזכורת וואטסאפ הופעלה בהצלחה! 💬`, 'success');
+                    }
+                }).catch(err => {
+                    console.error('Error sending WhatsApp reminder:', err);
+                    showToast('תזכורת וואטסאפ הופעלה', 'info');
+                });
+            };
+
+            const getWeekIdentifier = (d = new Date()) => {
+                const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+                date.setUTCDate(date.getUTCDate() + 4 - (date.getUTCDay() || 7));
+                const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+                const weekNo = Math.ceil((((date - yearStart) / 86400000) + 1) / 7);
+                return `${date.getUTCFullYear()}-W${weekNo}`;
+            };
+
+            const handleSendWhatsAppTest = (type = 'student') => {
+                let targetPhone = '';
+                let label = '';
+                if (type === 'student' || type === false) {
+                    targetPhone = activeUserData?.phoneNumber;
+                    label = 'התלמידה';
+                } else if (type === 'parent1' || type === true) {
+                    targetPhone = activeUserData?.parentPhoneNumber;
+                    label = 'הורה 1';
+                } else if (type === 'parent2') {
+                    targetPhone = activeUserData?.parentPhoneNumber2;
+                    label = 'הורה 2';
+                }
+
+                if (!targetPhone) {
+                    showToast(`נא להזין מספר טלפון עבור ${label} 📱`, 'warning');
+                    return;
+                }
+
+                const isParent = type !== 'student' && type !== false;
+                const testMsg = isParent 
+                    ? `שלום מהאפליקציה StudyStreak Pro! ✨\nזהו מספר הטלפון המוגדר לקבלת עדכונים ודוחות התקדמות שבועיים של ${activeUserData.name || 'התלמיד/ה'}. נהדר לראות את ההשקעה וההתקדמות!`
+                    : `היי ${activeUserData.name || 'אלופה'}! ✨\nבדיקת חיבור לוואטסאפ הצליחה! מכאן תקבלי תזכורות מוטיבציה שקטות וחכמות לשיעורי הבית לפי הלו"ז שלך 📚💪`;
+
+                WhatsAppService.sendMessage({
+                    to: targetPhone,
+                    message: testMsg,
+                    gatewayConfig: activeUserData.whatsappGateway
+                }).then(res => {
+                    if (res && res.status === 'sent_gateway') {
+                        showToast(`הודעת בדיקה נשלחה ישירות לוואטסאפ של ${label}! 🚀`, 'success');
+                    } else if (res && res.status === 'opened_link') {
+                        showToast(`נפתח וואטסאפ לשליחת הודעת בדיקה ל-${label} 📲`, 'info');
+                    }
+                }).catch(err => {
+                    console.error('Error sending test message:', err);
+                    showToast('שגיאה בשליחה לוואטסאפ', 'error');
+                });
+            };
+
+            const handleSendParentWeeklyReportWhatsApp = (silent = false) => {
+                const p1 = activeUserData?.parentPhoneNumber?.trim();
+                const p2 = activeUserData?.parentPhoneNumber2?.trim();
+
+                if (!p1 && !p2) {
+                    if (!silent) {
+                        showToast('נא להזין תחילה לפחות מספר הורה אחד בהגדרות ⚙️', 'warning');
+                        setActiveTab('settings');
+                    }
+                    return;
+                }
+
+                const reportData = getWeeklyReportData();
+                if (!reportData) {
+                    if (!silent) showToast('אין מספיק נתונים להפקת דוח שבועי כרגע', 'info');
+                    return;
+                }
+
+                const messageText = WhatsAppService.generateParentReportText(activeUserData.name || 'שלי', reportData);
+                const recipients = [p1, p2].filter(Boolean);
+
+                recipients.forEach(phone => {
+                    WhatsAppService.sendMessage({
+                        to: phone,
+                        message: messageText,
+                        gatewayConfig: activeUserData.whatsappGateway
+                    }).catch(err => console.error('Error sending parent report to:', phone, err));
+                });
+
+                const currentWeek = getWeekIdentifier();
+                updateUserData(prev => ({
+                    ...prev,
+                    lastWeeklyReportSentWeek: currentWeek
+                }));
+
+                if (!silent) {
+                    if (activeUserData?.whatsappGateway?.instanceId) {
+                        showToast(`דוח שבועי נשלח אוטומטית לוואטסאפ של ${recipients.length > 1 ? 'שני ההורים' : 'ההורים'}! 📨🚀`, 'success');
+                    } else {
+                        showToast(`נפתח וואטסאפ לשליחת הדוח השבועי להורים 📲`, 'info');
+                    }
+                }
+            };
+
+            // אוטומציה של וואטסאפ: שליחת דוח שבועי במוצאי שבת ותזכורות משימות מתוזמנות
+            useEffect(() => {
+                if (!activeUserData || !activeUserData.whatsappGateway?.instanceId) return;
+
+                const runWhatsAppAutomationCheck = () => {
+                    const now = new Date();
+                    const day = now.getDay(); // 6 = Saturday, 0 = Sunday
+                    const hour = now.getHours();
+                    const currentWeek = getWeekIdentifier(now);
+
+                    // 1. שליחת דוח הורים במוצאי שבת (החל מ-19:00) או בראשון בבוקר
+                    const isSaturdayEveningOrSunday = (day === 6 && hour >= 19) || (day === 0 && hour < 14);
+                    const alreadySentThisWeek = activeUserData.lastWeeklyReportSentWeek === currentWeek;
+                    const autoSendEnabled = activeUserData.autoSendParentReport !== false;
+
+                    if (isSaturdayEveningOrSunday && !alreadySentThisWeek && autoSendEnabled) {
+                        const hasParent = activeUserData.parentPhoneNumber || activeUserData.parentPhoneNumber2;
+                        if (hasParent) {
+                            console.log('Sending automatic Saturday evening parent report via WhatsApp...');
+                            handleSendParentWeeklyReportWhatsApp(true);
+                        }
+                    }
+
+                    // 2. תזכורות משימות חכמות (רק עבור משימות שהופעלו עליהן תזכורות וואטסאפ)
+                    if (activeUserData.phoneNumber) {
+                        const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
+                        const lastSentMap = activeUserData.lastTaskRemindersSent || {};
+                        let updatedSentMap = null;
+
+                        activeTasks.forEach(task => {
+                            const lastSentTime = lastSentMap[task.id] || 0;
+                            const hoursSince = (Date.now() - lastSentTime) / (1000 * 60 * 60);
+
+                            // שליחה מרווחת (פעם ב-5 שעות לכל היותר למשימה, בשעות היום 08:00-22:00)
+                            if (hoursSince >= 5 && hour >= 8 && hour <= 22) {
+                                const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
+                                const reminderMsg = WhatsAppService.generateStudentReminderText({
+                                    studentName: activeUserData.name || 'שלי',
+                                    subjectName: sub ? sub.name : 'כללי',
+                                    taskTitle: task.title,
+                                    dueDate: task.dueDate,
+                                    dueTime: task.dueTime,
+                                    freeSlotText: 'הזמן הפנוי שלך לפי הלו"ז'
+                                });
+
+                                WhatsAppService.sendMessage({
+                                    to: activeUserData.phoneNumber,
+                                    message: reminderMsg,
+                                    gatewayConfig: activeUserData.whatsappGateway
+                                }).then(res => {
+                                    if (res && res.status === 'sent_gateway') {
+                                        if (!updatedSentMap) updatedSentMap = { ...lastSentMap };
+                                        updatedSentMap[task.id] = Date.now();
+                                        updateUserData(prev => ({
+                                            ...prev,
+                                            lastTaskRemindersSent: updatedSentMap
+                                        }));
+                                    }
+                                }).catch(e => console.error('Automated WhatsApp reminder error:', e));
+                            }
+                        });
+                    }
+                };
+
+                runWhatsAppAutomationCheck();
+                const intervalId = setInterval(runWhatsAppAutomationCheck, 10 * 60 * 1000);
+                return () => clearInterval(intervalId);
+            }, [activeUserData?.whatsappGateway?.instanceId, activeUserData?.lastWeeklyReportSentWeek, activeUserData?.tasks]);
 
             const [liveFriends, setLiveFriends] = useState({});
             
@@ -374,16 +797,23 @@ function App() {
             const [weeklyReportData, setWeeklyReportData] = useState(null);
 
 
+            const isIOSDevice = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+            const [notificationHelpTab, setNotificationHelpTab] = useState(isIOSDevice ? 'ios' : 'android');
+
             const [modals, setModals] = useState({
                 task: false, complete: false, subject: false, 
                 friend: false, pointsHistory: false, streakHistory: false,
                 addFriend: false, addAnchor: false, examPlanner: false, cancelExam: false, giveUp: false,
-                examGrade: false, quickExam: false, edit: false
+                examGrade: false, quickExam: false, edit: false, reminderMode: false, notificationHelp: false
             });
 
 
             const [activeTask, setActiveTask] = useState(null);
             const [taskActionsMenu, setTaskActionsMenu] = useState(null);
+            const [selectedTaskForReminder, setSelectedTaskForReminder] = useState(null);
+            const [selectedReminderWindow, setSelectedReminderWindow] = useState(null);
+            const [reminderTemplateId, setReminderTemplateId] = useState('friendly');
+            const [customReminderPhone, setCustomReminderPhone] = useState('');
             const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
             const [editingTask, setEditingTask] = useState(null);
             const [taskToCancel, setTaskToCancel] = useState(null);
@@ -684,11 +1114,21 @@ function App() {
                 }
 
 
+                // Automatically cancel and stop future reminders for this completed task
+                if (navigator.serviceWorker && navigator.serviceWorker.controller) {
+                    navigator.serviceWorker.controller.postMessage({
+                        type: 'CANCEL_TASK_REMINDERS',
+                        taskId: task.id
+                    });
+                }
+
                 updateUserData(prev => checkAndAwardBadges({
                     ...prev,
                     tasks: prev.tasks.map(t => t.id === task.id ? { 
                         ...t, completed: true, completedAt: now.toISOString(), 
-                        understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: chosenLateReason
+                        understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: chosenLateReason,
+                        remindersEnabled: false,
+                        whatsappRemindersEnabled: false
                     } : t),
                     totalPoints: prev.totalPoints + pointsDelta,
                     weeklyPoints: prev.weeklyPoints + pointsDelta,
@@ -1233,55 +1673,9 @@ function App() {
 
 
             const handleGenerateWeeklyReport = () => {
-                const now = new Date();
-                const startOfWeek = new Date(now);
-                startOfWeek.setDate(now.getDate() - now.getDay());
-                startOfWeek.setHours(0,0,0,0);
-                
-                const endOfWeek = new Date(startOfWeek);
-                endOfWeek.setDate(startOfWeek.getDate() + 6);
-                endOfWeek.setHours(23,59,59,999);
-
-
-                const thisWeekTasks = activeUserData.tasks.filter(t => {
-                    if (!t.completedAt) return false;
-                    const d = new Date(t.completedAt);
-                    return d >= startOfWeek && d <= endOfWeek;
-                });
-
-
-                const completedHW = thisWeekTasks.filter(t => !t.givenUp && !t.isExamPrep && !t.isLessonLog);
-                const givenUpHW = thisWeekTasks.filter(t => t.givenUp);
-                const examPrepDone = thisWeekTasks.filter(t => !t.givenUp && t.isExamPrep);
-                const lessonsLogged = thisWeekTasks.filter(t => t.isLessonLog);
-
-
-                const thisWeekExams = (activeUserData.exams || []).filter(e => {
-                    const d = new Date(e.date);
-                    return d >= startOfWeek && d <= endOfWeek;
-                });
-
-
-                const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
-                    const d = new Date(h.date);
-                    return d >= startOfWeek && d <= endOfWeek;
-                });
-
-
-                const totalPointsGained = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
-
-
-                setWeeklyReportData({
-                    startDate: startOfWeek.toLocaleDateString('he-IL'),
-                    endDate: endOfWeek.toLocaleDateString('he-IL'),
-                    completedHW,
-                    givenUpHW,
-                    examPrepDone,
-                    lessonsLogged,
-                    thisWeekExams,
-                    totalPointsGained
-                });
-
+                const report = getWeeklyReportData();
+                if (!report) return;
+                setWeeklyReportData(report);
 
                 setPrintType('weekly');
                 setPrintMode(true);
@@ -2169,7 +2563,6 @@ function App() {
                             </div>
                         </div>
 
-
                         <Navigation />
                         
                         <div className="mt-auto pt-6">
@@ -2255,9 +2648,21 @@ function App() {
                                                 <div key={task.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 flex flex-col justify-between hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.08)] transition-all gap-4">
                                                     <div>
                                                         <div className="flex justify-between items-start mb-3 flex-wrap gap-2">
-                                                            <span className="text-xs px-2.5 py-1 rounded-lg font-bold shadow-sm" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
-                                                                {sub?.emoji} {sub?.name || 'ללא מקצוע'}
-                                                            </span>
+                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                <span className="text-xs px-2.5 py-1 rounded-lg font-bold shadow-sm" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
+                                                                    {sub?.emoji} {sub?.name || 'ללא מקצוע'}
+                                                                </span>
+                                                                {task.remindersEnabled && (
+                                                                    <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-lg border border-purple-200 flex items-center gap-1 shadow-xs">
+                                                                        <span>🔔</span> תזכורות
+                                                                    </span>
+                                                                )}
+                                                                {task.whatsappRemindersEnabled && (
+                                                                    <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shadow-xs">
+                                                                        <span>💬</span> וואטסאפ
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                 {countdown && (
                                                                     <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shadow-xs ${countdown.badgeClass}`}>
@@ -2366,6 +2771,16 @@ function App() {
                                                             {task.isExamPrep && (
                                                                 <span className="text-[10px] font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
                                                                     <span>🎯</span> סשן למידה
+                                                                </span>
+                                                            )}
+                                                            {task.remindersEnabled && !task.completed && (
+                                                                <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-lg border border-purple-200 flex items-center gap-1 shadow-xs">
+                                                                    <span>🔔</span> תזכורות פעילות
+                                                                </span>
+                                                            )}
+                                                            {task.whatsappRemindersEnabled && !task.completed && (
+                                                                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shadow-xs">
+                                                                    <span>💬</span> תזכורות וואטסאפ
                                                                 </span>
                                                             )}
                                                             {!task.isLessonLog && !task.completed && task.dueDate && (() => {
@@ -2521,6 +2936,175 @@ function App() {
                         {}
                         {activeTab === 'settings' && (
                             <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
+                                {/* WhatsApp Integration Card */}
+                                <div className="bg-gradient-to-br from-emerald-500/10 via-teal-500/5 to-white p-6 rounded-3xl border border-emerald-200 shadow-[0_4px_20px_-4px_rgba(16,185,129,0.1)]">
+                                    <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-4 mb-6 pb-4 border-b border-emerald-100">
+                                        <div className="flex items-center gap-3">
+                                            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-500 text-white flex items-center justify-center text-2xl shadow-md">💬</div>
+                                            <div>
+                                                <h2 className="text-xl font-bold text-stone-800 tracking-tight">הגדרות וואטסאפ: תזכורות ודוחות הורים</h2>
+                                                <p className="text-xs text-stone-500 mt-0.5">תזכורות מוטיבציה שקטות לפי הלו"ז ודוחות שבועיים אוטומטיים בכל מוצאי שבת</p>
+                                            </div>
+                                        </div>
+                                        {activeUserData.whatsappGateway?.instanceId && (
+                                            <span className="px-3 py-1.5 rounded-xl bg-emerald-100 text-emerald-800 font-bold text-xs flex items-center gap-1.5 border border-emerald-200 w-fit">
+                                                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> מחובר ל-Gateway (שליחה ברקע פעילה!)
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    {/* Phone Inputs */}
+                                    <div className="space-y-4 mb-6">
+                                        {/* Student Phone */}
+                                        <div className="bg-white p-4 rounded-2xl border border-emerald-100 shadow-xs">
+                                            <div className="flex flex-col sm:flex-row justify-between sm:items-center gap-3">
+                                                <div className="flex-1">
+                                                    <label className="text-xs font-bold text-stone-700 block mb-1.5 flex items-center gap-1.5">
+                                                        <span>📱</span> מספר וואטסאפ של התלמידה (לתזכורות אישיות לשיעורים)
+                                                    </label>
+                                                    <input 
+                                                        type="tel"
+                                                        dir="ltr"
+                                                        placeholder="לדוגמה: 050-1234567"
+                                                        value={activeUserData.phoneNumber || ''}
+                                                        onChange={(e) => updateUserData({ phoneNumber: e.target.value })}
+                                                        className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all text-right"
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleSendWhatsAppTest('student')}
+                                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-4 py-3 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1 shrink-0 self-end sm:self-center">
+                                                    <span>⚡</span> שליחת בדיקה למספר שלי
+                                                </button>
+                                            </div>
+                                        </div>
+
+                                        {/* Parents Phones */}
+                                        <div className="bg-white p-5 rounded-2xl border border-emerald-100 shadow-xs space-y-4">
+                                            <div className="flex items-center justify-between pb-3 border-b border-stone-100 flex-wrap gap-2">
+                                                <div className="font-bold text-sm text-stone-800 flex items-center gap-2">
+                                                    <span>👨‍👩‍👧</span> מספרי טלפון של ההורים (לסיכום השבועי במוצ"ש)
+                                                </div>
+                                                <button 
+                                                    onClick={() => handleSendParentWeeklyReportWhatsApp(false)}
+                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm">
+                                                    <span>📊</span> שליחת דוח שבועי להורים עכשיו
+                                                </button>
+                                            </div>
+
+                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-600 block mb-1.5 flex items-center justify-between">
+                                                        <span>הורה 1 (למשל אמא)</span>
+                                                        {activeUserData.parentPhoneNumber && (
+                                                            <button 
+                                                                onClick={() => handleSendWhatsAppTest('parent1')}
+                                                                className="text-emerald-700 hover:underline text-[11px] font-bold">
+                                                                💬 בדיקת מספר
+                                                            </button>
+                                                        )}
+                                                    </label>
+                                                    <input 
+                                                        type="tel"
+                                                        dir="ltr"
+                                                        placeholder="לדוגמה: 052-1234567"
+                                                        value={activeUserData.parentPhoneNumber || ''}
+                                                        onChange={(e) => updateUserData({ parentPhoneNumber: e.target.value })}
+                                                        className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all text-right"
+                                                    />
+                                                </div>
+
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-600 block mb-1.5 flex items-center justify-between">
+                                                        <span>הורה 2 (למשל אבא - אופציונלי)</span>
+                                                        {activeUserData.parentPhoneNumber2 && (
+                                                            <button 
+                                                                onClick={() => handleSendWhatsAppTest('parent2')}
+                                                                className="text-emerald-700 hover:underline text-[11px] font-bold">
+                                                                💬 בדיקת מספר
+                                                            </button>
+                                                        )}
+                                                    </label>
+                                                    <input 
+                                                        type="tel"
+                                                        dir="ltr"
+                                                        placeholder="לדוגמה: 054-7654321"
+                                                        value={activeUserData.parentPhoneNumber2 || ''}
+                                                        onChange={(e) => updateUserData({ parentPhoneNumber2: e.target.value })}
+                                                        className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all text-right"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            <label className="flex items-center gap-3 p-3 bg-emerald-50/60 rounded-xl cursor-pointer hover:bg-emerald-50 transition-colors border border-emerald-100">
+                                                <input 
+                                                    type="checkbox"
+                                                    checked={activeUserData.autoSendParentReport !== false}
+                                                    onChange={(e) => updateUserData({ autoSendParentReport: e.target.checked })}
+                                                    className="w-4 h-4 text-emerald-600 rounded accent-emerald-600"
+                                                />
+                                                <div className="text-xs text-stone-700">
+                                                    <span className="font-bold block">שליחה אוטומטית של דוח שבועי בכל מוצאי שבת 🗓️</span>
+                                                    <span className="text-stone-500">המערכת תסכם אוטומטית את כל המשימות, שעות הלמידה וההתמדה ותשלח לשני ההורים בימי שבת בערב.</span>
+                                                </div>
+                                            </label>
+                                        </div>
+                                    </div>
+
+                                    {/* Gateway Config Accordion */}
+                                    <details className="group bg-white/85 backdrop-blur-sm rounded-2xl border border-emerald-200/80 p-4 transition-all">
+                                        <summary className="font-bold text-xs text-stone-700 cursor-pointer flex items-center justify-between list-none select-none">
+                                            <span className="flex items-center gap-2">
+                                                <span>🤖</span>
+                                                <span>חיבור Gateway לשליחה אוטומטית מלאה ברקע (Green-API / Instance)</span>
+                                                <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md font-bold">
+                                                    {activeUserData.whatsappGateway?.instanceId ? '✓ מחובר' : 'הגדרות חיבור'}
+                                                </span>
+                                            </span>
+                                            <span className="transition-transform group-open:rotate-180 text-stone-400">▼</span>
+                                        </summary>
+                                        <div className="mt-4 pt-3 border-t border-emerald-100 text-xs text-stone-600 space-y-3">
+                                            <p className="leading-relaxed">
+                                                <b>איך זה עובד?</b> במצב רגיל, המערכת פותחת חלון וואטסאפ מוכן עם הטקסט והנמען. בזכות חיבור ה-Green-API שלך, המערכת שולחת את התזכורות ודוחות ההורים ישירות ועצמאית ברקע מבלי לפתוח חלון ומבלי שתצטרכי לאשר ידנית!
+                                            </p>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                                <div>
+                                                    <label className="font-bold text-stone-700 block mb-1 text-[11px]">Id Instance</label>
+                                                    <input 
+                                                        type="text"
+                                                        placeholder="למשל: 110182..."
+                                                        value={activeUserData.whatsappGateway?.instanceId || ''}
+                                                        onChange={(e) => updateUserData(prev => ({
+                                                            ...prev,
+                                                            whatsappGateway: {
+                                                                ...(prev.whatsappGateway || {}),
+                                                                instanceId: e.target.value
+                                                            }
+                                                        }))}
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 focus:bg-white"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="font-bold text-stone-700 block mb-1 text-[11px]">Api Token Instance</label>
+                                                    <input 
+                                                        type="password"
+                                                        placeholder="טוקן סודי של ה-Instance"
+                                                        value={activeUserData.whatsappGateway?.apiToken || ''}
+                                                        onChange={(e) => updateUserData(prev => ({
+                                                            ...prev,
+                                                            whatsappGateway: {
+                                                                ...(prev.whatsappGateway || {}),
+                                                                apiToken: e.target.value
+                                                            }
+                                                        }))}
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-lg text-xs font-mono outline-none focus:border-emerald-500 focus:bg-white"
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </details>
+                                </div>
+
                                 <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)]">
                                     <div className="flex flex-col sm:flex-row justify-between sm:items-end mb-6 pb-4 border-b border-stone-100 gap-4">
                                         <div>
@@ -3443,9 +4027,14 @@ function App() {
                                                     הפיקי בלחיצה דוח מסודר שמסכם את כל הלמידה, המשימות והנקודות שצברת השבוע, כדי לשתף ולהראות את ההשקעה שלך!
                                                 </p>
                                             </div>
-                                            <button onClick={handleGenerateWeeklyReport} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-6 py-4 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 shrink-0 flex items-center justify-center gap-2">
-                                                הפקת דוח שבועי 🖨️
-                                            </button>
+                                            <div className="flex flex-col sm:flex-row gap-2.5 w-full sm:w-auto shrink-0">
+                                                <button onClick={handleGenerateWeeklyReport} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3.5 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                                                    הפקת דוח להדפסה / PDF 🖨️
+                                                </button>
+                                                <button onClick={handleSendParentWeeklyReportWhatsApp} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3.5 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                                                    <span>📲</span> שליחה לוואטסאפ של ההורים
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
 
@@ -3676,6 +4265,8 @@ function App() {
                             </div>
                         </div>
                     )}
+
+
 
                     {modals.complete && activeTask && (() => {
                         const activeTaskIsLate = activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
@@ -4332,6 +4923,165 @@ function App() {
                         );
                     })()}
 
+                    {modals.notificationHelp && (
+                        <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-[80] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]"
+                             onClick={() => toggleModal('notificationHelp', false)}>
+                            <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 shadow-2xl relative overflow-y-auto max-h-[90vh] custom-scrollbar animate-[slideUp_0.25s_ease-out] pb-safe-bottom md:pb-6 text-right"
+                                 onClick={(e) => e.stopPropagation()}>
+                                <div className="w-12 h-1.5 bg-stone-200 rounded-full mx-auto mb-4 md:hidden"></div>
+                                
+                                <div className="flex justify-between items-start mb-4 pb-3 border-b border-stone-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white flex items-center justify-center text-xl shadow-sm">🔔</div>
+                                        <div>
+                                            <h3 className="font-bold text-lg text-stone-800 leading-snug">איך לאפשר התראות בטלפון?</h3>
+                                            <p className="text-xs text-stone-400">מדריך קצר וברור של 10 שניות</p>
+                                        </div>
+                                    </div>
+                                    <button onClick={() => toggleModal('notificationHelp', false)} className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
+                                        <IconX className="w-4 h-4"/>
+                                    </button>
+                                </div>
+
+                                {(() => {
+                                    const isStandalone = (typeof window !== 'undefined') && (window.navigator.standalone || window.matchMedia('(display-mode: standalone)').matches);
+                                    const perm = typeof Notification !== 'undefined' ? Notification.permission : 'not_supported';
+                                    return (
+                                        <div className="p-3 bg-stone-50 rounded-2xl mb-4 border border-stone-200 text-[11px] text-stone-600 flex flex-col gap-1 shadow-xs">
+                                            <div className="font-bold text-stone-800 text-xs flex items-center gap-1">
+                                                <span>🔍</span> זיהוי מצב המכשיר שלך:
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>מכשיר שזוהה:</span>
+                                                <b className="text-stone-800">{isIOSDevice ? 'אייפון (iOS) 🍎' : 'אנדרואיד / מחשב 🤖'}</b>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>נפתח ממסך הבית (אפליקציה):</span>
+                                                <b className={isStandalone ? 'text-emerald-600' : 'text-amber-600'}>{isStandalone ? 'כן (מעולה!) ✅' : 'לא (פתוח בדפדפן הרגיל) ⚠️'}</b>
+                                            </div>
+                                            <div className="flex justify-between">
+                                                <span>הרשאת התראות בדפדפן:</span>
+                                                <b className={perm === 'granted' ? 'text-emerald-600' : perm === 'denied' ? 'text-rose-600' : 'text-amber-600'}>
+                                                    {perm === 'granted' ? 'מאושר ✅' : perm === 'denied' ? 'חסום ❌' : perm === 'not_supported' ? 'לא נתמך בדפדפן זה ❌' : 'טרם התבקש ⏳'}
+                                                </b>
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Tabs */}
+                                <div className="flex gap-2 p-1 bg-stone-100 rounded-2xl mb-4">
+                                    <button 
+                                        type="button"
+                                        onClick={() => setNotificationHelpTab('ios')}
+                                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${notificationHelpTab === 'ios' ? 'bg-white text-purple-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'}`}>
+                                        <span>🍎</span> אייפון (iPhone)
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={() => setNotificationHelpTab('android')}
+                                        className={`flex-1 py-2 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 ${notificationHelpTab === 'android' ? 'bg-white text-indigo-900 shadow-xs' : 'text-stone-500 hover:text-stone-800'}`}>
+                                        <span>🤖</span> אנדרואיד / כרום
+                                    </button>
+                                </div>
+
+                                {notificationHelpTab === 'ios' ? (
+                                    <div className="space-y-3.5 text-xs text-stone-700">
+                                        <div className="p-3 bg-purple-50 rounded-2xl border border-purple-200 text-purple-900 font-medium leading-relaxed">
+                                            באייפון (iOS), אפל מאפשרת קבלת התראות מאתרים <b>רק לאחר שמוסיפים את האתר למסך הבית</b>.
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">לחצי על כפתור השיתוף (Share)</div>
+                                                    <div className="text-stone-500 mt-0.5">בתחתית מסך ספארי, לחצי על סמל הריבוע עם החץ למעלה ⎋.</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">בחרי "הוסף למסך הבית" ➕</div>
+                                                    <div className="text-stone-500 mt-0.5">גללי מעט בתפריט ולחצי על <b>"הוסף למסך הבית" (Add to Home Screen)</b> ואז על <b>"הוסף"</b>.</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-purple-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">3</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">פתחי את האפליקציה ממסך הבית</div>
+                                                    <div className="text-stone-500 mt-0.5">צאי מספארי, פתחי את האייקון <b>StudyStreak</b> ממסך הבית, לחצי <b>"בדיקה"</b> ואשרי התראות!</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-stone-600 text-[11px] leading-relaxed">
+                                            <b>כבר פתחת ממסך הבית ועדיין חסום?</b><br/>
+                                            כנסי ל-<b>הגדרות האייפון ⚙️</b> ➔ גללי למטה ברשימת האפליקציות אל <b>StudyStreak</b> (או <b>Safari</b>) ➔ <b>התראות (Notifications)</b> ➔ הפעילי את <b>"אפשר התראות"</b>.
+                                        </div>
+                                    </div>
+                                ) : (
+                                    <div className="space-y-3.5 text-xs text-stone-700">
+                                        <div className="p-3 bg-indigo-50 rounded-2xl border border-indigo-200 text-indigo-900 font-medium leading-relaxed">
+                                            באנדרואיד ניתן לאפשר התראות ישירות מתוך הדפדפן בשתי לחיצות:
+                                        </div>
+
+                                        <div className="space-y-2">
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">1</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">לחצי על סמל המנעול 🔒 ליד כתובת האתר</div>
+                                                    <div className="text-stone-500 mt-0.5">בראש הדפדפן (משמאל לכתובת האתר) לחצי על סמל המנעול או כפתור הגדרות האתר.</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">2</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">שני את "התראות" ל-מאופשר (Allow) ✅</div>
+                                                    <div className="text-stone-500 mt-0.5">לחצי על <b>"הרשאות" (Permissions)</b> והעבירי את מתג <b>"התראות"</b> למצב פעיל.</div>
+                                                </div>
+                                            </div>
+
+                                            <div className="flex items-start gap-2.5 p-2.5 bg-stone-50 rounded-xl border border-stone-200">
+                                                <span className="w-6 h-6 rounded-full bg-indigo-600 text-white flex items-center justify-center font-bold text-xs shrink-0 mt-0.5">3</span>
+                                                <div>
+                                                    <div className="font-bold text-stone-800">רענני את העמוד</div>
+                                                    <div className="text-stone-500 mt-0.5">משכי את המסך קלות כלפי מטה לרענון — וההתראות יפעלו כרגיל ברקע!</div>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-stone-600 text-[11px] leading-relaxed">
+                                            <b>אם כרום חסום בהגדרות הטלפון הכלליות:</b><br/>
+                                            הגדרות הטלפון ⚙️ ➔ <b>אפליקציות (Apps)</b> ➔ <b>Chrome</b> ➔ <b>התראות</b> ➔ הפעילי את המתג הראשי.
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div className="mt-5 pt-3 border-t border-stone-100 flex gap-2">
+                                    <button 
+                                        type="button"
+                                        onClick={() => {
+                                            toggleModal('notificationHelp', false);
+                                            setTimeout(testInstantNotification, 200);
+                                        }}
+                                        className="flex-1 py-3 bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-white rounded-2xl font-bold text-xs shadow-md active:scale-95 transition-all flex items-center justify-center gap-1.5">
+                                        <span>🔄</span> ניסיתי, בדוק שוב עכשיו!
+                                    </button>
+                                    <button 
+                                        type="button"
+                                        onClick={() => toggleModal('notificationHelp', false)}
+                                        className="px-4 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-xs transition-colors active:scale-95">
+                                        סגירה
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {taskActionsMenu && (() => {
                         const task = taskActionsMenu;
                         const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
@@ -4396,7 +5146,28 @@ function App() {
                                                 <span className="text-xl">📅</span>
                                                 <span>הוספה ליומן עם תזכורות</span>
                                             </div>
-                                            <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] font-semibold">כל יומיים עד ההגשה</span>
+                                            <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] font-semibold">קובץ ICS ליומן</span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                toggleWhatsAppTaskReminder(task);
+                                                setTaskActionsMenu(null);
+                                            }}
+                                            className={`w-full flex items-center justify-between p-3.5 rounded-2xl border transition-all font-bold text-sm active:scale-98 shadow-xs ${
+                                                task.whatsappRemindersEnabled 
+                                                    ? 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200' 
+                                                    : 'bg-gradient-to-r from-emerald-50 to-teal-50 hover:from-emerald-100 hover:to-teal-100 text-emerald-900 border-emerald-200'
+                                            }`}>
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">{task.whatsappRemindersEnabled ? '🛑' : '💬'}</span>
+                                                <span>{task.whatsappRemindersEnabled ? 'ביטול תזכורות וואטסאפ' : 'הפעלת תזכורות וואטסאפ ✨'}</span>
+                                            </div>
+                                            <span className={`px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
+                                                task.whatsappRemindersEnabled ? 'bg-emerald-200 text-emerald-800' : 'bg-emerald-100 text-emerald-700'
+                                            }`}>
+                                                {task.whatsappRemindersEnabled ? 'פעיל בוואטסאפ' : 'לוח זמנים חכם 📲'}
+                                            </span>
                                         </button>
 
                                         <button 
