@@ -3,8 +3,8 @@
   "short_name": "StudyStreak",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#BAE6FD",
-  "theme_color": "#BAE6FD",
+  "background_color": "#fafaf9",
+  "theme_color": "#fafaf9",
   "description": "ניהול למידה חכם לבגרויות עם תזכורות אוטומטיות",
   "icons": [
     {
