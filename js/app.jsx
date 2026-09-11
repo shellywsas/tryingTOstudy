@@ -557,6 +557,33 @@ function App() {
                     tasks: (prev.tasks || []).map(t => t.id === task.id ? { ...t, whatsappRemindersEnabled: true } : t)
                 }));
 
+                // בדיקת שעות בית ספר: אם התלמידה בבית ספר כרגע, לא שולחים הודעה שתפריע בשיעור!
+                const now = new Date();
+                const todayDay = now.getDay();
+                const todayPlan = (activeUserData.scheduleSettings || []).find(s => s.day === todayDay);
+                const schoolEndTime = todayPlan?.schoolEndTime;
+                let isInSchoolNow = false;
+                let schoolNoticeTime = '';
+
+                if (schoolEndTime) {
+                    const [endH, endM] = schoolEndTime.split(':').map(Number);
+                    const schoolEndMinutes = endH * 60 + (endM || 0);
+                    const reminderStartMinutes = Math.max(0, schoolEndMinutes - 30);
+                    const nowMinutes = now.getHours() * 60 + now.getMinutes();
+
+                    if (nowMinutes < reminderStartMinutes) {
+                        isInSchoolNow = true;
+                        const startH = Math.floor(reminderStartMinutes / 60);
+                        const startM = reminderStartMinutes % 60;
+                        schoolNoticeTime = `${String(startH).padStart(2, '0')}:${String(startM).padStart(2, '0')}`;
+                    }
+                }
+
+                if (isInSchoolNow) {
+                    showToast(`תזכורות וואטסאפ הופעלו! 📚 כי את בבית ספר כעת, התזכורת הראשונה תישלח לקראת סיום הלימודים (ב-${schoolNoticeTime}).`, 'success');
+                    return;
+                }
+
                 const reminderText = WhatsAppService.generateStudentReminderText({
                     studentName: userName,
                     subjectName: subjectName,
@@ -699,49 +726,67 @@ function App() {
 
                     // 2. תזכורות משימות חכמות (רק עבור משימות שהופעלו עליהן תזכורות וואטסאפ)
                     if (activeUserData.phoneNumber) {
-                        const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
-                        const lastSentMap = activeUserData.lastTaskRemindersSent || {};
-                        let updatedSentMap = null;
+                        // חישוב חלון זמנים מותר: אם יש בית ספר היום - רק מחצי שעה לפני סיום הלימודים ועד 22:00
+                        const todayPlan = (activeUserData.scheduleSettings || []).find(s => s.day === day);
+                        const schoolEndTime = todayPlan?.schoolEndTime;
+                        const currentMinutes = hour * 60 + now.getMinutes();
 
-                        activeTasks.forEach(task => {
-                            const lastSentTime = lastSentMap[task.id] || 0;
-                            const hoursSince = (Date.now() - lastSentTime) / (1000 * 60 * 60);
+                        let canSendRemindersNow = false;
+                        if (schoolEndTime) {
+                            const [endH, endM] = schoolEndTime.split(':').map(Number);
+                            const schoolEndMinutes = endH * 60 + (endM || 0);
+                            const reminderStartMinutes = Math.max(0, schoolEndMinutes - 30); // חצי שעה לפני סיום הלימודים
+                            canSendRemindersNow = (currentMinutes >= reminderStartMinutes && currentMinutes <= 22 * 60);
+                        } else {
+                            // יום חופשי / ללא בית ספר: מ-10:00 בבוקר עד 22:00
+                            canSendRemindersNow = (hour >= 10 && hour <= 22);
+                        }
 
-                            // שליחה מרווחת (פעם ב-5 שעות לכל היותר למשימה, בשעות היום 08:00-22:00)
-                            if (hoursSince >= 5 && hour >= 8 && hour <= 22) {
-                                const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
-                                const reminderMsg = WhatsAppService.generateStudentReminderText({
-                                    studentName: activeUserData.name || 'שלי',
-                                    subjectName: sub ? sub.name : 'כללי',
-                                    taskTitle: task.title,
-                                    dueDate: task.dueDate,
-                                    dueTime: task.dueTime,
-                                    freeSlotText: 'הזמן הפנוי שלך לפי הלו"ז'
-                                });
+                        if (canSendRemindersNow) {
+                            const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
+                            const lastSentMap = activeUserData.lastTaskRemindersSent || {};
+                            let updatedSentMap = null;
 
-                                WhatsAppService.sendMessage({
-                                    to: activeUserData.phoneNumber,
-                                    message: reminderMsg,
-                                    gatewayConfig: activeUserData.whatsappGateway
-                                }).then(res => {
-                                    if (res && res.status === 'sent_gateway') {
-                                        if (!updatedSentMap) updatedSentMap = { ...lastSentMap };
-                                        updatedSentMap[task.id] = Date.now();
-                                        updateUserData(prev => ({
-                                            ...prev,
-                                            lastTaskRemindersSent: updatedSentMap
-                                        }));
-                                    }
-                                }).catch(e => console.error('Automated WhatsApp reminder error:', e));
-                            }
-                        });
+                            activeTasks.forEach(task => {
+                                const lastSentTime = lastSentMap[task.id] || 0;
+                                const hoursSince = (Date.now() - lastSentTime) / (1000 * 60 * 60);
+
+                                // שליחה מרווחת (פעם ב-4 שעות לכל היותר למשימה)
+                                if (hoursSince >= 4) {
+                                    const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
+                                    const reminderMsg = WhatsAppService.generateStudentReminderText({
+                                        studentName: activeUserData.name || 'שלי',
+                                        subjectName: sub ? sub.name : 'כללי',
+                                        taskTitle: task.title,
+                                        dueDate: task.dueDate,
+                                        dueTime: task.dueTime,
+                                        freeSlotText: 'הזמן הפנוי שלך לפי הלו"ז'
+                                    });
+
+                                    WhatsAppService.sendMessage({
+                                        to: activeUserData.phoneNumber,
+                                        message: reminderMsg,
+                                        gatewayConfig: activeUserData.whatsappGateway
+                                    }).then(res => {
+                                        if (res && res.status === 'sent_gateway') {
+                                            if (!updatedSentMap) updatedSentMap = { ...lastSentMap };
+                                            updatedSentMap[task.id] = Date.now();
+                                            updateUserData(prev => ({
+                                                ...prev,
+                                                lastTaskRemindersSent: updatedSentMap
+                                            }));
+                                        }
+                                    }).catch(e => console.error('Automated WhatsApp reminder error:', e));
+                                }
+                            });
+                        }
                     }
                 };
 
                 runWhatsAppAutomationCheck();
                 const intervalId = setInterval(runWhatsAppAutomationCheck, 10 * 60 * 1000);
                 return () => clearInterval(intervalId);
-            }, [activeUserData?.whatsappGateway?.instanceId, activeUserData?.lastWeeklyReportSentWeek, activeUserData?.tasks]);
+            }, [activeUserData?.whatsappGateway?.instanceId, activeUserData?.lastWeeklyReportSentWeek, activeUserData?.tasks, activeUserData?.scheduleSettings]);
 
             const [liveFriends, setLiveFriends] = useState({});
             
@@ -795,6 +840,7 @@ function App() {
             const [printType, setPrintType] = useState(null);
             const [examPlanData, setExamPlanData] = useState(null);
             const [weeklyReportData, setWeeklyReportData] = useState(null);
+            const [analyticsTimeFilter, setAnalyticsTimeFilter] = useState('all');
 
 
             const isIOSDevice = typeof navigator !== 'undefined' && /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
@@ -2264,8 +2310,55 @@ function App() {
                         </div>
                     );
                 } else if (printType === 'analytics') {
-                    const tasks = activeUserData.tasks || [];
-                    const completedTasks = tasks.filter(t => t.completed && !t.givenUp && !t.isLessonLog);
+                    const allTasks = activeUserData.tasks || [];
+                    const rawCompletedTasks = allTasks.filter(t => t.completed && !t.givenUp && !t.isLessonLog);
+                    const rawExams = activeUserData.exams || [];
+
+                    const formatMonthLabel = (ymStr) => {
+                        try {
+                            const [year, month] = ymStr.split('-').map(Number);
+                            const d = new Date(year, month - 1, 1);
+                            return d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+                        } catch(e) {
+                            return ymStr;
+                        }
+                    };
+
+                    const getTaskDate = (t) => t.completedAt ? new Date(t.completedAt) : (t.dueDate ? new Date(t.dueDate) : (t.createdAt ? new Date(t.createdAt) : null));
+                    const isTaskInFilter = (t) => {
+                        if (analyticsTimeFilter === 'all') return true;
+                        const taskDate = getTaskDate(t);
+                        if (!taskDate || isNaN(taskDate.getTime())) return false;
+                        if (analyticsTimeFilter === 'last30') {
+                            const thirtyDaysAgo = new Date();
+                            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                            return taskDate >= thirtyDaysAgo;
+                        }
+                        const ym = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`;
+                        return ym === analyticsTimeFilter;
+                    };
+                    const isExamInFilter = (ex) => {
+                        if (analyticsTimeFilter === 'all') return true;
+                        if (!ex.date) return false;
+                        const exDate = new Date(ex.date);
+                        if (!exDate || isNaN(exDate.getTime())) return false;
+                        if (analyticsTimeFilter === 'last30') {
+                            const thirtyDaysAgo = new Date();
+                            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                            return exDate >= thirtyDaysAgo;
+                        }
+                        const ym = `${exDate.getFullYear()}-${String(exDate.getMonth() + 1).padStart(2, '0')}`;
+                        return ym === analyticsTimeFilter;
+                    };
+
+                    const completedTasks = rawCompletedTasks.filter(isTaskInFilter);
+                    const exams = rawExams.filter(isExamInFilter);
+                    const printFilterLabel = analyticsTimeFilter === 'all' 
+                        ? 'כל הזמנים' 
+                        : analyticsTimeFilter === 'last30' 
+                            ? '30 ימים אחרונים' 
+                            : formatMonthLabel(analyticsTimeFilter);
+
                     const onTimeCount = completedTasks.filter(t => {
                         if (!t.dueDate || !t.dueTime || !t.completedAt) return true;
                         return new Date(t.completedAt) <= new Date(`${t.dueDate}T${t.dueTime}`);
@@ -2286,7 +2379,6 @@ function App() {
                     const allRatings = completedTasks.filter(t => !t.isLessonLog && t.understandingRating).map(t => t.understandingRating);
                     const overallAvgRating = allRatings.length > 0 ? (allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(1) : null;
 
-                    const exams = activeUserData.exams || [];
                     const gradedExams = exams.filter(e => e.grade);
                     const examAvg = gradedExams.length > 0 ? (gradedExams.reduce((sum, e) => sum + Number(e.grade), 0) / gradedExams.length).toFixed(1) : null;
 
@@ -2314,7 +2406,7 @@ function App() {
                                     <span>הופק בתאריך: {new Date().toLocaleDateString('he-IL')}</span>
                                 </div>
                                 <h1 className="text-2xl font-black text-stone-900 mb-1">דוח סטטיסטיקה מקיף ותמונת מצב לימודית</h1>
-                                <p className="text-base font-bold text-stone-600">תלמידה: {activeUserData.name}</p>
+                                <p className="text-base font-bold text-stone-600">תלמידה: {activeUserData.name} • טווח נתונים: {printFilterLabel}</p>
                             </div>
 
                             <div className="grid grid-cols-4 gap-3 mb-6">
@@ -3494,8 +3586,79 @@ function App() {
 
                         {}
                         {activeTab === 'analytics' && (() => {
-                            const tasks = activeUserData.tasks || [];
-                            const completedTasks = tasks.filter(t => t.completed && !t.givenUp && !t.isLessonLog);
+                            const allTasks = activeUserData.tasks || [];
+                            const rawCompletedTasks = allTasks.filter(t => t.completed && !t.givenUp && !t.isLessonLog);
+                            const rawExams = activeUserData.exams || [];
+
+                            const formatMonthLabel = (ymStr) => {
+                                try {
+                                    const [year, month] = ymStr.split('-').map(Number);
+                                    const d = new Date(year, month - 1, 1);
+                                    return d.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' });
+                                } catch(e) {
+                                    return ymStr;
+                                }
+                            };
+
+                            const getTaskDate = (t) => {
+                                if (t.completedAt) return new Date(t.completedAt);
+                                if (t.dueDate) return new Date(t.dueDate);
+                                if (t.createdAt) return new Date(t.createdAt);
+                                return null;
+                            };
+
+                            // בניית רשימת חודשים קיימים מתוך המשימות והמבחנים
+                            const availableMonths = new Set();
+                            const now = new Date();
+                            const currentYM = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+                            availableMonths.add(currentYM);
+
+                            rawCompletedTasks.forEach(t => {
+                                const d = getTaskDate(t);
+                                if (d && !isNaN(d.getTime())) {
+                                    availableMonths.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                                }
+                            });
+                            rawExams.forEach(ex => {
+                                if (ex.date) {
+                                    const d = new Date(ex.date);
+                                    if (!isNaN(d.getTime())) {
+                                        availableMonths.add(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+                                    }
+                                }
+                            });
+                            const sortedMonths = Array.from(availableMonths).sort().reverse();
+
+                            const isTaskInFilter = (t) => {
+                                if (analyticsTimeFilter === 'all') return true;
+                                const taskDate = getTaskDate(t);
+                                if (!taskDate || isNaN(taskDate.getTime())) return false;
+                                if (analyticsTimeFilter === 'last30') {
+                                    const thirtyDaysAgo = new Date();
+                                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                                    return taskDate >= thirtyDaysAgo;
+                                }
+                                const ym = `${taskDate.getFullYear()}-${String(taskDate.getMonth() + 1).padStart(2, '0')}`;
+                                return ym === analyticsTimeFilter;
+                            };
+
+                            const isExamInFilter = (ex) => {
+                                if (analyticsTimeFilter === 'all') return true;
+                                if (!ex.date) return false;
+                                const exDate = new Date(ex.date);
+                                if (!exDate || isNaN(exDate.getTime())) return false;
+                                if (analyticsTimeFilter === 'last30') {
+                                    const thirtyDaysAgo = new Date();
+                                    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+                                    return exDate >= thirtyDaysAgo;
+                                }
+                                const ym = `${exDate.getFullYear()}-${String(exDate.getMonth() + 1).padStart(2, '0')}`;
+                                return ym === analyticsTimeFilter;
+                            };
+
+                            const completedTasks = rawCompletedTasks.filter(isTaskInFilter);
+                            const exams = rawExams.filter(isExamInFilter);
+
                             const onTimeCount = completedTasks.filter(t => {
                                 if (!t.dueDate || !t.dueTime || !t.completedAt) return true;
                                 return new Date(t.completedAt) <= new Date(`${t.dueDate}T${t.dueTime}`);
@@ -3547,9 +3710,14 @@ function App() {
                             const allRatings = completedTasks.filter(t => !t.isLessonLog && t.understandingRating).map(t => t.understandingRating);
                             const overallAvgRating = allRatings.length > 0 ? (allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(1) : null;
 
-                            const exams = activeUserData.exams || [];
                             const gradedExams = exams.filter(e => e.grade);
                             const examAvg = gradedExams.length > 0 ? (gradedExams.reduce((sum, e) => sum + Number(e.grade), 0) / gradedExams.length).toFixed(1) : null;
+
+                            const currentFilterLabel = analyticsTimeFilter === 'all' 
+                                ? 'כל הזמנים 🌟' 
+                                : analyticsTimeFilter === 'last30' 
+                                    ? '30 ימים אחרונים ⏱️' 
+                                    : `חודש ${formatMonthLabel(analyticsTimeFilter)} 📅`;
 
                             return (
                                 <div className="space-y-6 max-w-5xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -3578,6 +3746,57 @@ function App() {
                                                     </div>
                                                 )}
                                             </div>
+                                        </div>
+                                    </div>
+
+                                    {/* בר סינון תקופת זמן מתקדם */}
+                                    <div className="bg-white p-3.5 md:p-4 rounded-3xl border border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+                                        <div className="flex items-center gap-2 flex-wrap">
+                                            <span className="text-xs font-bold text-stone-500 ml-1">סינון לפי תקופה:</span>
+                                            <button 
+                                                onClick={() => setAnalyticsTimeFilter('all')}
+                                                className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
+                                                    analyticsTimeFilter === 'all' 
+                                                        ? 'bg-purple-600 text-white shadow-sm shadow-purple-200' 
+                                                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                                                }`}>
+                                                הכל (כל הזמנים) 🌟
+                                            </button>
+                                            <button 
+                                                onClick={() => setAnalyticsTimeFilter('last30')}
+                                                className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
+                                                    analyticsTimeFilter === 'last30' 
+                                                        ? 'bg-purple-600 text-white shadow-sm shadow-purple-200' 
+                                                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                                                }`}>
+                                                חודש אחרון (30 ימים) ⏱️
+                                            </button>
+                                            <div className="relative inline-flex items-center">
+                                                <select 
+                                                    value={sortedMonths.includes(analyticsTimeFilter) ? analyticsTimeFilter : ''}
+                                                    onChange={e => {
+                                                        if (e.target.value) setAnalyticsTimeFilter(e.target.value);
+                                                    }}
+                                                    className={`px-3 py-1.5 rounded-2xl text-xs md:text-sm font-bold border transition-all cursor-pointer appearance-none pl-7 pr-3 ${
+                                                        sortedMonths.includes(analyticsTimeFilter)
+                                                            ? 'bg-purple-600 text-white border-purple-600 shadow-sm shadow-purple-200 font-extrabold'
+                                                            : 'bg-stone-100 text-stone-700 border-stone-200 hover:bg-stone-200'
+                                                    }`}
+                                                >
+                                                    <option value="" disabled className="bg-white text-stone-700">לפי חודשים 📅</option>
+                                                    {sortedMonths.map(ym => (
+                                                        <option key={ym} value={ym} className="bg-white text-stone-900 font-semibold">
+                                                            {formatMonthLabel(ym)}
+                                                        </option>
+                                                    ))}
+                                                </select>
+                                                <span className={`absolute left-2.5 pointer-events-none text-[10px] ${sortedMonths.includes(analyticsTimeFilter) ? 'text-white' : 'text-stone-500'}`}>▼</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="text-xs font-semibold text-purple-700 bg-purple-50 px-3 py-1.5 rounded-xl border border-purple-100 flex items-center gap-1 self-start sm:self-auto">
+                                            <span>מציג נתונים:</span>
+                                            <span className="font-extrabold">{currentFilterLabel}</span>
                                         </div>
                                     </div>
 
