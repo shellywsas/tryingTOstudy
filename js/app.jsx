@@ -78,6 +78,16 @@ function App() {
             }, [globalState.activeUser]);
 
 
+            const sanitizeForFirestore = (obj) => {
+                if (obj === undefined) return null;
+                if (obj === null || typeof obj !== 'object') return obj;
+                try {
+                    return JSON.parse(JSON.stringify(obj, (k, v) => (v === undefined ? null : v)));
+                } catch (e) {
+                    return obj;
+                }
+            };
+
             const updateUserData = (updater) => {
                 setGlobalState(prev => {
                     if (!prev.activeUser) return prev;
@@ -89,10 +99,14 @@ function App() {
                     pendingWriteSync.current = updatedUser.lastSync;
                     
                     if (db) {
-                        db.collection("users").doc(prev.activeUser).set(updatedUser, { merge: true })
-                          .catch(err => console.error("Error saving to Firebase: ", err));
+                        try {
+                            const cleanData = sanitizeForFirestore(updatedUser);
+                            db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true })
+                              .catch(err => console.error("Error saving to Firebase: ", err));
+                        } catch (err) {
+                            console.error("Firebase sync error (prevented app crash): ", err);
+                        }
                     }
-
 
                     return {
                         ...prev,
@@ -1258,34 +1272,51 @@ function App() {
             const handleEditTask = (e) => {
                 e.preventDefault();
                 if (!editingTask) return;
+                const form = e.target;
+                const subId = (form.elements['subId'] && form.elements['subId'].value) || editingTask.subjectId || '';
+                const title = (form.elements['title'] && form.elements['title'].value) || editingTask.title || '';
+                const topic = (form.elements['topic'] && form.elements['topic'].value) || '';
+                const givenDate = (form.elements['givenDate'] && form.elements['givenDate'].value) || editingTask.givenDate || '';
+                const newDueDate = (form.elements['date'] && form.elements['date'].value) || editingTask.dueDate || '';
+                const newDueTime = (form.elements['time'] && form.elements['time'].value) || editingTask.dueTime || '';
+                const startTimeInput = form.elements['startTime'];
+                const newStartTime = (startTimeInput && startTimeInput.value) ? startTimeInput.value : (editingTask.startTime || null);
+
                 const oldDue = (editingTask.dueDate && editingTask.dueTime)
                     ? new Date(`${editingTask.dueDate}T${editingTask.dueTime}`)
                     : null;
-                const newDueDate = e.target.date.value;
-                const newDueTime = e.target.time.value;
                 const newDue = (newDueDate && newDueTime) ? new Date(`${newDueDate}T${newDueTime}`) : null;
+
                 updateUserData(prev => {
                     let next = {
                         ...prev,
-                        tasks: prev.tasks.map(t => t.id === editingTask.id ? {
-                            ...t,
-                            subjectId: e.target.subId.value,
-                            title: e.target.title.value,
-                            lessonTopic: e.target.topic.value,
-                            givenDate: e.target.givenDate.value,
-                            dueDate: newDueDate || t.dueDate,
-                            dueTime: newDueTime || t.dueTime,
-                            startTime: e.target.startTime && e.target.startTime.value ? e.target.startTime.value : t.startTime
-                        } : t)
+                        tasks: (prev.tasks || []).map(t => {
+                            if (t.id !== editingTask.id) return t;
+                            const updated = {
+                                ...t,
+                                subjectId: subId,
+                                title: title,
+                                lessonTopic: topic,
+                                givenDate: givenDate,
+                                dueDate: newDueDate || t.dueDate || '',
+                                dueTime: newDueTime || t.dueTime || '',
+                            };
+                            if (newStartTime) {
+                                updated.startTime = newStartTime;
+                            } else {
+                                delete updated.startTime;
+                            }
+                            return updated;
+                        })
                     };
-                    if (newDue) {
+                    if (newDue && !isNaN(newDue.getTime())) {
                         next = restoreOnDueEdit(next, editingTask.id, oldDue, newDue, new Date());
                     }
                     return next;
                 });
                 toggleModal('edit', false);
                 setEditingTask(null);
-                showToast('המשימה עודכנה', 'success');
+                showToast('המשימה עודכנה בהצלחה! ✨', 'success');
             };
 
 
@@ -1430,11 +1461,12 @@ function App() {
             const handleSaveSubject = (subData) => {
                 const subToSave = { ...subData, rules: tempRules };
                 updateUserData(prev => {
-                    const exists = prev.subjects.find(s => s.id === subToSave.id);
+                    const currentSubjects = prev.subjects || [];
+                    const exists = subToSave.id ? currentSubjects.find(s => s.id === subToSave.id) : null;
                     if (exists) {
-                        return { ...prev, subjects: prev.subjects.map(s => s.id === subToSave.id ? subToSave : s) };
+                        return { ...prev, subjects: currentSubjects.map(s => s.id === subToSave.id ? { ...s, ...subToSave } : s) };
                     } else {
-                        return { ...prev, subjects: [...prev.subjects, { ...subToSave, id: 's_' + Date.now() }] };
+                        return { ...prev, subjects: [...currentSubjects, { ...subToSave, id: subToSave.id || ('s_' + Date.now()) }] };
                     }
                 });
                 toggleModal('subject', false);
@@ -4862,7 +4894,7 @@ function App() {
                                 </div>
                                 <form onSubmit={(e) => {
                                     e.preventDefault();
-                                    handleSaveSubject({ id: editingSubject ? editingSubject.id : undefined, name: e.target.name.value, color: e.target.color.value, emoji: e.target.emoji.value });
+                                    handleSaveSubject({ ...(editingSubject ? { id: editingSubject.id } : {}), name: e.target.name.value, color: e.target.color.value, emoji: e.target.emoji.value });
                                 }} className="space-y-6">
                                     <div className="grid grid-cols-5 gap-3">
                                         <div className="col-span-3">
@@ -5522,5 +5554,55 @@ function App() {
         }
 
 
+        class ErrorBoundary extends React.Component {
+            constructor(props) {
+                super(props);
+                this.state = { hasError: false, error: null };
+            }
+
+            static getDerivedStateFromError(error) {
+                return { hasError: true, error };
+            }
+
+            componentDidCatch(error, errorInfo) {
+                console.error("StudyStreak caught error in ErrorBoundary:", error, errorInfo);
+            }
+
+            render() {
+                if (this.state.hasError) {
+                    return (
+                        <div className="min-h-screen bg-stone-50 flex items-center justify-center p-4 font-sans text-stone-800" dir="rtl">
+                            <div className="bg-white max-w-md w-full p-6 md:p-8 rounded-3xl shadow-xl border border-stone-200 text-center space-y-4">
+                                <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl mx-auto flex items-center justify-center text-3xl">
+                                    ⚠️
+                                </div>
+                                <h2 className="text-xl font-black text-stone-800">אופס! משהו השתבש</h2>
+                                <p className="text-sm text-stone-500 leading-relaxed">
+                                    התרחשה שגיאה בלתי צפויה בתצוגה, אך המידע שלך נשמר. לחצי על הכפתור למטה לרענון מהיר.
+                                </p>
+                                {this.state.error && (
+                                    <div className="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs text-stone-600 font-mono text-left max-h-28 overflow-y-auto" dir="ltr">
+                                        {this.state.error.message || String(this.state.error)}
+                                    </div>
+                                )}
+                                <div className="pt-2 flex gap-3">
+                                    <button 
+                                        onClick={() => window.location.reload()} 
+                                        className="flex-1 bg-stone-800 hover:bg-stone-900 text-white font-bold py-3.5 px-4 rounded-2xl text-sm transition-all active:scale-95 shadow-md">
+                                        🔄 רענון האפליקציה
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                }
+                return this.props.children;
+            }
+        }
+
         const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
+        root.render(
+            <ErrorBoundary>
+                <App />
+            </ErrorBoundary>
+        );

@@ -1,4 +1,4 @@
-﻿/* StudyStreak sync helpers — plain JS, browser + node --test */
+/* StudyStreak sync helpers — plain JS, browser + node --test */
 (function (root) {
     function isAutoHistoryId(id) {
         const s = String(id || "");
@@ -146,9 +146,9 @@
             weeklyPoints,
             pointsHistory,
             streakHistory,
-            taskStreak,
-            currentStreakStart,
-            currentStreakEmojis,
+            taskStreak: taskStreak ?? (prev.taskStreak || 0),
+            currentStreakStart: currentStreakStart !== undefined ? currentStreakStart : (prev.currentStreakStart || null),
+            currentStreakEmojis: currentStreakEmojis !== undefined ? currentStreakEmojis : (prev.currentStreakEmojis || []),
         };
     }
 

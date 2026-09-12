@@ -1,4 +1,4 @@
-﻿/**
+/**
  * StudyStreak Pro - Firebase Configuration & Offline Safe-Init
  */
 const firebaseConfig = {
@@ -17,6 +17,11 @@ try {
             firebase.initializeApp(firebaseConfig);
         }
         db = firebase.firestore();
+        try {
+            db.settings({ ignoreUndefinedProperties: true });
+        } catch (e) {
+            console.warn('Firestore settings warning:', e);
+        }
         // Enable offline persistence if available
         if (db && db.enablePersistence) {
             db.enablePersistence().catch(err => {

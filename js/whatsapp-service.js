@@ -22,7 +22,7 @@ const WhatsAppService = {
         } else if (cleaned.startsWith('5') && cleaned.length === 9) {
             cleaned = '972' + cleaned;
         } else if (cleaned.startsWith('97205')) {
-            cleaned = '972' + cleaned.substring(5);
+            cleaned = '972' + cleaned.substring(4); // Keep the '5'!
         }
         
         if (cleaned.length < 10) return null;
@@ -34,6 +34,10 @@ const WhatsAppService = {
      */
     formatPhoneForWaLink(phone) {
         if (!phone) return '';
+        const chatId = this.formatPhoneToChatId(phone);
+        if (chatId) {
+            return chatId.replace('@c.us', '');
+        }
         let cleaned = String(phone).replace(/\D/g, '');
         if (cleaned.startsWith('05')) {
             return '972' + cleaned.substring(1);

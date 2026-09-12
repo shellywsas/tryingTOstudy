@@ -1,14 +1,20 @@
 /**
  * StudyStreak Pro - Service Worker for Background Notifications & PWA
  */
-const CACHE_NAME = 'studystreak-v1';
-
+const CACHE_NAME = 'studystreak-v2';
+ 
 self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
-    event.waitUntil(self.clients.claim());
+    event.waitUntil(
+        caches.keys().then((keys) => {
+            return Promise.all(
+                keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))
+            );
+        }).then(() => self.clients.claim())
+    );
 });
 
 // Listen for push notifications from server/Firebase
