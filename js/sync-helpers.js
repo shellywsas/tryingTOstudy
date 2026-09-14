@@ -17,15 +17,38 @@
         );
     }
 
+    function isTaskSubmittedOnTime(task) {
+        if (!task || !task.completedAt || !task.dueDate || !task.dueTime) return false;
+        const subDate = new Date(task.completedAt);
+        const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+        if (isNaN(subDate.getTime()) || isNaN(dueDate.getTime())) return false;
+        return subDate.getTime() <= dueDate.getTime();
+    }
+
     function mergeTaskPair(localT, incomingT, pointsHistory) {
-        if (!localT) return incomingT;
-        if (!incomingT) return localT;
+        if (!localT) {
+            return taskLooksCompleted(incomingT, pointsHistory)
+                ? { ...incomingT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(incomingT) ? false : (incomingT.autoPenaltyApplied || false) }
+                : incomingT;
+        }
+        if (!incomingT) {
+            return taskLooksCompleted(localT, pointsHistory)
+                ? { ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) }
+                : localT;
+        }
         const localDone = taskLooksCompleted(localT, pointsHistory);
         const incomingDone = taskLooksCompleted(incomingT, pointsHistory);
-        if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true };
-        if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true };
+        if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
+        if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(incomingT) ? false : (incomingT.autoPenaltyApplied || false) };
         if (localDone && incomingDone) {
-            return { ...localT, ...incomingT, completed: true };
+            const preferLocal = (localT.pointsEarned || 0) >= (incomingT.pointsEarned || 0);
+            const base = preferLocal ? { ...incomingT, ...localT } : { ...localT, ...incomingT };
+            const onTime = isTaskSubmittedOnTime(base) || isTaskSubmittedOnTime(localT) || isTaskSubmittedOnTime(incomingT);
+            return {
+                ...base,
+                completed: true,
+                autoPenaltyApplied: onTime ? false : (base.autoPenaltyApplied || false)
+            };
         }
         return { ...localT, ...incomingT };
     }
@@ -72,17 +95,105 @@
 
     function healCompletedFromHistory(user) {
         if (!user || !Array.isArray(user.tasks)) return user;
-        const hist = user.pointsHistory || [];
+        const hist = [...(user.pointsHistory || [])];
         let changed = false;
+        let totalPoints = user.totalPoints || 0;
+        let weeklyPoints = user.weeklyPoints || 0;
+        let taskStreak = user.taskStreak;
+        let streakHistory = [...(user.streakHistory || [])];
+        let newHist = [...hist];
+
         const tasks = user.tasks.map((t) => {
-            if (t.completed) return t;
-            if (taskLooksCompleted(t, hist)) {
+            if (!t) return t;
+            const isDone = taskLooksCompleted(t, hist);
+            const onTime = isTaskSubmittedOnTime(t);
+            let updated = { ...t };
+
+            if (isDone && !updated.completed) {
+                updated.completed = true;
                 changed = true;
-                return { ...t, completed: true };
             }
-            return t;
+
+            if (onTime || (updated.completed && updated.completedAt)) {
+                const subDate = new Date(updated.completedAt);
+                const dueDate = (updated.dueDate && updated.dueTime) ? new Date(`${updated.dueDate}T${updated.dueTime}`) : null;
+                const wasActuallyOnTime = onTime || (dueDate && !isNaN(dueDate.getTime()) && subDate.getTime() <= dueDate.getTime());
+
+                if (wasActuallyOnTime) {
+                    if (updated.autoPenaltyApplied) {
+                        updated.autoPenaltyApplied = false;
+                        changed = true;
+                    }
+                    if (updated.lateReason) {
+                        delete updated.lateReason;
+                        changed = true;
+                    }
+
+                    if ((updated.pointsEarned === undefined || updated.pointsEarned <= 0) && !updated.givenUp) {
+                        const createdAt = updated.createdAt ? new Date(updated.createdAt) : null;
+                        let points = 1;
+                        if (dueDate && createdAt && !isNaN(dueDate.getTime()) && !isNaN(createdAt.getTime())) {
+                            const totalMs = dueDate.getTime() - createdAt.getTime();
+                            const usedMs = subDate.getTime() - createdAt.getTime();
+                            if (usedMs <= Math.max(totalMs / 2, 86400000)) points = 2;
+                        }
+                        if (updated.isExamPrep) points += 1;
+                        const delta = points - (updated.pointsEarned || 0);
+                        if (delta > 0) {
+                            totalPoints += delta;
+                            weeklyPoints += delta;
+                            updated.pointsEarned = points;
+                            changed = true;
+                        }
+                    }
+
+                    const autoPenaltyLogs = newHist.filter(h => h && h.taskId === updated.id && isAutoHistoryId(h.id) && (h.points || 0) < 0);
+                    if (autoPenaltyLogs.length > 0) {
+                        const refundedPoints = autoPenaltyLogs.reduce((sum, h) => sum + Math.abs(h.points || 0), 0);
+                        totalPoints += refundedPoints;
+                        weeklyPoints += refundedPoints;
+                        newHist = newHist.filter(h => !(h && h.taskId === updated.id && isAutoHistoryId(h.id) && (h.points || 0) < 0));
+                        changed = true;
+                    }
+
+                    // Find if streak was broken by this task
+                    let brokenIdx = streakHistory.findIndex(s => s && s.brokenByTaskId === updated.id);
+                    if (brokenIdx === -1 && autoPenaltyLogs.length > 0 && dueDate) {
+                        brokenIdx = streakHistory.findIndex(s => s && s.endDate && Math.abs(new Date(s.endDate).getTime() - dueDate.getTime()) < 60000);
+                    }
+                    if (brokenIdx === -1 && autoPenaltyLogs.length > 0 && streakHistory.length > 0 && (taskStreak === 0 || taskStreak === undefined)) {
+                        const lastLog = autoPenaltyLogs[autoPenaltyLogs.length - 1];
+                        const logTime = lastLog.date ? new Date(lastLog.date).getTime() : 0;
+                        const lastStreak = streakHistory[streakHistory.length - 1];
+                        const streakTime = lastStreak.id && lastStreak.id.startsWith('sh_') ? parseInt(lastStreak.id.replace('sh_', '')) : 0;
+                        if (logTime && streakTime && Math.abs(logTime - streakTime) < 5 * 60 * 1000) {
+                            brokenIdx = streakHistory.length - 1;
+                        }
+                    }
+
+                    if (brokenIdx !== -1) {
+                        const brokenRecord = streakHistory[brokenIdx];
+                        streakHistory.splice(brokenIdx, 1);
+                        taskStreak = (brokenRecord.length || 0) + (taskStreak && taskStreak > 0 ? taskStreak : 1);
+                        changed = true;
+                    }
+                }
+            }
+
+            return updated;
         });
-        return changed ? { ...user, tasks } : user;
+
+        if (!changed) return user;
+
+        return {
+            ...user,
+            tasks,
+            totalPoints,
+            weeklyPoints,
+            pointsHistory: newHist,
+            taskStreak: taskStreak !== undefined ? taskStreak : (user.taskStreak || 0),
+            streakHistory
+        };
     }
 
     function restoreOnDueEdit(prev, taskId, oldDue, newDue, now) {
@@ -158,6 +269,7 @@
         healCompletedFromHistory,
         restoreOnDueEdit,
         taskLooksCompleted,
+        isTaskSubmittedOnTime,
         isAutoHistoryId,
     };
 
@@ -168,4 +280,6 @@
     root.applyRemoteUser = applyRemoteUser;
     root.healCompletedFromHistory = healCompletedFromHistory;
     root.restoreOnDueEdit = restoreOnDueEdit;
+    root.taskLooksCompleted = taskLooksCompleted;
+    root.isTaskSubmittedOnTime = isTaskSubmittedOnTime;
 })(typeof globalThis !== "undefined" ? globalThis : this);

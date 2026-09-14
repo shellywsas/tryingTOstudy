@@ -11,13 +11,18 @@ function App() {
                         const parsed = JSON.parse(saved);
                         if (parsed && parsed.users) {
                             Object.keys(parsed.users).forEach(u => {
-                                if (parsed.users[u] && parsed.users[u].tasks) {
-                                    parsed.users[u].tasks = parsed.users[u].tasks.map(t => {
-                                        if (t.isLessonLog && t.understandingRating) {
-                                            return { ...t, understandingRating: null };
-                                        }
-                                        return t;
-                                    });
+                                if (parsed.users[u]) {
+                                    if (parsed.users[u].tasks) {
+                                        parsed.users[u].tasks = parsed.users[u].tasks.map(t => {
+                                            if (t.isLessonLog && t.understandingRating) {
+                                                return { ...t, understandingRating: null };
+                                            }
+                                            return t;
+                                        });
+                                    }
+                                    if (typeof healCompletedFromHistory === 'function') {
+                                        parsed.users[u] = healCompletedFromHistory(parsed.users[u]);
+                                    }
                                 }
                             });
                         }
@@ -179,6 +184,7 @@ function App() {
                 if (!globalState.activeUser) return;
                 updateUserData(prev => {
                     if (!prev || !prev.tasks) return prev;
+                    const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
                     const now = new Date();
                     let shouldBreakStreak = false;
                     let oldestUncompletedDate = null;
@@ -187,10 +193,20 @@ function App() {
                     let pointsToDeduct = 0;
                     let historyLogs = [];
 
-                    const updatedTasks = prev.tasks.map(task => {
-                        if (task.completed || task.isLessonLog || !task.dueDate || !task.dueTime) return task;
+                    const updatedTasks = (healedPrev.tasks || []).map(task => {
+                        const isDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task, healedPrev.pointsHistory));
+                        if (isDone) {
+                            const onTime = task.completedAt && task.dueDate && task.dueTime && new Date(task.completedAt).getTime() <= new Date(`${task.dueDate}T${task.dueTime}`).getTime();
+                            if (onTime && task.autoPenaltyApplied) {
+                                return { ...task, completed: true, autoPenaltyApplied: false };
+                            }
+                            return task.completed ? task : { ...task, completed: true };
+                        }
+                        if (task.isLessonLog || !task.dueDate || !task.dueTime) return task;
                         const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
-                        if (now > dueDate && prev.taskStreak > 0) {
+                        if (isNaN(dueDate.getTime())) return task;
+
+                        if (now > dueDate && (healedPrev.taskStreak || 0) > 0) {
                             shouldBreakStreak = true;
                             if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
                                 oldestUncompletedDate = dueDate;
@@ -201,7 +217,7 @@ function App() {
                         if (hoursLate >= 3 && !task.autoPenaltyApplied) {
                             needsUpdate = true;
                             pointsToDeduct += 2;
-                            const sub = (prev.subjects || []).find(s => s.id === task.subjectId);
+                            const sub = (healedPrev.subjects || []).find(s => s.id === task.subjectId);
                             historyLogs.push({
                                 id: 'ph_auto_' + task.id + '_' + Date.now(),
                                 taskId: task.id,
@@ -217,12 +233,13 @@ function App() {
                         return task;
                     });
 
-                    if (!shouldBreakStreak && !needsUpdate) return prev;
+                    const healedChanged = healedPrev !== prev;
+                    if (!shouldBreakStreak && !needsUpdate && !healedChanged) return prev;
 
-                    let newStreakHistory = [...(prev.streakHistory || [])];
-                    let taskStreak = prev.taskStreak;
-                    let currentStreakStart = prev.currentStreakStart;
-                    let currentStreakEmojis = prev.currentStreakEmojis;
+                    let newStreakHistory = [...(healedPrev.streakHistory || [])];
+                    let taskStreak = healedPrev.taskStreak;
+                    let currentStreakStart = healedPrev.currentStreakStart;
+                    let currentStreakEmojis = healedPrev.currentStreakEmojis;
 
                     if (shouldBreakStreak && taskStreak > 0) {
                         newStreakHistory.push({
@@ -242,11 +259,11 @@ function App() {
                         setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
                     }
                     return {
-                        ...prev,
+                        ...healedPrev,
                         tasks: updatedTasks,
-                        totalPoints: prev.totalPoints - pointsToDeduct,
-                        weeklyPoints: prev.weeklyPoints - pointsToDeduct,
-                        pointsHistory: [...historyLogs, ...(prev.pointsHistory || [])],
+                        totalPoints: (healedPrev.totalPoints || 0) - pointsToDeduct,
+                        weeklyPoints: (healedPrev.weeklyPoints || 0) - pointsToDeduct,
+                        pointsHistory: [...historyLogs, ...(healedPrev.pointsHistory || [])],
                         taskStreak,
                         currentStreakStart,
                         currentStreakEmojis,
@@ -1094,10 +1111,11 @@ function App() {
 
 
                 const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
+                const completionTime = (task.completedAt && !isNaN(new Date(task.completedAt).getTime())) ? new Date(task.completedAt) : now;
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
-                const usedDurationMs = now.getTime() - createdAt.getTime();
-                const isLate = now.getTime() > dueDate.getTime();
-                const isSameDay = now.toDateString() === dueDate.toDateString();
+                const usedDurationMs = completionTime.getTime() - createdAt.getTime();
+                const isLate = completionTime.getTime() > dueDate.getTime();
+                const isSameDay = completionTime.toDateString() === dueDate.toDateString();
                 
                 let pointsDelta = 0;
                 let pointsText = '';
@@ -1185,8 +1203,9 @@ function App() {
                 updateUserData(prev => checkAndAwardBadges({
                     ...prev,
                     tasks: prev.tasks.map(t => t.id === task.id ? { 
-                        ...t, completed: true, completedAt: now.toISOString(), 
-                        understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: chosenLateReason,
+                        ...t, completed: true, completedAt: t.completedAt || now.toISOString(), 
+                        understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: isLate ? chosenLateReason : '',
+                        autoPenaltyApplied: isLate ? (t.autoPenaltyApplied || false) : false,
                         remindersEnabled: false,
                         whatsappRemindersEnabled: false
                     } : t),
@@ -2758,7 +2777,7 @@ function App() {
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         {activeUserData.tasks
-                                            .filter(t => !t.completed)
+                                            .filter(t => !t.completed && !t.completedAt && !t.givenUp)
                                             .sort((a,b) => {
                                                 const timeA = (a.dueDate && a.dueTime) ? new Date(`${a.dueDate}T${a.dueTime}`).getTime() : Infinity;
                                                 const timeB = (b.dueDate && b.dueTime) ? new Date(`${b.dueDate}T${b.dueTime}`).getTime() : Infinity;
@@ -2766,7 +2785,8 @@ function App() {
                                             })
                                             .slice(0,4).map(task => {
                                             const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
-                                            const isLate = task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
+                                            const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp;
+                                            const isLate = !isTaskDone && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
                                             const countdown = task.dueDate ? getTaskCountdown(task.dueDate, task.dueTime) : null;
                                             return (
                                                 <div key={task.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 flex flex-col justify-between hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.08)] transition-all gap-4">
@@ -2813,7 +2833,7 @@ function App() {
                                                 </div>
                                             )
                                         })}
-                                        {activeUserData.tasks.filter(t => !t.completed).length === 0 && (
+                                        {activeUserData.tasks.filter(t => !t.completed && !t.completedAt && !t.givenUp).length === 0 && (
                                             <div className="col-span-full text-center p-8 bg-white rounded-3xl text-stone-400 border border-stone-200 border-dashed">
                                                 <div className="text-4xl mb-3">🎉</div>
                                                 <div className="text-base font-bold text-stone-600">אין משימות פתוחות! איזה כיף.</div> 
@@ -2883,9 +2903,11 @@ function App() {
                                 <div className="grid grid-cols-1 gap-4">
                                     {sortedFilteredTasks.map(task => {
                                         const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
-                                        const isLate = !task.completed && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
+                                        const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task));
+                                        const isLate = !isTaskDone && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
+                                        const onTimeSubmitted = typeof isTaskSubmittedOnTime === 'function' ? isTaskSubmittedOnTime(task) : false;
                                         return (
-                                            <div key={task.id} className={`p-4 rounded-3xl border transition-all ${task.completed ? 'bg-stone-50/50 border-stone-200 opacity-75' : isLate ? 'bg-rose-50/30 border-rose-200' : 'bg-white border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md'}`}>
+                                            <div key={task.id} className={`p-4 rounded-3xl border transition-all ${isTaskDone ? 'bg-stone-50/50 border-stone-200 opacity-75' : isLate ? 'bg-rose-50/30 border-rose-200' : 'bg-white border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md'}`}>
                                                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
                                                     <div className="flex-1">
                                                         <div className="flex items-center gap-2 mb-2 flex-wrap">
@@ -2897,17 +2919,17 @@ function App() {
                                                                     <span>🎯</span> סשן למידה
                                                                 </span>
                                                             )}
-                                                            {task.remindersEnabled && !task.completed && (
+                                                            {task.remindersEnabled && !isTaskDone && (
                                                                 <span className="text-[10px] font-bold text-purple-700 bg-purple-100 px-2 py-0.5 rounded-lg border border-purple-200 flex items-center gap-1 shadow-xs">
                                                                     <span>🔔</span> תזכורות פעילות
                                                                 </span>
                                                             )}
-                                                            {task.whatsappRemindersEnabled && !task.completed && (
+                                                            {task.whatsappRemindersEnabled && !isTaskDone && (
                                                                 <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shadow-xs">
                                                                     <span>💬</span> תזכורות וואטסאפ
                                                                 </span>
                                                             )}
-                                                            {!task.isLessonLog && !task.completed && task.dueDate && (() => {
+                                                            {!task.isLessonLog && !isTaskDone && task.dueDate && (() => {
                                                                 const countdown = getTaskCountdown(task.dueDate, task.dueTime);
                                                                 return (
                                                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -2922,9 +2944,9 @@ function App() {
                                                                     </div>
                                                                 );
                                                             })()}
-                                                            {task.completed && !task.isLessonLog && !task.givenUp && (
+                                                            {isTaskDone && !task.isLessonLog && !task.givenUp && (
                                                                 <span className="text-xs font-medium text-stone-500 bg-white border border-stone-200 px-2 py-1 rounded-lg shadow-sm">
-                                                                    הושלם ב: <span dir="ltr">{new Date(task.completedAt).toLocaleString('he-IL', {dateStyle: 'short', timeStyle: 'short'})}</span>
+                                                                    הושלם ב: <span dir="ltr">{new Date(task.completedAt || Date.now()).toLocaleString('he-IL', {dateStyle: 'short', timeStyle: 'short'})}</span>
                                                                 </span>
                                                             )}
                                                             {task.givenUp && (
@@ -2932,22 +2954,22 @@ function App() {
                                                                     🏳️ ויתרתי
                                                                 </span>
                                                             )}
-                                                            {task.lateReason && !task.givenUp && (
+                                                            {task.lateReason && !task.givenUp && !onTimeSubmitted && (
                                                                 <span className="text-xs font-bold text-rose-600 bg-rose-50 px-2 py-1 rounded-lg border border-rose-100">
                                                                     סיבת איחור: {task.lateReason}
                                                                 </span>
                                                             )}
                                                         </div>
-                                                        <h3 className={`font-bold text-lg ${task.completed ? 'line-through text-stone-400' : 'text-stone-800'}`}>{task.title}</h3>
+                                                        <h3 className={`font-bold text-lg ${isTaskDone ? 'line-through text-stone-400' : 'text-stone-800'}`}>{task.title}</h3>
                                                         <div className="text-sm text-stone-500 mt-1 font-medium">{task.lessonTopic && `נושא: ${task.lessonTopic}`}</div>
                                                         
-                                                        {task.completed && !task.isLessonLog && !task.givenUp && (
+                                                        {isTaskDone && !task.isLessonLog && !task.givenUp && (
                                                             <div className="mt-4 text-xs space-y-2 border-t border-stone-200/50 pt-3 flex flex-wrap gap-2">
                                                                 <span className="bg-white border border-stone-200 text-stone-600 px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 shadow-sm">
-                                                                    הבנה: {task.understandingRating}/5
+                                                                    הבנה: {task.understandingRating || 5}/5
                                                                 </span>
-                                                                <span className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 shadow-sm ${task.pointsEarned > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
-                                                                    {task.pointsEarned > 0 ? '+'+task.pointsEarned : task.pointsEarned} נק'
+                                                                <span className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 shadow-sm ${(task.pointsEarned ?? 0) > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
+                                                                    {(task.pointsEarned ?? 0) > 0 ? '+'+task.pointsEarned : (task.pointsEarned ?? 0)} נק'
                                                                 </span>
                                                                 {task.hardExercises && <span className="text-rose-700 font-semibold bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100 shadow-sm">קשה: {task.hardExercises}</span>}
                                                             </div>
@@ -2955,7 +2977,7 @@ function App() {
                                                     </div>
                                                     
                                                     <div className="flex md:flex-col gap-2 w-full md:w-44 shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4">
-                                                        {!task.completed ? (
+                                                        {!isTaskDone ? (
                                                             <div className="flex gap-2 w-full items-center">
                                                                 <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 border px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                                     <IconCheck className="w-4 h-4 text-emerald-600"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
@@ -4520,7 +4542,8 @@ function App() {
 
 
                     {modals.complete && activeTask && (() => {
-                        const activeTaskIsLate = activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
+                        const onTimeSubmitted = typeof isTaskSubmittedOnTime === 'function' ? isTaskSubmittedOnTime(activeTask) : false;
+                        const activeTaskIsLate = !onTimeSubmitted && activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
                         
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
@@ -5337,8 +5360,9 @@ function App() {
                         const task = taskActionsMenu;
                         const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
                         const subjectName = sub ? `${sub.emoji || ''} ${sub.name}` : 'כללי';
-                        const countdown = task.dueDate ? getTaskCountdown(task.dueDate, task.dueTime) : null;
-                        const isLate = task.dueDate && task.dueTime ? (new Date() > new Date(`${task.dueDate}T${task.dueTime}`)) : false;
+                        const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task));
+                        const countdown = !isTaskDone && task.dueDate ? getTaskCountdown(task.dueDate, task.dueTime) : null;
+                        const isLate = !isTaskDone && task.dueDate && task.dueTime ? (new Date() > new Date(`${task.dueDate}T${task.dueTime}`)) : false;
 
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-[75] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]"
