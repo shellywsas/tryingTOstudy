@@ -108,17 +108,22 @@ const WhatsAppService = {
         const examPrep = reportData?.examPrepDone || [];
         const exams = reportData?.thisWeekExams || [];
         const points = reportData?.totalPointsGained || 0;
-        const streak = reportData?.currentStreak || 0;
+        const streak = reportData?.currentStreak !== undefined ? Number(reportData.currentStreak) : 0;
 
         let hwDetails = '';
         if (completedHW.length > 0) {
             hwDetails = completedHW.map(h => {
-                const sName = h.subjectName || (h.subjectId ? 'מקצוע' : 'כללי');
+                let sName = h.subjectName;
+                if (!sName && reportData?.subjects) {
+                    const found = reportData.subjects.find(s => s.id === h.subjectId || s.name === h.subjectId);
+                    if (found) sName = found.name;
+                }
+                if (!sName) sName = h.subject || 'כללי';
                 return `  • ${h.title} (${sName})`;
-            }).slice(0, 8).join('\n');
-            if (completedHW.length > 8) hwDetails += `\n  • ועוד ${completedHW.length - 8} משימות נוספות!`;
+            }).slice(0, 10).join('\n');
+            if (completedHW.length > 10) hwDetails += `\n  • ועוד ${completedHW.length - 10} משימות נוספות!`;
         } else {
-            hwDetails = '  (לא הוגשו השבוע שיעורי בית)';
+            hwDetails = '  (לא היו משימות שהוגשו השבוע)';
         }
 
         let examDetails = '';
@@ -126,18 +131,22 @@ const WhatsAppService = {
             examDetails = examPrep.map(e => `  • סשן הכנה: ${e.title}`).slice(0, 5).join('\n');
         }
 
+        const streakLine = streak > 0 
+            ? `  🔥 רצף משימות פעיל: ${streak} ימים ברצף! כל הכבוד!` 
+            : `  🔥 רצף משימות: מתחילים מחדש רצף חדש ומנצח השבוע! 💪`;
+
         return `שלום להורים של ${name}! 🌸\n` +
                `הנה דוח הלמידה וההשקעה השבועי של ${name} מתוך אפליקציית StudyStreak Pro 📚✨\n` +
                `📅 שבוע: ${start} - ${end}\n\n` +
                `📊 סיכום ההישגים השבוע:\n` +
-               `  ✅ משימות ושיעורי בית שהוגשו: ${completedHW.length}\n` +
-               `  🎯 סשנים של הכנה למבחנים: ${examPrep.length}\n` +
-               `  ⭐ נקודות התמדה שנצברו: ${points} נק'\n` +
-               `  🔥 מד רצף הגשות: ${streak} ברצף!\n\n` +
-               `📝 פירוט המשימות שבוצעו:\n${hwDetails}\n` +
+               `  ✅ משימות ושיעורי בית שהושלמו: ${completedHW.length}\n` +
+               (examPrep.length > 0 ? `  🎯 סשנים של הכנה למבחנים: ${examPrep.length}\n` : '') +
+               `  ⭐ נקודות שנצברו השבוע: ${points} נק'\n` +
+               `${streakLine}\n\n` +
+               `📝 פירוט המשימות שבוצעו השבוע:\n${hwDetails}\n` +
                (examDetails ? `\n🎯 הכנה למבחנים:\n${examDetails}\n` : '') +
-               `\nכל הכבוד על ההשקעה וההתמדה! המשך שבוע מוצלח ומלא הישגים 🍀\n` +
-               `הופק אוטומטית ע"י StudyStreak Pro`;
+               `\nכל הכבוד על ההשקעה, הלמידה וההתמדה! המשך שבוע מוצלח ומלא הישגים 🍀\n` +
+               `הופק ע"י StudyStreak Pro ✨`;
     },
 
     /**

@@ -166,14 +166,57 @@ function App() {
 
 
             useEffect(() => {
-                if (activeUserData) {
+                if (activeUserData && globalState.activeUser) {
                     const now = new Date().getTime();
-                    if (now > activeUserData.nextWeeklyReset) {
+                    if (now > (activeUserData.nextWeeklyReset || 0)) {
+                        const userWeeklyPts = activeUserData.weeklyPoints || 0;
+                        const friendsArr = Object.values(liveFriends || {});
+                        let isTop = true;
+                        let topFriendName = '';
+                        let topFriendPts = 0;
+
+                        friendsArr.forEach(f => {
+                            const fPts = f.weeklyPoints || 0;
+                            if (fPts > userWeeklyPts) {
+                                isTop = false;
+                                if (fPts > topFriendPts) {
+                                    topFriendPts = fPts;
+                                    topFriendName = f.name || f.username;
+                                }
+                            }
+                        });
+
+                        let updatedBadges = [...(activeUserData.badges || [])];
+                        let wonCrown = false;
+
+                        if (isTop && userWeeklyPts > 0) {
+                            wonCrown = true;
+                            const champBadgeIdx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
+                            if (champBadgeIdx !== -1) {
+                                updatedBadges[champBadgeIdx] = {
+                                    ...updatedBadges[champBadgeIdx],
+                                    count: (updatedBadges[champBadgeIdx].count || 1) + 1,
+                                    lastWonAt: new Date().toISOString()
+                                };
+                            } else {
+                                updatedBadges.push({
+                                    id: 'b_weekly_champ',
+                                    count: 1,
+                                    earnedAt: new Date().toISOString()
+                                });
+                            }
+                            showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! זכית בתג אלופת השבוע! 👑`, 'success');
+                        } else if (topFriendName && topFriendPts > 0) {
+                            showToast(`סיום שבוע! אלופת השבוע החולף היא ${topFriendName} עם ${topFriendPts} נק' 👑`, 'info');
+                        }
+
                         updateUserData(prev => ({
                             ...prev,
-                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints),
+                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints || 0),
+                            lastWeekPoints: prev.weeklyPoints || 0,
                             weeklyPoints: 0,
-                            nextWeeklyReset: getNextSaturdayNight()
+                            nextWeeklyReset: getNextSaturday22PM(),
+                            badges: wonCrown ? updatedBadges : (prev.badges || [])
                         }));
                     }
                 }
@@ -524,9 +567,21 @@ function App() {
                 endOfWeek.setHours(23,59,59,999);
 
                 const thisWeekTasks = (activeUserData.tasks || []).filter(t => {
-                    if (!t.completedAt) return false;
-                    const d = new Date(t.completedAt);
-                    return d >= startOfWeek && d <= endOfWeek;
+                    if (!t.completed && !t.completedAt) return false;
+                    const dateStr = t.completedAt || (t.completed ? (t.dueDate || t.createdAt) : null);
+                    if (!dateStr) return false;
+                    const d = new Date(dateStr);
+                    return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
+                }).map(t => {
+                    const sub = (activeUserData.subjects || []).find(s => 
+                        s.id === t.subjectId || 
+                        s.name === t.subjectId || 
+                        cleanSubjectName(s.name) === cleanSubjectName(t.subjectName || t.subject)
+                    );
+                    return {
+                        ...t,
+                        subjectName: sub ? sub.name : (t.subjectName || t.subject || 'כללי')
+                    };
                 });
 
                 const completedHW = thisWeekTasks.filter(t => !t.givenUp && !t.isExamPrep && !t.isLessonLog);
@@ -536,15 +591,17 @@ function App() {
 
                 const thisWeekExams = (activeUserData.exams || []).filter(e => {
                     const d = new Date(e.date);
-                    return d >= startOfWeek && d <= endOfWeek;
+                    return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
                 });
 
                 const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
                     const d = new Date(h.date);
-                    return d >= startOfWeek && d <= endOfWeek;
+                    return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
                 });
 
-                const totalPointsGained = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
+                const historySum = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
+                const totalPointsGained = Math.max(activeUserData.weeklyPoints || 0, historySum);
+                const currentStreak = activeUserData.taskStreak !== undefined ? activeUserData.taskStreak : (activeUserData.streak || 0);
 
                 return {
                     startDate: startOfWeek.toLocaleDateString('he-IL'),
@@ -554,7 +611,9 @@ function App() {
                     examPrepDone,
                     lessonsLogged,
                     thisWeekExams,
-                    totalPointsGained
+                    totalPointsGained,
+                    currentStreak,
+                    subjects: activeUserData.subjects || []
                 };
             };
 
@@ -992,6 +1051,213 @@ function App() {
             }, [activeTab, activeUserData?.tasks, activeUserData?.subjects]);
 
 
+            // Admin Panel State & Helpers
+            const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+            const [adminUsersList, setAdminUsersList] = useState([]);
+            const [adminLoading, setAdminLoading] = useState(false);
+            const [selectedAdminUser, setSelectedAdminUser] = useState(null);
+            const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
+            const [deleteConfirmStep, setDeleteConfirmStep] = useState(0);
+            const [adminSearch, setAdminSearch] = useState('');
+            const [adminInspectorTab, setAdminInspectorTab] = useState('points');
+            const [adminStreakInput, setAdminStreakInput] = useState('');
+            const [adminPointsInput, setAdminPointsInput] = useState('');
+            const [adminWeeklyPointsInput, setAdminWeeklyPointsInput] = useState('');
+
+            const loadAdminUsers = async () => {
+                setAdminLoading(true);
+                try {
+                    let map = {};
+                    if (globalState?.users) {
+                        Object.entries(globalState.users).forEach(([uName, uData]) => {
+                            if (uName && uData) map[uName] = { ...uData, username: uName };
+                        });
+                    }
+                    if (db) {
+                        const snap = await db.collection("users").get();
+                        snap.forEach(doc => {
+                            const data = doc.data();
+                            if (data && doc.id) {
+                                map[doc.id] = { ...data, username: doc.id };
+                            }
+                        });
+                    }
+                    setAdminUsersList(Object.values(map));
+                } catch(err) {
+                    console.error("Error loading admin users:", err);
+                    showToast('שגיאה בטעינת המשתמשים', 'error');
+                } finally {
+                    setAdminLoading(false);
+                }
+            };
+
+            const saveAdminUserUpdate = async (username, updatedFields) => {
+                if (!username) return;
+                try {
+                    if (db) {
+                        await db.collection("users").doc(username).set(updatedFields, { merge: true });
+                    }
+                    setGlobalState(prev => {
+                        const existing = prev.users[username] || {};
+                        return {
+                            ...prev,
+                            users: {
+                                ...prev.users,
+                                [username]: { ...existing, ...updatedFields }
+                            }
+                        };
+                    });
+                    setAdminUsersList(prev => prev.map(u => u.username === username ? { ...u, ...updatedFields } : u));
+                    setSelectedAdminUser(prev => prev && prev.username === username ? { ...prev, ...updatedFields } : prev);
+                    showToast(`השינויים נשמרו בהצלחה עבור @${username} ✨`, 'success');
+                } catch(err) {
+                    console.error("Error updating user from admin:", err);
+                    showToast('שגיאה בשמירת הנתונים', 'error');
+                }
+            };
+
+            const adminDeleteUser = async (username) => {
+                if (!username) return;
+                try {
+                    if (db) {
+                        await db.collection("users").doc(username).delete();
+                    }
+                    setGlobalState(prev => {
+                        const nextUsers = { ...prev.users };
+                        delete nextUsers[username];
+                        return {
+                            ...prev,
+                            users: nextUsers,
+                            activeUser: prev.activeUser === username ? null : prev.activeUser
+                        };
+                    });
+                    setAdminUsersList(prev => prev.filter(u => u.username !== username));
+                    setDeleteConfirmUser(null);
+                    setDeleteConfirmStep(0);
+                    if (selectedAdminUser?.username === username) setSelectedAdminUser(null);
+                    showToast(`החשבון של @${username} נמחק בהצלחה לצמיתות 🗑️`, 'info');
+                } catch(err) {
+                    console.error("Error deleting user:", err);
+                    showToast('שגיאה במחיקת החשבון', 'error');
+                }
+            };
+
+            const adminCancelPenalty = (user, penaltyLog) => {
+                if (!user || !penaltyLog) return;
+                const deducted = Math.abs(penaltyLog.points || 0);
+                // החזר כפול (פי 2): החזרת הנקודות שקוזזו בקנס + הענקת נקודות ההגשה שהיו מגיעות
+                const refund = deducted * 2;
+                const newTotal = (user.totalPoints || 0) + refund;
+                const newWeekly = (user.weeklyPoints || 0) + refund;
+                const refundEntry = {
+                    id: 'ph_admin_refund_' + Date.now(),
+                    taskId: penaltyLog.taskId || '',
+                    taskTitle: penaltyLog.taskTitle || 'ביטול קנס והחזר כפול',
+                    points: refund,
+                    date: new Date().toISOString(),
+                    details: `ביטול קנס (${deducted} נק') והחזרת נקודות הגשה שהיו מגיעות (${deducted} נק') - סה"כ פי 2 (+${refund} נק')`
+                };
+                const newHistory = (user.pointsHistory || []).map(h => h.id === penaltyLog.id ? { ...h, canceled: true } : h);
+                newHistory.unshift(refundEntry);
+                saveAdminUserUpdate(user.username, {
+                    totalPoints: newTotal,
+                    weeklyPoints: newWeekly,
+                    pointsHistory: newHistory
+                });
+                showToast(`הקנס בוטל והוחזרו פי 2 נקודות (+${refund} נקודות) לחשבון! 💚`, 'success');
+            };
+
+            const adminRestoreStreak = (user, streakItem) => {
+                if (!user || !streakItem) return;
+                const restoredLen = streakItem.length || 1;
+                const newStreakHistory = (user.streakHistory || []).filter(s => s.id !== streakItem.id);
+                saveAdminUserUpdate(user.username, {
+                    taskStreak: restoredLen,
+                    longestStreak: Math.max(user.longestStreak || 0, restoredLen),
+                    streakHistory: newStreakHistory
+                });
+                showToast(`הרצף שוחזר בהצלחה ל-${restoredLen} 🔥`, 'success');
+            };
+
+            const adminSetCustomStreak = (user, count) => {
+                const val = parseInt(count, 10);
+                if (isNaN(val) || val < 0) {
+                    showToast('נא להזין מספר רצף תקין', 'warning');
+                    return;
+                }
+                saveAdminUserUpdate(user.username, {
+                    taskStreak: val,
+                    longestStreak: Math.max(user.longestStreak || 0, val)
+                });
+            };
+
+            const adminSetCustomPoints = (user, totalPts, weeklyPts) => {
+                const t = parseInt(totalPts, 10);
+                const w = parseInt(weeklyPts, 10);
+                saveAdminUserUpdate(user.username, {
+                    totalPoints: isNaN(t) ? (user.totalPoints || 0) : t,
+                    weeklyPoints: isNaN(w) ? (user.weeklyPoints || 0) : w
+                });
+            };
+
+            const adminDeleteTask = (user, taskId) => {
+                const newTasks = (user.tasks || []).filter(t => t.id !== taskId);
+                saveAdminUserUpdate(user.username, { tasks: newTasks });
+                showToast('המשימה נמחקה בהצלחה', 'info');
+            };
+
+            const adminToggleTask = (user, taskId) => {
+                const newTasks = (user.tasks || []).map(t => {
+                    if (t.id === taskId) {
+                        const nowDone = !t.completed;
+                        return {
+                            ...t,
+                            completed: nowDone,
+                            completedAt: nowDone ? new Date().toISOString() : null,
+                            autoPenaltyApplied: false
+                        };
+                    }
+                    return t;
+                });
+                saveAdminUserUpdate(user.username, { tasks: newTasks });
+            };
+
+            const adminResetTaskPenalty = (user, taskId) => {
+                const targetTask = (user.tasks || []).find(t => t.id === taskId);
+                const newTasks = (user.tasks || []).map(t => t.id === taskId ? { ...t, autoPenaltyApplied: false } : t);
+                
+                let newHistory = [...(user.pointsHistory || [])];
+                const matchingPenalty = newHistory.find(h => h.taskId === taskId && (h.points || 0) < 0 && !h.canceled);
+                const deducted = matchingPenalty ? Math.abs(matchingPenalty.points) : 2;
+                // החזר פי 2: החזרת הקנס שירד + נקודות ההגשה שמגיעות לה
+                const refund = deducted * 2;
+                
+                if (matchingPenalty) {
+                    matchingPenalty.canceled = true;
+                }
+                
+                const refundEntry = {
+                    id: 'ph_admin_refund_' + Date.now(),
+                    taskId: taskId,
+                    taskTitle: targetTask?.title || matchingPenalty?.taskTitle || 'ביטול קנס משימה',
+                    points: refund,
+                    date: new Date().toISOString(),
+                    details: `ביטול קנס משימה והחזר נקודות הגשה כפולות (+${refund} נק') ע״י מנהל`
+                };
+                newHistory.unshift(refundEntry);
+
+                const newTotal = (user.totalPoints || 0) + refund;
+                const newWeekly = (user.weeklyPoints || 0) + refund;
+
+                saveAdminUserUpdate(user.username, { 
+                    tasks: newTasks,
+                    totalPoints: newTotal,
+                    weeklyPoints: newWeekly,
+                    pointsHistory: newHistory
+                });
+                showToast(`בוטל קנס המשימה והוחזרו פי 2 נקודות (+${refund} נק') לחשבון! 💚`, 'success');
+            };
+
             const showToast = (text, type = 'info') => {
                 setToastMessage({ text, type });
                 setTimeout(() => setToastMessage(null), 4000);
@@ -1003,9 +1269,21 @@ function App() {
 
             const handleLogin = (e) => {
                 e.preventDefault();
-                const user = e.target.username.value.trim();
-                const pass = e.target.password.value;
+                const user = (e.target.username.value || '').trim();
+                const pass = (e.target.password.value || '').trim();
                 if(!user) return;
+
+                // Admin check - only accessible with credentials: 'admin' or 'אדמין'
+                const cleanUser = user.toLowerCase();
+                const cleanPass = pass.toLowerCase();
+                const isAdmin = (cleanUser === 'admin' || cleanUser === 'אדמין') && 
+                                (cleanPass === 'admin' || cleanPass === 'אדמין');
+                if (isAdmin) {
+                    setIsAdminLoggedIn(true);
+                    loadAdminUsers();
+                    showToast('ברוך הבא למצב ניהול מערכת (God Mode) 🛡️', 'success');
+                    return;
+                }
 
 
                 if (db) {
@@ -1612,15 +1890,34 @@ function App() {
                 showToast('חברה הוסרה', 'success');
             };
 
-            const handleCopyFriendTask = (friendTask) => {
+            const handleCopyFriendTask = (friendTask, friendSubNameHint) => {
                 if (!friendTask) return;
-                // Find matching subject by id or name, or fallback to first subject
-                const matchingSub = (activeUserData.subjects || []).find(s => s.id === friendTask.subjectId || s.name === friendTask.subjectName) || (activeUserData.subjects && activeUserData.subjects[0]);
-                const subId = matchingSub ? matchingSub.id : '';
                 
+                let rawSubName = friendSubNameHint || '';
+                if (!rawSubName) {
+                    const liveData = activeFriend ? (liveFriends[activeFriend.username] || {}) : {};
+                    const friendSubs = liveData.subjects || activeFriend?.subjects || [];
+                    const fs = friendSubs.find(s => s.id === friendTask.subjectId || s.name === friendTask.subjectId);
+                    rawSubName = fs ? fs.name : (friendTask.subjectName || '');
+                }
+
+                const cleanFriend = cleanSubjectName(rawSubName);
+                if (!cleanFriend) {
+                    showToast('לא ניתן להעתיק: המשימה של החברה אינה משויכת למקצוע מזוהה ⚠️', 'warning');
+                    return;
+                }
+
+                // Strictly compare subject names WITHOUT emojis
+                const matchingSub = (activeUserData.subjects || []).find(s => cleanSubjectName(s.name) === cleanFriend);
+                if (!matchingSub) {
+                    showToast(`לא ניתן להעתיק: המקצוע "${rawSubName}" אינו קיים ברשימת המקצועות שלך. נא להוסיף תחילה את המקצוע אצלך ⚠️`, 'warning');
+                    return;
+                }
+
                 const newTask = {
                     id: 't_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-                    subjectId: subId,
+                    subjectId: matchingSub.id,
+                    subjectName: matchingSub.name,
                     title: friendTask.title || 'משימה מחברה',
                     lessonTopic: friendTask.lessonTopic || '',
                     dueDate: friendTask.dueDate || null,
@@ -1636,7 +1933,7 @@ function App() {
                     ...prev,
                     tasks: [newTask, ...(prev.tasks || [])]
                 }));
-                showToast(`המשימה "${friendTask.title}" הועתקה לרשימה שלך! 💕`, 'success');
+                showToast(`המשימה "${friendTask.title}" הועתקה בהצלחה למקצוע ${matchingSub.emoji || ''} ${matchingSub.name}! 💕`, 'success');
             };
 
 
@@ -2565,6 +2862,489 @@ function App() {
 
 
             if (!globalState.activeUser || !activeUserData) {
+                if (isAdminLoggedIn) {
+                    return (
+                        <div className="min-h-screen bg-stone-100 p-4 md:p-8 text-right selection:bg-purple-200" dir="rtl">
+                            {toastMessage && (
+                                <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[10000] px-5 py-3 rounded-2xl font-bold shadow-xl border ${
+                                    toastMessage.type === 'success' ? 'bg-emerald-600 text-white border-emerald-700' :
+                                    toastMessage.type === 'error' ? 'bg-rose-600 text-white border-rose-700' : 'bg-stone-900 text-white border-stone-800'
+                                }`}>
+                                    {toastMessage.text}
+                                </div>
+                            )}
+
+                            <div className="max-w-6xl mx-auto space-y-6">
+                                <div className="bg-stone-900 text-white p-6 md:p-8 rounded-3xl shadow-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-4 relative overflow-hidden">
+                                    <div className="absolute top-0 right-0 w-64 h-64 bg-purple-600/10 rounded-full blur-3xl pointer-events-none"></div>
+                                    <div className="relative z-10">
+                                        <div className="flex items-center gap-3">
+                                            <span className="text-3xl md:text-4xl">🛡️</span>
+                                            <div>
+                                                <h1 className="text-2xl md:text-3xl font-black tracking-tight">מרכז ניהול מערכת (God Mode)</h1>
+                                                <p className="text-stone-400 text-xs md:text-sm mt-1">צפייה בכל החשבונות, ביטול קנסות, שחזור רצפים ומחיקה מאובטחת</p>
+                                            </div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2.5 flex-wrap relative z-10">
+                                        <button 
+                                            onClick={loadAdminUsers}
+                                            className="bg-stone-800 hover:bg-stone-700 text-stone-200 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all">
+                                            <span>🔄</span> רענן משתמשים
+                                        </button>
+                                        <button 
+                                            onClick={() => { setIsAdminLoggedIn(false); setSelectedAdminUser(null); }}
+                                            className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-md">
+                                            <span>🚪</span> יציאה ממצב מנהל
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 md:gap-4">
+                                    <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs text-center">
+                                        <div className="text-[11px] font-bold text-stone-400 uppercase">משתמשים רשומים</div>
+                                        <div className="text-3xl font-black text-stone-800 mt-1">{adminUsersList.length}</div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs text-center">
+                                        <div className="text-[11px] font-bold text-stone-400 uppercase">סה"כ נקודות</div>
+                                        <div className="text-3xl font-black text-purple-600 mt-1">
+                                            {adminUsersList.reduce((s, u) => s + (u.totalPoints || 0), 0)}
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs text-center">
+                                        <div className="text-[11px] font-bold text-stone-400 uppercase">סה"כ רצפים</div>
+                                        <div className="text-3xl font-black text-rose-500 mt-1">
+                                            {adminUsersList.reduce((s, u) => s + (u.taskStreak || 0), 0)} 🔥
+                                        </div>
+                                    </div>
+                                    <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs text-center">
+                                        <div className="text-[11px] font-bold text-stone-400 uppercase">סה"כ משימות</div>
+                                        <div className="text-3xl font-black text-blue-600 mt-1">
+                                            {adminUsersList.reduce((s, u) => s + (u.tasks?.length || 0), 0)} 📋
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs flex items-center gap-3">
+                                    <span className="text-stone-400 text-lg">🔍</span>
+                                    <input 
+                                        type="text" 
+                                        value={adminSearch} 
+                                        onChange={e => setAdminSearch(e.target.value)} 
+                                        placeholder="חיפוש משתמשת לפי שם, שם משתמש או מספר טלפון..." 
+                                        className="w-full bg-transparent text-sm font-bold outline-none text-stone-800 placeholder-stone-400"
+                                    />
+                                    {adminSearch && (
+                                        <button onClick={() => setAdminSearch('')} className="text-xs font-bold text-stone-400 hover:text-stone-600">
+                                            נקה
+                                        </button>
+                                    )}
+                                </div>
+
+                                {adminLoading ? (
+                                    <div className="bg-white p-12 rounded-3xl text-center text-stone-400 font-bold border border-stone-200">
+                                        טוען את רשימת החשבונות מהענן... ⏳
+                                    </div>
+                                ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        {adminUsersList.filter(u => {
+                                            if (!adminSearch) return true;
+                                            const q = adminSearch.toLowerCase();
+                                            return (u.name || '').toLowerCase().includes(q) || 
+                                                   (u.username || '').toLowerCase().includes(q) ||
+                                                   (u.phoneNumber || '').includes(q);
+                                        }).map(u => {
+                                            const pendingCount = (u.tasks || []).filter(t => !t.completed).length;
+                                            const champBadge = (u.badges || []).find(b => b.id === 'b_weekly_champ');
+                                            const champCount = champBadge?.count || (champBadge ? 1 : 0);
+
+                                            return (
+                                                <div key={u.username} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-sm flex flex-col justify-between gap-4 hover:border-purple-300 transition-all">
+                                                    <div>
+                                                        <div className="flex items-start justify-between gap-3">
+                                                            <div className="flex items-center gap-3">
+                                                                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-purple-100 to-rose-100 flex items-center justify-center font-black text-purple-700 text-lg border border-purple-200">
+                                                                    {(u.name || 'א').charAt(0)}
+                                                                </div>
+                                                                <div>
+                                                                    <div className="font-bold text-base text-stone-900 flex items-center gap-1.5 flex-wrap">
+                                                                        <span>{u.name}</span>
+                                                                        {champCount > 0 && (
+                                                                            <span className="text-[10px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-black border border-amber-300">
+                                                                                👑 x{champCount}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="text-xs text-stone-400 font-medium" dir="ltr">@{u.username}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div className="bg-stone-50 border border-stone-200 px-2.5 py-1 rounded-lg text-xs font-mono text-stone-600" title="סיסמת המשתמשת">
+                                                                🔑 {u.password || 'ללא'}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="grid grid-cols-4 gap-2 mt-4 text-center">
+                                                            <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
+                                                                <div className="text-[10px] text-stone-400 font-bold">רצף</div>
+                                                                <div className="font-black text-rose-500 text-sm">{u.taskStreak || 0} 🔥</div>
+                                                            </div>
+                                                            <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
+                                                                <div className="text-[10px] text-stone-400 font-bold">השבוע</div>
+                                                                <div className="font-black text-purple-600 text-sm">{u.weeklyPoints || 0} ⚡</div>
+                                                            </div>
+                                                            <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
+                                                                <div className="text-[10px] text-stone-400 font-bold">סה"כ נק'</div>
+                                                                <div className="font-black text-emerald-600 text-sm">{u.totalPoints || 0}</div>
+                                                            </div>
+                                                            <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
+                                                                <div className="text-[10px] text-stone-400 font-bold">משימות פתוחות</div>
+                                                                <div className="font-black text-blue-600 text-sm">{pendingCount} 📋</div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+
+                                                    <div className="flex items-center gap-2 pt-3 border-t border-stone-100 flex-wrap">
+                                                        <button 
+                                                            onClick={() => { 
+                                                                setSelectedAdminUser(u); 
+                                                                setAdminStreakInput(u.taskStreak || 0);
+                                                                setAdminPointsInput(u.totalPoints || 0);
+                                                                setAdminWeeklyPointsInput(u.weeklyPoints || 0);
+                                                            }} 
+                                                            className="flex-1 bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 active:scale-95 transition-all shadow-xs">
+                                                            <span>⚡</span> ניהול חשבון (God Mode)
+                                                        </button>
+                                                        <button 
+                                                            onClick={() => { setDeleteConfirmUser(u); setDeleteConfirmStep(1); }} 
+                                                            className="bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold py-2.5 px-4 rounded-xl text-xs border border-rose-200 flex items-center justify-center gap-1 active:scale-95 transition-all shrink-0"
+                                                            title="מחיקת חשבון מאובטחת">
+                                                            <span>🗑️</span> מחיקה מאובטחת
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+
+                            {deleteConfirmUser && (
+                                <div className="fixed inset-0 bg-stone-950/70 backdrop-blur-sm z-[9999] flex items-center justify-center p-4">
+                                    <div className="bg-white rounded-3xl w-full max-w-md p-6 text-center shadow-2xl border-2 border-rose-300 animate-[fadeIn_0.2s_ease-out]">
+                                        <div className="w-16 h-16 rounded-full bg-rose-100 text-rose-600 text-3xl flex items-center justify-center mx-auto mb-4">
+                                            ⚠️
+                                        </div>
+                                        <h3 className="text-xl font-black text-stone-900 mb-2">אזהרת מחיקת חשבון</h3>
+                                        <p className="text-xs text-stone-600 font-medium mb-6 leading-relaxed">
+                                            את עומדת למחוק את החשבון של <strong>{deleteConfirmUser.name}</strong> (@{deleteConfirmUser.username}) לצמיתות!<br/>
+                                            כל המשימות, היסטוריית הנקודות והנתונים יימחקו ללא אפשרות שחזור.
+                                        </p>
+
+                                        {deleteConfirmStep === 1 && (
+                                            <div className="space-y-2">
+                                                <button 
+                                                    onClick={() => setDeleteConfirmStep(2)}
+                                                    className="w-full py-3.5 bg-amber-500 hover:bg-amber-600 text-white font-bold rounded-xl text-sm shadow-md transition-all active:scale-95">
+                                                    שלב 1/2: אני בטוח/ה, להמשיך למחיקה ⚠️
+                                                </button>
+                                                <button 
+                                                    onClick={() => { setDeleteConfirmUser(null); setDeleteConfirmStep(0); }}
+                                                    className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-xl text-xs transition-colors">
+                                                    ביטול
+                                                </button>
+                                            </div>
+                                        )}
+
+                                        {deleteConfirmStep === 2 && (
+                                            <div className="space-y-2 animate-[fadeIn_0.2s_ease-out]">
+                                                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 font-bold mb-3">
+                                                    לחיצה נוספת תמחק את החשבון מיד ממסד הנתונים!
+                                                </div>
+                                                <button 
+                                                    onClick={() => adminDeleteUser(deleteConfirmUser.username)}
+                                                    className="w-full py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-black rounded-xl text-sm shadow-lg shadow-rose-600/30 transition-all active:scale-95">
+                                                    שלב 2/2: אישור סופי ומוחלט - מחק חשבון לצמיתות 💥
+                                                </button>
+                                                <button 
+                                                    onClick={() => { setDeleteConfirmUser(null); setDeleteConfirmStep(0); }}
+                                                    className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 font-bold rounded-xl text-xs transition-colors">
+                                                    חזרה וביטול
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {selectedAdminUser && (
+                                <div className="fixed inset-0 bg-stone-950/60 backdrop-blur-sm z-[999] flex items-center justify-center p-2 md:p-6 overflow-y-auto">
+                                    <div className="bg-white rounded-3xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-2xl border border-stone-200 p-6 relative custom-scrollbar animate-[fadeIn_0.2s_ease-out]">
+                                        <button 
+                                            onClick={() => setSelectedAdminUser(null)} 
+                                            className="absolute top-4 left-4 p-2 bg-stone-100 hover:bg-stone-200 rounded-full text-stone-400 active:scale-95">
+                                            <IconX className="w-4 h-4"/>
+                                        </button>
+
+                                        <div className="flex items-center gap-3 mb-6">
+                                            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-500 to-pink-500 text-white flex items-center justify-center font-black text-2xl shadow-md">
+                                                {(selectedAdminUser.name || 'א').charAt(0)}
+                                            </div>
+                                            <div>
+                                                <h2 className="text-xl font-black text-stone-900">{selectedAdminUser.name}</h2>
+                                                <div className="text-xs text-stone-400 font-medium" dir="ltr">@{selectedAdminUser.username}</div>
+                                            </div>
+                                        </div>
+
+                                        <div className="flex border-b border-stone-200 mb-6 gap-2 overflow-x-auto pb-1">
+                                            {[
+                                                { id: 'points', label: 'נקודות וקנסות 💰' },
+                                                { id: 'streaks', label: 'רצפים ושחזור 🔥' },
+                                                { id: 'tasks', label: 'משימות 📋' },
+                                                { id: 'profile', label: 'פרטים אישיים 👤' }
+                                            ].map(t => (
+                                                <button 
+                                                    key={t.id}
+                                                    onClick={() => setAdminInspectorTab(t.id)}
+                                                    className={`px-4 py-2 rounded-xl text-xs font-bold transition-all shrink-0 ${
+                                                        adminInspectorTab === t.id 
+                                                            ? 'bg-purple-600 text-white shadow-sm' 
+                                                            : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                                                    }`}>
+                                                    {t.label}
+                                                </button>
+                                            ))}
+                                        </div>
+
+                                        {adminInspectorTab === 'points' && (
+                                            <div className="space-y-6">
+                                                <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                                                    <h4 className="font-bold text-sm text-stone-800 mb-3">עדכון נקודות ידני</h4>
+                                                    <div className="grid grid-cols-2 gap-3 mb-3">
+                                                        <div>
+                                                            <label className="text-[10px] font-bold text-stone-500 uppercase block mb-1">סה"כ נקודות</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={adminPointsInput} 
+                                                                onChange={e => setAdminPointsInput(e.target.value)}
+                                                                className="w-full p-2.5 bg-white border border-stone-300 rounded-xl text-sm font-bold outline-none text-center"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[10px] font-bold text-stone-500 uppercase block mb-1">נקודות השבוע</label>
+                                                            <input 
+                                                                type="number" 
+                                                                value={adminWeeklyPointsInput} 
+                                                                onChange={e => setAdminWeeklyPointsInput(e.target.value)}
+                                                                className="w-full p-2.5 bg-white border border-stone-300 rounded-xl text-sm font-bold outline-none text-center"
+                                                            />
+                                                        </div>
+                                                    </div>
+                                                    <button 
+                                                        onClick={() => adminSetCustomPoints(selectedAdminUser, adminPointsInput, adminWeeklyPointsInput)}
+                                                        className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-2.5 rounded-xl text-xs shadow-sm active:scale-95 transition-all">
+                                                        שמור שינוי נקודות 💾
+                                                    </button>
+                                                </div>
+
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-stone-800 mb-2 flex items-center justify-between">
+                                                        <span>ביטול קנסות והחזרת נקודות:</span>
+                                                        <span className="text-xs text-stone-400 font-medium">לחיצה על ביטול קנס מחזירה את הנקודות מיד</span>
+                                                    </h4>
+                                                    {(() => {
+                                                        const penalties = (selectedAdminUser.pointsHistory || []).filter(h => (h.points || 0) < 0 && !h.canceled);
+                                                        if (penalties.length === 0) {
+                                                            return (
+                                                                <div className="text-xs text-stone-400 italic bg-stone-50 p-4 rounded-xl text-center border border-dashed border-stone-200">
+                                                                    אין קנסות פעילים בהיסטוריה של המשתמשת 🎉
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                                                                {penalties.map((pen, idx) => (
+                                                                    <div key={pen.id || idx} className="bg-rose-50/70 border border-rose-200 p-3 rounded-xl flex items-center justify-between gap-3">
+                                                                        <div>
+                                                                            <div className="font-bold text-stone-800 text-xs">{pen.details || pen.taskTitle || 'קנס איחור'}</div>
+                                                                            <div className="text-[10px] text-stone-400">{new Date(pen.date).toLocaleDateString('he-IL')} • קנס של {Math.abs(pen.points)} נקודות</div>
+                                                                        </div>
+                                                                        <button 
+                                                                            onClick={() => adminCancelPenalty(selectedAdminUser, pen)}
+                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all shrink-0 shadow-xs"
+                                                                            title="ביטול קנס והחזרת נקודות הגשה (פי 2)">
+                                                                            בטל קנס והחזר פי 2 (+{Math.abs(pen.points) * 2} נק') 💚
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {adminInspectorTab === 'streaks' && (
+                                            <div className="space-y-6">
+                                                <div className="bg-stone-50 p-4 rounded-2xl border border-stone-200">
+                                                    <h4 className="font-bold text-sm text-stone-800 mb-2">קביעת רצף ידני</h4>
+                                                    <div className="flex gap-2">
+                                                        <input 
+                                                            type="number" 
+                                                            value={adminStreakInput} 
+                                                            onChange={e => setAdminStreakInput(e.target.value)}
+                                                            className="flex-1 p-2.5 bg-white border border-stone-300 rounded-xl text-sm font-bold outline-none text-center"
+                                                            placeholder="מספר רצף..."
+                                                        />
+                                                        <button 
+                                                            onClick={() => adminSetCustomStreak(selectedAdminUser, adminStreakInput)}
+                                                            className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-4 rounded-xl text-xs active:scale-95 transition-all">
+                                                            עדכן רצף 🔥
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <h4 className="font-bold text-sm text-stone-800 mb-2">שחזור רצפים שנשברו (היסטוריית שבירות):</h4>
+                                                    {(() => {
+                                                        const history = selectedAdminUser.streakHistory || [];
+                                                        if (history.length === 0) {
+                                                            return (
+                                                                <div className="text-xs text-stone-400 italic bg-stone-50 p-4 rounded-xl text-center border border-dashed border-stone-200">
+                                                                    אין רצפים שבורים בהיסטוריה
+                                                                </div>
+                                                            );
+                                                        }
+                                                        return (
+                                                            <div className="space-y-2 max-h-56 overflow-y-auto custom-scrollbar">
+                                                                {history.map((sh, idx) => (
+                                                                    <div key={sh.id || idx} className="bg-white border border-stone-200 p-3 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                                                                        <div>
+                                                                            <div className="font-bold text-stone-800 text-xs">רצף של {sh.length} משימות 🔥</div>
+                                                                            <div className="text-[10px] text-stone-400">
+                                                                                {new Date(sh.startDate).toLocaleDateString('he-IL')} עד {new Date(sh.endDate).toLocaleDateString('he-IL')}
+                                                                            </div>
+                                                                        </div>
+                                                                        <button 
+                                                                            onClick={() => adminRestoreStreak(selectedAdminUser, sh)}
+                                                                            className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all shrink-0">
+                                                                            שחזר רצף זה ({sh.length} 🔥)
+                                                                        </button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        );
+                                                    })()}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {adminInspectorTab === 'tasks' && (
+                                            <div className="space-y-3">
+                                                <h4 className="font-bold text-sm text-stone-800 mb-2">רשימת משימות ({(selectedAdminUser.tasks || []).length}):</h4>
+                                                <div className="space-y-2 max-h-80 overflow-y-auto custom-scrollbar">
+                                                    {(selectedAdminUser.tasks || []).map(t => (
+                                                        <div key={t.id} className="bg-stone-50 border border-stone-200 p-3 rounded-xl flex items-center justify-between gap-2">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className={`w-2 h-2 rounded-full ${t.completed ? 'bg-emerald-500' : 'bg-amber-500'}`}></span>
+                                                                    <span className="font-bold text-stone-800 text-xs">{t.title}</span>
+                                                                    {t.completed && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold">הושלם</span>}
+                                                                    {t.autoPenaltyApplied && <span className="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded font-bold">נקנס</span>}
+                                                                </div>
+                                                                <div className="text-[10px] text-stone-400 mt-0.5">
+                                                                    {t.dueDate ? `הגשה: ${t.dueDate} ${t.dueTime || ''}` : 'ללא תאריך הגשה'}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-1.5 shrink-0">
+                                                                <button 
+                                                                    onClick={() => adminToggleTask(selectedAdminUser, t.id)}
+                                                                    className="text-[11px] bg-white border border-stone-200 px-2 py-1 rounded-lg font-bold hover:bg-stone-100">
+                                                                    {t.completed ? 'סמן כלא הושלם' : 'סמן כהושלם'}
+                                                                </button>
+                                                                {t.autoPenaltyApplied && (
+                                                                    <button 
+                                                                        onClick={() => adminResetTaskPenalty(selectedAdminUser, t.id)}
+                                                                        className="text-[11px] bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-1 rounded-lg font-bold hover:bg-emerald-100"
+                                                                        title="ביטול קנס והחזרת נקודות הגשה (פי 2)">
+                                                                        בטל קנס (פי 2 נק') 💚
+                                                                    </button>
+                                                                )}
+                                                                <button 
+                                                                    onClick={() => adminDeleteTask(selectedAdminUser, t.id)}
+                                                                    className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg"
+                                                                    title="מחק משימה זו">
+                                                                    <IconTrash className="w-3.5 h-3.5"/>
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {adminInspectorTab === 'profile' && (
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-500 uppercase block mb-1">שם תצוגה</label>
+                                                    <input 
+                                                        type="text" 
+                                                        defaultValue={selectedAdminUser.name} 
+                                                        id="adminEditName"
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold outline-none"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-500 uppercase block mb-1">סיסמה</label>
+                                                    <input 
+                                                        type="text" 
+                                                        defaultValue={selectedAdminUser.password} 
+                                                        id="adminEditPass"
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold outline-none font-mono"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-500 uppercase block mb-1">טלפון תלמידה</label>
+                                                    <input 
+                                                        type="text" 
+                                                        defaultValue={selectedAdminUser.phoneNumber || ''} 
+                                                        id="adminEditPhone"
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold outline-none"
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="text-xs font-bold text-stone-500 uppercase block mb-1">טלפון הורה 1</label>
+                                                    <input 
+                                                        type="text" 
+                                                        defaultValue={selectedAdminUser.parentPhoneNumber || ''} 
+                                                        id="adminEditParent1"
+                                                        className="w-full p-2.5 bg-stone-50 border border-stone-200 rounded-xl text-sm font-bold outline-none"
+                                                    />
+                                                </div>
+                                                <button 
+                                                    onClick={() => {
+                                                        const n = document.getElementById('adminEditName')?.value;
+                                                        const p = document.getElementById('adminEditPass')?.value;
+                                                        const ph = document.getElementById('adminEditPhone')?.value;
+                                                        const p1 = document.getElementById('adminEditParent1')?.value;
+                                                        saveAdminUserUpdate(selectedAdminUser.username, {
+                                                            name: n || selectedAdminUser.name,
+                                                            password: p || selectedAdminUser.password,
+                                                            phoneNumber: ph,
+                                                            parentPhoneNumber: p1
+                                                        });
+                                                    }}
+                                                    className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md active:scale-95 transition-all">
+                                                    שמור פרטי משתמש 💾
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    );
+                }
+
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] p-4" dir="rtl">
                         <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] w-full max-w-sm border border-stone-100 relative overflow-hidden">
@@ -2663,7 +3443,6 @@ function App() {
             // שימוש בטוח ברשימות כדי שלא יקרוס
             const safePointsHistory = activeUserData.pointsHistory || [];
             const safeStreakHistory = activeUserData.streakHistory || [];
-
 
             return (
                 <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print" dir="rtl">
@@ -4078,10 +4857,10 @@ function App() {
                                 ...Array.from(uniqueFriendsMap.values())
                             ];
                             
-                            const topUserPoints = Math.max(...allUsers.map(u => u?.totalPoints || 0), 0);
+                            const topUserPoints = Math.max(...allUsers.map(u => u?.weeklyPoints || 0), 0);
                             
-                            // חיתוך למקומות ראשון, שני ושלישי בלבד (Top 3)
-                            const sortedByPoints = [...allUsers].sort((a,b) => (b.totalPoints || 0) - (a.totalPoints || 0)).slice(0, 3);
+                            // חיתוך למקומות ראשון, שני ושלישי בלבד (Top 3) לפי נקודות שבועיות
+                            const sortedByPoints = [...allUsers].sort((a,b) => (b.weeklyPoints || 0) - (a.weeklyPoints || 0)).slice(0, 3);
                             const sortedByStreak = [...allUsers].sort((a,b) => (b.taskStreak || 0) - (a.taskStreak || 0)).slice(0, 3);
 
 
@@ -4100,15 +4879,22 @@ function App() {
                                 <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
                                     <div className="bg-white rounded-3xl p-6 md:p-8 shadow-[0_8px_30px_rgb(0,0,0,0.04)] border border-stone-100 relative overflow-hidden">
                                         <div className="absolute top-0 right-0 w-40 h-40 bg-amber-50 rounded-bl-full -mr-16 -mt-16 pointer-events-none"></div>
-                                        <h3 className="font-black text-2xl text-stone-800 mb-6 flex items-center gap-3 relative z-10">
-                                            <span className="text-3xl drop-shadow-sm">🏆</span> טבלת אלופות (ניקוד)
-                                        </h3>
+                                        <div className="relative z-10 mb-6">
+                                            <h3 className="font-black text-2xl text-stone-800 flex items-center gap-3">
+                                                <span className="text-3xl drop-shadow-sm">🏆</span> טבלת אלופות שבועית
+                                            </h3>
+                                            <div className="text-xs text-amber-800 font-bold bg-amber-50/90 border border-amber-200 rounded-xl px-3 py-1.5 inline-flex items-center gap-1.5 mt-2">
+                                                <span>⏳</span> התחרות ננעלת במוצאי שבת ב-22:00 ומוכתרת אלופת השבוע 👑
+                                            </div>
+                                        </div>
                                         <div className="space-y-4 relative z-10">
                                             {sortedByPoints.map((u, i) => {
-                                                const points = u.totalPoints || 0;
-                                                const topPoints = Math.max(sortedByPoints[0]?.totalPoints || 1, 1);
+                                                const points = u.weeklyPoints || 0;
+                                                const topPoints = Math.max(sortedByPoints[0]?.weeklyPoints || 1, 1);
                                                 const progressPct = Math.max(2, (points / topPoints) * 100);
                                                 const gap = topUserPoints - points;
+                                                const champBadge = (u.badges || []).find(b => b.id === 'b_weekly_champ');
+                                                const champCount = champBadge?.count || (champBadge ? 1 : 0);
                                                 
                                                 return (
                                                 <div key={u.isMe ? 'me' : u.username} className={`relative flex flex-col p-5 rounded-2xl border transition-all ${u.isMe ? 'bg-purple-50/40 border-purple-200 shadow-sm' : 'bg-stone-50 border-stone-200 hover:border-stone-300'}`}>
@@ -4122,15 +4908,21 @@ function App() {
                                                                     {(u.name || 'א').charAt(0)}
                                                                 </div>
                                                                 <div>
-                                                                    <div className={`font-bold text-base md:text-lg flex items-center gap-2 ${u.isMe ? 'text-purple-800' : 'text-stone-800'}`}>
-                                                                        {u.name} {u.isMe && <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">אני</span>}
+                                                                    <div className={`font-bold text-base md:text-lg flex items-center gap-2 flex-wrap ${u.isMe ? 'text-purple-800' : 'text-stone-800'}`}>
+                                                                        <span>{u.name}</span>
+                                                                        {u.isMe && <span className="text-[10px] bg-purple-600 text-white px-2 py-0.5 rounded-full font-bold shadow-sm">אני</span>}
+                                                                        {champCount > 0 && (
+                                                                            <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-black flex items-center gap-1 shadow-xs" title={`אלופת השבוע ${champCount} פעמים`}>
+                                                                                👑 {champCount > 1 ? `x${champCount}` : ''}
+                                                                            </span>
+                                                                        )}
                                                                     </div>
                                                                     <div className="text-xs text-stone-400 font-medium mt-0.5" dir="ltr">@{u.isMe ? globalState.activeUser : (u.username || 'user')}</div>
                                                                 </div>
                                                             </div>
                                                         </div>
                                                         <div className="font-black text-xl bg-white px-5 py-2 rounded-xl shadow-sm border border-stone-100 flex items-center gap-1.5 shrink-0" dir="ltr">
-                                                            {points} <span className="text-sm text-stone-400 font-bold">נק'</span>
+                                                            {points} <span className="text-xs text-stone-400 font-bold">השבוע</span>
                                                         </div>
                                                     </div>
                                                     <div className="w-full bg-stone-200/80 rounded-full h-3 mb-1.5 relative overflow-hidden shadow-inner">
@@ -5112,26 +5904,66 @@ function App() {
                                 <h3 className="font-black text-2xl text-stone-800 relative z-10">{activeFriend.name}</h3>
                                 <p className="text-xs font-bold text-stone-400 mb-5 relative z-10" dir="auto">@{activeFriend.username}</p>
                                 
-                                <div className="grid grid-cols-3 gap-3 mb-6 relative z-10">
-                                    <div className="bg-stone-50/80 p-3 rounded-2xl border border-stone-100 text-center">
-                                        <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">מד משימות</div>
-                                        <div className="text-rose-500 font-black text-xl">{displayStreak} 🔥</div>
+                                <div className="grid grid-cols-4 gap-2 mb-6 relative z-10">
+                                    <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
+                                        <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">מד רצף</div>
+                                        <div className="text-rose-500 font-black text-lg">{displayStreak} 🔥</div>
                                     </div>
-                                    <div className="bg-stone-50/80 p-3 rounded-2xl border border-stone-100 text-center">
-                                        <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">נקודות</div>
-                                        <div className="text-emerald-600 font-black text-xl">{displayPoints}</div>
+                                    <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
+                                        <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">השבוע</div>
+                                        <div className="text-purple-600 font-black text-lg">{liveData.weeklyPoints !== undefined ? liveData.weeklyPoints : (activeFriend.weeklyPoints || 0)} ⚡</div>
                                     </div>
-                                    <div className="bg-stone-50/80 p-3 rounded-2xl border border-stone-100 text-center">
+                                    <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
+                                        <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">סה"כ נק'</div>
+                                        <div className="text-emerald-600 font-black text-lg">{displayPoints}</div>
+                                    </div>
+                                    <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
                                         <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">הושלמו</div>
-                                        <div className="text-purple-600 font-black text-xl">{completedCount} ✅</div>
+                                        <div className="text-blue-600 font-black text-lg">{completedCount} ✅</div>
                                     </div>
                                 </div>
 
+                                {/* ארון התגים של החברה */}
+                                <div className="text-right bg-stone-50 p-4 rounded-2xl mb-5 border border-stone-200 relative z-10">
+                                    <h4 className="font-bold text-sm text-stone-800 flex items-center justify-between mb-3">
+                                        <span className="flex items-center gap-1.5">🎖️ ארון התגים של {activeFriend.name}:</span>
+                                        <span className="text-[11px] text-stone-400 font-bold">{(liveData.badges || activeFriend.badges || []).length} תגים</span>
+                                    </h4>
+                                    {(() => {
+                                        const fBadges = liveData.badges || activeFriend.badges || [];
+                                        const earnedBadges = ALL_BADGES.map(badge => {
+                                            const earned = fBadges.find(b => b.id === badge.id);
+                                            return earned ? { ...badge, count: earned.count || 1 } : null;
+                                        }).filter(Boolean);
+
+                                        if (earnedBadges.length === 0) {
+                                            return (
+                                                <div className="text-xs text-stone-400 font-medium italic text-center py-3 bg-white rounded-xl border border-dashed border-stone-200">
+                                                    עדיין אין תגים בארון, אבל היא בדרך לשם! ✨
+                                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                                {earnedBadges.map(b => (
+                                                    <div key={b.id} className="bg-gradient-to-b from-amber-50 to-orange-50 border border-amber-200 p-2.5 rounded-xl text-center shadow-xs">
+                                                        <div className="text-2xl mb-1 drop-shadow-sm">{b.icon}</div>
+                                                        <div className="text-xs font-bold text-amber-950 leading-tight">
+                                                            {b.title} {b.id === 'b_weekly_champ' && b.count > 1 && <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded-full">x{b.count}</span>}
+                                                        </div>
+                                                        <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-1">{b.description}</div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        );
+                                    })()}
+                                </div>
 
                                 <div className="text-right bg-stone-50 p-4 md:p-5 rounded-2xl mb-6 border border-stone-200 relative z-10">
                                     <div className="flex justify-between items-center mb-3">
                                         <h4 className="font-bold text-sm text-stone-800 flex items-center gap-2">
-                                            <span>📋</span> כל המשימות שפתוחות אצלה ({pendingTasks.length}):
+                                            <span>📋</span> משימות שפתוחות אצלה ({pendingTasks.length}):
                                         </h4>
                                     </div>
                                     
@@ -5139,18 +5971,35 @@ function App() {
                                         <div className="space-y-2.5 max-h-60 overflow-y-auto custom-scrollbar pr-0.5">
                                             {pendingTasks.map((pt, i) => {
                                                 const countdown = pt.dueDate ? getTaskCountdown(pt.dueDate, pt.dueTime) : null;
+                                                const friendSubs = liveData.subjects || activeFriend.subjects || [];
+                                                const fSub = friendSubs.find(s => s.id === pt.subjectId || s.name === pt.subjectId);
+                                                const fSubName = fSub ? fSub.name : (pt.subjectName || '');
+                                                const cleanF = cleanSubjectName(fSubName);
+                                                const myMatch = (activeUserData.subjects || []).find(s => cleanSubjectName(s.name) === cleanF);
+
                                                 return (
                                                     <div key={pt.id || i} className="bg-white p-3 rounded-xl border border-stone-200/70 shadow-xs flex flex-col gap-2">
                                                         <div className="flex items-start justify-between gap-2">
                                                             <div className="flex-1">
-                                                                <div className="font-bold text-stone-800 text-sm">{pt.title}</div>
+                                                                <div className="flex items-center gap-2 flex-wrap">
+                                                                    <span className="font-bold text-stone-800 text-sm">{pt.title}</span>
+                                                                    {fSubName && (
+                                                                        <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded-md font-bold border border-purple-100">
+                                                                            {fSub?.emoji || '📚'} {fSubName}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                                 {pt.lessonTopic && <div className="text-xs text-stone-400 mt-0.5 font-medium">נושא: {pt.lessonTopic}</div>}
                                                             </div>
                                                             <button 
-                                                                onClick={() => handleCopyFriendTask(pt)} 
-                                                                className="bg-purple-50 hover:bg-purple-100 text-purple-700 text-xs font-bold px-2.5 py-1.5 rounded-xl border border-purple-200 transition-colors flex items-center gap-1 active:scale-95 shrink-0"
-                                                                title="העתק משימה זו לרשימה שלי">
-                                                                <IconCopy className="w-3.5 h-3.5" /> העתק אליי
+                                                                onClick={() => handleCopyFriendTask(pt, fSubName)} 
+                                                                className={`text-xs font-bold px-2.5 py-1.5 rounded-xl border transition-colors flex items-center gap-1 active:scale-95 shrink-0 ${
+                                                                    myMatch 
+                                                                        ? 'bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200' 
+                                                                        : 'bg-stone-100 hover:bg-stone-200 text-stone-400 border-stone-200'
+                                                                }`}
+                                                                title={myMatch ? `העתק למקצוע ${myMatch.name}` : `אין אצלך מקצוע בשם "${fSubName}"`}>
+                                                                <IconCopy className="w-3.5 h-3.5" /> {myMatch ? 'העתק אליי' : 'אין מקצוע תואם'}
                                                             </button>
                                                         </div>
                                                         <div className="flex items-center gap-2 flex-wrap text-[11px] pt-1.5 border-t border-stone-100">

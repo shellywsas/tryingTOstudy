@@ -11,14 +11,33 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
         };
 
 
-        const getNextSaturdayNight = () => {
-            const now = new Date();
-            const daysUntilSaturday = 6 - now.getDay();
-            const nextSaturday = new Date(now);
-            nextSaturday.setDate(now.getDate() + daysUntilSaturday);
-            nextSaturday.setHours(23, 59, 59, 999);
-            return nextSaturday.getTime();
+        const cleanSubjectName = (str) => {
+            if (!str) return '';
+            return String(str)
+                .replace(/[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]|[\u{FE00}-\u{FE0F}]|[\u{1F900}-\u{1F9FF}]|[\u{1FA00}-\u{1FA6F}]|[\u{1FA70}-\u{1FAFF}]/gu, '')
+                .replace(/[.,/#!$%^&*;:{}=\-_`~()]/g, '')
+                .trim()
+                .toLowerCase();
         };
+
+        const getNextSaturday22PM = () => {
+            const now = new Date();
+            const d = now.getDay(); // 0 = Sun, ..., 6 = Sat
+            const target = new Date(now);
+            if (d === 6) {
+                // If it's Saturday and before 22:00
+                if (now.getHours() < 22) {
+                    target.setHours(22, 0, 0, 0);
+                    return target.getTime();
+                }
+            }
+            const daysToAdd = (6 - d + 7) % 7 || 7;
+            target.setDate(now.getDate() + daysToAdd);
+            target.setHours(22, 0, 0, 0);
+            return target.getTime();
+        };
+
+        const getNextSaturdayNight = getNextSaturday22PM;
 
 
         const timeToMins = (t) => {
@@ -168,6 +187,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
         };
 
         const ALL_BADGES = [
+            { id: 'b_weekly_champ', icon: '👑', title: 'אלופת השבוע', description: 'זכייה במקום הראשון בתחרות הנקודות השבועית', reqType: 'weekly_champ', reqTarget: 1 },
             { id: 'b_exam_90', icon: '🏆', title: 'מצטיינת מבחנים', description: 'קיבלת ב-4 מבחנים מעל 90', reqType: 'exams_90_plus', reqTarget: 4 },
             { id: 'b_on_time', icon: '⏱️', title: 'חסינת איחורים', description: 'הגשת בזמן במשך שבועיים רצוף', reqType: 'streak_days', reqTarget: 14 },
             { id: 'b_weekly_20', icon: '⚡', title: 'טורבו', description: 'צברת מעל 20 נקודות בשבוע אחד', reqType: 'weekly_points', reqTarget: 20 },
@@ -176,6 +196,11 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             { id: 'b_comeback', icon: '🔄', title: 'קאמבק של אלופות', description: 'איבדת רצף, ולא נשברת - הגשת משימה ביום שאחרי', reqType: 'comeback', reqTarget: 1 },
             { id: 'b_sprint', icon: '🏎️', title: 'עקיפה בסיבוב', description: 'עקפת חברה בנקודות ביום שישי לקראת סגירת השבוע', reqType: 'sprint', reqTarget: 1 },
         ];
+
+        const ADMIN_CREDENTIALS = {
+            usernames: ['admin', 'אדמין'],
+            passwords: ['admin', 'אדמין']
+        };
 
 
         const DEFAULT_USER_STATE = {
