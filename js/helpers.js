@@ -37,7 +37,28 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return target.getTime();
         };
 
+        const getLastSaturday22PM = (nowInput) => {
+            const now = nowInput instanceof Date ? nowInput : new Date(nowInput || Date.now());
+            const d = now.getDay();
+            const target = new Date(now);
+            if (d === 6) {
+                if (now.getHours() < 22) {
+                    target.setDate(now.getDate() - 7);
+                    target.setHours(22, 0, 0, 0);
+                    return target.getTime();
+                } else {
+                    target.setHours(22, 0, 0, 0);
+                    return target.getTime();
+                }
+            }
+            const daysBack = d + 1;
+            target.setDate(now.getDate() - daysBack);
+            target.setHours(22, 0, 0, 0);
+            return target.getTime();
+        };
+
         const getNextSaturdayNight = getNextSaturday22PM;
+        const getLastSaturdayNight = getLastSaturday22PM;
 
 
         const timeToMins = (t) => {
@@ -331,4 +352,24 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 return { isPassed: false, text: `עוד ${diffDays} ימים!`, badgeClass: 'bg-purple-100 text-purple-800 border border-purple-200 font-bold' };
             }
             return { isPassed: false, text: `עוד ${diffDays} ימים`, badgeClass: 'bg-stone-50 text-stone-600 border border-stone-200' };
+        };
+
+        const formatPastExamDate = (examDateStr) => {
+            if (!examDateStr) return '';
+            try {
+                const target = new Date(examDateStr);
+                target.setHours(0, 0, 0, 0);
+                const today = new Date();
+                today.setHours(0, 0, 0, 0);
+                const diffDays = Math.round((today.getTime() - target.getTime()) / (1000 * 60 * 60 * 24));
+                if (diffDays === 0) return 'התקיים היום';
+                if (diffDays === 1) return 'התקיים אתמול';
+                if (diffDays < 7) return `התקיים לפני ${diffDays} ימים`;
+                if (diffDays < 14) return 'התקיים לפני שבוע';
+                if (diffDays < 30) return `התקיים לפני ${Math.floor(diffDays / 7)} שבועות`;
+                if (diffDays < 60) return 'התקיים לפני כחודש';
+                return `התקיים ב-${target.toLocaleDateString('he-IL')}`;
+            } catch (e) {
+                return examDateStr;
+            }
         };

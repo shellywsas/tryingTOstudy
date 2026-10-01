@@ -32,6 +32,15 @@ function App() {
                 return { users: {}, activeUser: null };
             });
             const pendingWriteSync = useRef(0);
+            const hasRemoteSynced = useRef(false);
+
+            useEffect(() => {
+                hasRemoteSynced.current = false;
+                const timeout = setTimeout(() => {
+                    hasRemoteSynced.current = true;
+                }, 3500);
+                return () => clearTimeout(timeout);
+            }, [globalState.activeUser]);
 
 
             useEffect(() => {
@@ -46,6 +55,7 @@ function App() {
                 const userRef = db.collection("users").doc(globalState.activeUser);
                 
                 const unsubscribe = userRef.onSnapshot((doc) => {
+                    hasRemoteSynced.current = true;
                     if (doc.exists) {
                         const liveData = doc.data();
                         
@@ -108,6 +118,13 @@ function App() {
                             const cleanData = sanitizeForFirestore(updatedUser);
                             db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true })
                               .catch(err => console.error("Error saving to Firebase: ", err));
+
+                            // Mirror sync for שלי and שליי to guarantee zero data divergence
+                            if (prev.activeUser === 'שלי' || prev.activeUser === 'שליי') {
+                                const mirrorDoc = prev.activeUser === 'שלי' ? 'שליי' : 'שלי';
+                                db.collection("users").doc(mirrorDoc).set(cleanData, { merge: true })
+                                  .catch(err => console.error("Error mirroring to Firebase: ", err));
+                            }
                         } catch (err) {
                             console.error("Firebase sync error (prevented app crash): ", err);
                         }
@@ -126,12 +143,13 @@ function App() {
 
             const checkAndAwardBadges = (userData) => {
                 if(!userData) return userData;
-                let newBadges = [...(userData.badges || [])];
+                let newBadges = [...(userData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : b));
                 let earnedNew = false;
                 
-                const exam90PlusBadge = newBadges.find(b => b.id === 'b_exam_90');
-                if (!exam90PlusBadge) {
-                    const exams90PlusCount = (userData.exams || []).filter(e => e.grade && e.grade >= 90).length;
+                const hasBadge = (id) => newBadges.some(b => b.id === id);
+                
+                if (!hasBadge('b_exam_90')) {
+                    const exams90PlusCount = (userData.exams || []).filter(e => e.grade && Number(e.grade) >= 90).length;
                     if (exams90PlusCount >= 4) {
                         newBadges.push({ id: 'b_exam_90', earnedAt: new Date().toISOString() });
                         earnedNew = true;
@@ -139,24 +157,21 @@ function App() {
                     }
                 }
                 
-                const turboBadge = newBadges.find(b => b.id === 'b_weekly_20');
-                if(!turboBadge) {
-                    if (userData.highestWeeklyPoints >= 20 || userData.weeklyPoints >= 20) {
+                if (!hasBadge('b_weekly_20')) {
+                    if ((userData.highestWeeklyPoints || 0) >= 20 || (userData.weeklyPoints || 0) >= 20) {
                         newBadges.push({ id: 'b_weekly_20', earnedAt: new Date().toISOString() });
                         earnedNew = true;
                         showToast('⚡ זכית בתג: טורבו!', 'success');
                     }
                 }
                 
-                const onTimeBadge = newBadges.find(b => b.id === 'b_on_time');
-                if(!onTimeBadge) {
-                    if (userData.longestStreak >= 14) {
+                if (!hasBadge('b_on_time')) {
+                    if ((userData.longestStreak || 0) >= 14 || (userData.taskStreak || 0) >= 14) {
                         newBadges.push({ id: 'b_on_time', earnedAt: new Date().toISOString() });
                         earnedNew = true;
                         showToast('⏱️ זכית בתג: חסינת איחורים!', 'success');
                     }
                 }
-
 
                 if (earnedNew) {
                     return { ...userData, badges: newBadges };
@@ -166,65 +181,93 @@ function App() {
 
 
             useEffect(() => {
-                if (activeUserData && globalState.activeUser) {
-                    const now = new Date().getTime();
-                    if (now > (activeUserData.nextWeeklyReset || 0)) {
-                        const userWeeklyPts = activeUserData.weeklyPoints || 0;
-                        const friendsArr = Object.values(liveFriends || {});
-                        let isTop = true;
-                        let topFriendName = '';
-                        let topFriendPts = 0;
+                if (!activeUserData || !globalState.activeUser) return;
+                const now = new Date().getTime();
+                const weekStart = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : (now - (7 * 86400000));
+                
+                // 1. Regular weekly reset on Saturday 22:00
+                if (now > (activeUserData.nextWeeklyReset || 0)) {
+                    const userWeeklyPts = activeUserData.weeklyPoints || 0;
+                    const friendsArr = Object.values(liveFriends || {});
+                    let isTop = true;
+                    let topFriendName = '';
+                    let topFriendPts = 0;
 
-                        friendsArr.forEach(f => {
-                            const fPts = f.weeklyPoints || 0;
-                            if (fPts > userWeeklyPts) {
-                                isTop = false;
-                                if (fPts > topFriendPts) {
-                                    topFriendPts = fPts;
-                                    topFriendName = f.name || f.username;
-                                }
+                    friendsArr.forEach(f => {
+                        const fPts = f.weeklyPoints || 0;
+                        if (fPts > userWeeklyPts) {
+                            isTop = false;
+                            if (fPts > topFriendPts) {
+                                topFriendPts = fPts;
+                                topFriendName = f.name || f.username;
                             }
-                        });
-
-                        let updatedBadges = [...(activeUserData.badges || [])];
-                        let wonCrown = false;
-
-                        if (isTop && userWeeklyPts > 0) {
-                            wonCrown = true;
-                            const champBadgeIdx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
-                            if (champBadgeIdx !== -1) {
-                                updatedBadges[champBadgeIdx] = {
-                                    ...updatedBadges[champBadgeIdx],
-                                    count: (updatedBadges[champBadgeIdx].count || 1) + 1,
-                                    lastWonAt: new Date().toISOString()
-                                };
-                            } else {
-                                updatedBadges.push({
-                                    id: 'b_weekly_champ',
-                                    count: 1,
-                                    earnedAt: new Date().toISOString()
-                                });
-                            }
-                            showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! זכית בתג אלופת השבוע! 👑`, 'success');
-                        } else if (topFriendName && topFriendPts > 0) {
-                            showToast(`סיום שבוע! אלופת השבוע החולף היא ${topFriendName} עם ${topFriendPts} נק' 👑`, 'info');
                         }
+                    });
 
+                    let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : b));
+                    let wonCrown = false;
+
+                    if (isTop && userWeeklyPts > 0) {
+                        wonCrown = true;
+                        const champBadgeIdx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
+                        if (champBadgeIdx !== -1) {
+                            updatedBadges[champBadgeIdx] = {
+                                ...updatedBadges[champBadgeIdx],
+                                count: (updatedBadges[champBadgeIdx].count || 1) + 1,
+                                lastWonAt: new Date().toISOString()
+                            };
+                        } else {
+                            updatedBadges.push({
+                                id: 'b_weekly_champ',
+                                count: 1,
+                                earnedAt: new Date().toISOString()
+                            });
+                        }
+                        showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! זכית בתג אלופת השבוע! 👑`, 'success');
+                    } else if (topFriendName && topFriendPts > 0) {
+                        showToast(`סיום שבוע! אלופת השבוע החולף היא ${topFriendName} עם ${topFriendPts} נק' 👑`, 'info');
+                    }
+
+                    updateUserData(prev => ({
+                        ...prev,
+                        highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints || 0),
+                        lastWeekPoints: prev.weeklyPoints || 0,
+                        weeklyPoints: 0,
+                        nextWeeklyReset: getNextSaturday22PM(),
+                        badges: wonCrown ? updatedBadges : (prev.badges || [])
+                    }));
+                    return;
+                }
+
+                // 2. Self-healing check: if weeklyPoints > 0 but user has not done any tasks or earned points since the start of this week, heal to 0
+                if ((activeUserData.weeklyPoints || 0) > 0) {
+                    const tasks = activeUserData.tasks || [];
+                    const hist = activeUserData.pointsHistory || [];
+                    const hasPositiveActivityThisWeek = tasks.some(t => {
+                        if (!t || !t.completed || !t.completedAt) return false;
+                        const tTime = new Date(t.completedAt).getTime();
+                        return !isNaN(tTime) && tTime >= weekStart;
+                    }) || hist.some(h => {
+                        if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
+                        const hTime = new Date(h.date).getTime();
+                        return !isNaN(hTime) && hTime >= weekStart;
+                    });
+
+                    if (!hasPositiveActivityThisWeek) {
                         updateUserData(prev => ({
                             ...prev,
-                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints || 0),
-                            lastWeekPoints: prev.weeklyPoints || 0,
-                            weeklyPoints: 0,
-                            nextWeeklyReset: getNextSaturday22PM(),
-                            badges: wonCrown ? updatedBadges : (prev.badges || [])
+                            weeklyPoints: 0
                         }));
                     }
                 }
-            }, [globalState.activeUser, activeUserData?.nextWeeklyReset]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints]);
 
 
             useEffect(() => {
                 if (!globalState.activeUser) return;
+                // Guard: Wait for initial remote Firestore sync when online so stale localStorage doesn't trigger false penalties
+                if (!hasRemoteSynced.current && typeof navigator !== 'undefined' && navigator.onLine !== false) return;
+
                 updateUserData(prev => {
                     if (!prev || !prev.tasks) return prev;
                     const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
@@ -235,21 +278,28 @@ function App() {
                     let needsUpdate = false;
                     let pointsToDeduct = 0;
                     let historyLogs = [];
+                    const GRACE_PERIOD_MS = 5 * 60 * 1000;
 
                     const updatedTasks = (healedPrev.tasks || []).map(task => {
                         const isDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task, healedPrev.pointsHistory));
                         if (isDone) {
-                            const onTime = task.completedAt && task.dueDate && task.dueTime && new Date(task.completedAt).getTime() <= new Date(`${task.dueDate}T${task.dueTime}`).getTime();
+                            const onTime = typeof isTaskSubmittedOnTime === 'function'
+                                ? isTaskSubmittedOnTime(task)
+                                : (task.completedAt && task.dueDate && new Date(task.completedAt).getTime() <= (new Date(`${task.dueDate}T${task.dueTime || '23:59:59'}`).getTime() + GRACE_PERIOD_MS));
                             if (onTime && task.autoPenaltyApplied) {
                                 return { ...task, completed: true, autoPenaltyApplied: false };
                             }
                             return task.completed ? task : { ...task, completed: true };
                         }
-                        if (task.isLessonLog || !task.dueDate || !task.dueTime) return task;
-                        const dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+                        if (task.isLessonLog || !task.dueDate) return task;
+                        const timeStr = task.dueTime || '23:59:59';
+                        const dueDate = new Date(`${task.dueDate}T${timeStr}`);
                         if (isNaN(dueDate.getTime())) return task;
 
-                        if (now > dueDate && (healedPrev.taskStreak || 0) > 0) {
+                        const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
+                        const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 86400000);
+
+                        if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS) && (healedPrev.taskStreak || 0) > 0) {
                             shouldBreakStreak = true;
                             if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
                                 oldestUncompletedDate = dueDate;
@@ -257,7 +307,8 @@ function App() {
                             }
                         }
                         const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
-                        if (hoursLate >= 3 && !task.autoPenaltyApplied) {
+                        // Only apply auto-penalty to recent overdue tasks (within 72 hours), never retroactively on ancient backlog
+                        if (hoursLate >= 3 && hoursLate <= 72 && !task.autoPenaltyApplied) {
                             needsUpdate = true;
                             pointsToDeduct += 2;
                             const sub = (healedPrev.subjects || []).find(s => s.id === task.subjectId);
@@ -882,21 +933,21 @@ function App() {
             
             // תוקן החיבור למסד הנתונים של חברים - פועל ברקע ומכניס את ה-username פנימה!
             useEffect(() => {
-                if (activeUserData?.friends?.length > 0 && typeof db !== 'undefined') {
+                if (activeUserData?.friends?.length > 0 && typeof db !== 'undefined' && db) {
                     const unsubscribes = [];
-                    // מניעת כפילויות בהאזנה על ידי שימוש בסט של שמות משתמש
-                    const friendUsernames = [...new Set(activeUserData.friends.map(f => f.username))];
+                    const friendUsernames = [...new Set(activeUserData.friends.map(f => f && f.username).filter(Boolean))];
                     
                     friendUsernames.forEach(username => {
                         try {
                             const unsub = db.collection("users").doc(username).onSnapshot(doc => {
                                 if (doc.exists) {
-                                    // מכניסים את השם המשתמש במפורש פנימה אל תוך הדאטה!
                                     setLiveFriends(prev => ({
                                         ...prev, 
                                         [username]: { ...doc.data(), username: username }
                                     }));
                                 }
+                            }, err => {
+                                console.warn(`Error listening to friend @${username}:`, err);
                             });
                             unsubscribes.push(unsub);
                         } catch (e) { console.error(e); }
@@ -904,7 +955,7 @@ function App() {
                     
                     return () => { unsubscribes.forEach(u => u && u()); };
                 }
-            }, [activeUserData?.friends]);
+            }, [activeUserData?.friends ? activeUserData.friends.map(f => f && f.username).sort().join(',') : '']);
 
 
             useEffect(() => {
@@ -966,6 +1017,8 @@ function App() {
             const [archiveFilter, setArchiveFilter] = useState('all');
             const [lessonLogFilter, setLessonLogFilter] = useState('all');
             const [taskFilter, setTaskFilter] = useState('all'); 
+            const [examViewTab, setExamViewTab] = useState('upcoming');
+            const [pastExamSubjectFilter, setPastExamSubjectFilter] = useState('all'); 
 
 
             const [taskFormHasHW, setTaskFormHasHW] = useState(true);
@@ -1094,8 +1147,12 @@ function App() {
             const saveAdminUserUpdate = async (username, updatedFields) => {
                 if (!username) return;
                 try {
+                    const fieldsWithSync = {
+                        ...updatedFields,
+                        lastSync: Date.now()
+                    };
                     if (db) {
-                        await db.collection("users").doc(username).set(updatedFields, { merge: true });
+                        await db.collection("users").doc(username).set(fieldsWithSync, { merge: true });
                     }
                     setGlobalState(prev => {
                         const existing = prev.users[username] || {};
@@ -1103,17 +1160,51 @@ function App() {
                             ...prev,
                             users: {
                                 ...prev.users,
-                                [username]: { ...existing, ...updatedFields }
+                                [username]: { ...existing, ...fieldsWithSync }
                             }
                         };
                     });
-                    setAdminUsersList(prev => prev.map(u => u.username === username ? { ...u, ...updatedFields } : u));
-                    setSelectedAdminUser(prev => prev && prev.username === username ? { ...prev, ...updatedFields } : prev);
+                    setAdminUsersList(prev => prev.map(u => u.username === username ? { ...u, ...fieldsWithSync } : u));
+                    setSelectedAdminUser(prev => prev && prev.username === username ? { ...prev, ...fieldsWithSync } : prev);
                     showToast(`השינויים נשמרו בהצלחה עבור @${username} ✨`, 'success');
                 } catch(err) {
                     console.error("Error updating user from admin:", err);
                     showToast('שגיאה בשמירת הנתונים', 'error');
                 }
+            };
+
+            // Real-time listener for Admin panel to ensure God Mode data is always 100% in sync without flickering
+            useEffect(() => {
+                if (!isAdminLoggedIn || !db) return;
+                const unsub = db.collection("users").onSnapshot((snapshot) => {
+                    const map = {};
+                    snapshot.forEach(doc => {
+                        const data = doc.data();
+                        if (data && doc.id) {
+                            map[doc.id] = { ...data, username: doc.id };
+                        }
+                    });
+                    setAdminUsersList(Object.values(map));
+                    setSelectedAdminUser(prev => prev ? (map[prev.username] || prev) : null);
+                }, (err) => {
+                    console.warn("Admin live sync listener error:", err);
+                });
+                return () => unsub();
+            }, [isAdminLoggedIn]);
+
+            const adminToggleBadge = (user, badgeId) => {
+                if (!user || !badgeId) return;
+                let currentBadges = Array.isArray(user.badges) ? [...user.badges] : [];
+                const idx = currentBadges.findIndex(b => (typeof b === 'string' ? b === badgeId : b?.id === badgeId));
+                let newBadges;
+                if (idx !== -1) {
+                    newBadges = currentBadges.filter((_, i) => i !== idx);
+                    showToast(`התג הוסר מחשבונה של @${user.username}`, 'info');
+                } else {
+                    newBadges = [...currentBadges, { id: badgeId, earnedAt: new Date().toISOString() }];
+                    showToast(`התג הוענק בהצלחה ל-@${user.username}! 🏅`, 'success');
+                }
+                saveAdminUserUpdate(user.username, { badges: newBadges });
             };
 
             const adminDeleteUser = async (username) => {
@@ -1287,7 +1378,8 @@ function App() {
 
 
                 if (db) {
-                    const userRef = db.collection("users").doc(user);
+                    const cleanUserKey = (user === 'שלי' || user === 'שליי') ? 'שליי' : user;
+                    const userRef = db.collection("users").doc(cleanUserKey);
                     userRef.get().then((doc) => {
                         if (doc.exists) {
                             const data = doc.data();
@@ -1296,8 +1388,16 @@ function App() {
                                 return;
                             }
                             setGlobalState(prev => {
-                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[user], data, null) || data);
-                                return {...prev, users: {...prev.users, [user]: merged}, activeUser: user};
+                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[cleanUserKey] || prev.users[user], data, null) || data);
+                                return {
+                                    ...prev, 
+                                    users: {
+                                        ...prev.users, 
+                                        [user]: merged,
+                                        [cleanUserKey]: merged
+                                    }, 
+                                    activeUser: cleanUserKey
+                                };
                             });
                             showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
                         } else {
@@ -1382,9 +1482,11 @@ function App() {
                 
                 if (task.dueDate && task.dueTime) {
                     dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+                } else if (task.dueDate) {
+                    dueDate = new Date(`${task.dueDate}T23:59:59`);
                 } else {
                     dueDate = new Date(); 
-                    dueDate.setHours(23,59,59);
+                    dueDate.setHours(23,59,59,999);
                 }
 
 
@@ -1392,7 +1494,8 @@ function App() {
                 const completionTime = (task.completedAt && !isNaN(new Date(task.completedAt).getTime())) ? new Date(task.completedAt) : now;
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
                 const usedDurationMs = completionTime.getTime() - createdAt.getTime();
-                const isLate = completionTime.getTime() > dueDate.getTime();
+                const GRACE_PERIOD_MS = 5 * 60 * 1000;
+                const isLate = completionTime.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS);
                 const isSameDay = completionTime.toDateString() === dueDate.toDateString();
                 
                 let pointsDelta = 0;
@@ -1812,44 +1915,79 @@ function App() {
             };
 
 
-            const handleAddFriend = (e) => {
+            const handleAddFriend = async (e) => {
                 e.preventDefault();
-                const username = e.target.username.value.trim();
-                if(!username) return;
+                const rawInput = (e.target.username.value || '').trim();
+                const cleanInput = rawInput.replace(/^@+/, '').trim();
+                if (!cleanInput) return;
 
-
-                if (username === globalState.activeUser) {
+                if (cleanInput.toLowerCase() === (globalState.activeUser || '').toLowerCase()) {
                     showToast('אי אפשר להוסיף את עצמך 😅', 'warning');
                     return;
                 }
                 
-                if (activeUserData.friends.some(f => f.username === username)) {
+                if ((activeUserData.friends || []).some(f => f && f.username && f.username.toLowerCase() === cleanInput.toLowerCase())) {
                     showToast('המשתמש/ת כבר ברשימת החברות שלך!', 'warning');
                     return;
                 }
 
+                if (typeof db !== 'undefined' && db) {
+                    try {
+                        let targetDoc = null;
+                        const directDoc = await db.collection("users").doc(cleanInput).get();
+                        if (directDoc.exists) {
+                            targetDoc = directDoc;
+                        } else {
+                            // Case-insensitive lookup fallback
+                            const allUsersSnap = await db.collection("users").get();
+                            allUsersSnap.forEach(d => {
+                                if (d.id && d.id.toLowerCase() === cleanInput.toLowerCase()) {
+                                    targetDoc = d;
+                                }
+                            });
+                        }
 
-                if (typeof db !== 'undefined') {
-                    db.collection("users").doc(username).get().then((doc) => {
-                        if (doc.exists) {
-                            const friendData = doc.data();
+                        if (targetDoc && targetDoc.exists) {
+                            const targetUsername = targetDoc.id;
+                            const friendData = targetDoc.data();
                             const newFriend = {
                                 id: 'f_' + Date.now(),
-                                username: username,
-                                name: friendData.name || username
+                                username: targetUsername,
+                                name: friendData.name || targetUsername
                             };
-                            updateUserData(prev => ({ ...prev, friends: [...prev.friends, newFriend] }));
-                            toggleModal('addFriend', false);
-                            showToast(`איזה כיף! ${friendData.name || username} התווסף/ה לרשימה.`, 'success');
                             
-                            // שינוי קריטי: הוספת username פנימה ישר בעת ההוספה.
-                            setLiveFriends(prev => ({...prev, [username]: { ...friendData, username: username }}));
+                            // 1. Add friend to active user's friends list
+                            updateUserData(prev => ({ ...prev, friends: [...(prev.friends || []), newFriend] }));
+                            toggleModal('addFriend', false);
+                            showToast(`איזה כיף! ${friendData.name || targetUsername} התווסף/ה לרשימה ✨`, 'success');
+                            
+                            // 2. Immediately populate liveFriends with fresh data
+                            setLiveFriends(prev => ({...prev, [targetUsername]: { ...friendData, username: targetUsername }}));
+
+                            // 3. Mutual friendship: automatically add active user to friend's friends list too!
+                            try {
+                                const friendExistingFriends = Array.isArray(friendData.friends) ? friendData.friends : [];
+                                if (!friendExistingFriends.some(f => f && f.username && f.username.toLowerCase() === (globalState.activeUser || '').toLowerCase())) {
+                                    const reciprocalFriend = {
+                                        id: 'f_' + Date.now() + '_recip',
+                                        username: globalState.activeUser,
+                                        name: activeUserData.name || globalState.activeUser
+                                    };
+                                    await db.collection("users").doc(targetUsername).update({
+                                        friends: [...friendExistingFriends, reciprocalFriend],
+                                        lastSync: Date.now()
+                                    });
+                                }
+                            } catch (mutualErr) {
+                                console.warn("Could not auto-add reciprocal friend:", mutualErr);
+                            }
                         } else {
                             showToast('לא קיים משתמש עם השם הזה במערכת 😢', 'error');
                         }
-                    }).catch(err => {
+                    } catch (err) {
+                        console.error("Error adding friend:", err);
                         showToast('שגיאה בתקשורת עם השרת', 'error');
-                    });
+                    }
                 }
             };
 
@@ -2293,6 +2431,14 @@ function App() {
                     tasks: (prev.tasks || []).filter(t => t.examId !== examId)
                 }));
                 showToast('המבחן נמחק בהצלחה', 'info');
+            };
+
+            const handleToggleArchiveExam = (examId, shouldArchive) => {
+                updateUserData(prev => ({
+                    ...prev,
+                    exams: (prev.exams || []).map(e => e.id === examId ? { ...e, isArchived: shouldArchive } : e)
+                }));
+                showToast(shouldArchive ? 'המבחן הועבר לארכיון בהצלחה 📦' : 'המבחן הוחזר למבחנים קרובים 🗓️', 'success');
             };
 
 
@@ -3100,6 +3246,7 @@ function App() {
                                                 { id: 'points', label: 'נקודות וקנסות 💰' },
                                                 { id: 'streaks', label: 'רצפים ושחזור 🔥' },
                                                 { id: 'tasks', label: 'משימות 📋' },
+                                                { id: 'badges', label: 'תגים והישגים 🏅' },
                                                 { id: 'profile', label: 'פרטים אישיים 👤' }
                                             ].map(t => (
                                                 <button 
@@ -3278,6 +3425,46 @@ function App() {
                                                             </div>
                                                         </div>
                                                     ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {adminInspectorTab === 'badges' && (
+                                            <div className="space-y-4">
+                                                <div className="flex items-center justify-between">
+                                                    <h4 className="font-bold text-sm text-stone-800">ניהול תגים והישגים 🏅</h4>
+                                                    <span className="text-xs text-stone-400 font-medium">הענקת תג או הסרתו בלחיצה</span>
+                                                </div>
+                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-80 overflow-y-auto custom-scrollbar">
+                                                    {ALL_BADGES.map(badge => {
+                                                        const userBadges = Array.isArray(selectedAdminUser.badges) ? selectedAdminUser.badges : [];
+                                                        const hasIt = userBadges.some(b => (typeof b === 'string' ? b === badge.id : b?.id === badge.id));
+                                                        return (
+                                                            <div key={badge.id} className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 transition-all ${
+                                                                hasIt ? 'bg-amber-50/80 border-amber-200' : 'bg-stone-50 border-stone-200 opacity-70'
+                                                            }`}>
+                                                                <div className="flex items-center gap-3">
+                                                                    <span className="text-2xl">{badge.icon}</span>
+                                                                    <div>
+                                                                        <div className="font-bold text-xs text-stone-800 flex items-center gap-1.5">
+                                                                            {badge.title}
+                                                                            {hasIt && <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded-full">פעיל</span>}
+                                                                        </div>
+                                                                        <div className="text-[10px] text-stone-500 mt-0.5 line-clamp-1">{badge.description}</div>
+                                                                    </div>
+                                                                </div>
+                                                                <button 
+                                                                    onClick={() => adminToggleBadge(selectedAdminUser, badge.id)}
+                                                                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 active:scale-95 shadow-xs ${
+                                                                        hasIt 
+                                                                            ? 'bg-rose-100 hover:bg-rose-200 text-rose-700' 
+                                                                            : 'bg-purple-600 hover:bg-purple-700 text-white'
+                                                                    }`}>
+                                                                    {hasIt ? 'הסר תג ❌' : 'הענק תג ✨'}
+                                                                </button>
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
                                         )}
@@ -4215,6 +4402,40 @@ function App() {
                                 ? hardExercisesList 
                                 : hardExercisesList.filter(t => t.subjectId === archiveFilter);
 
+                            const allExams = activeUserData.exams || [];
+                            const todayMidnight = new Date();
+                            todayMidnight.setHours(0, 0, 0, 0);
+
+                            const isExamPast = (exam) => {
+                                if (!exam || !exam.date) return false;
+                                if (exam.isArchived) return true;
+                                const d = new Date(exam.date);
+                                d.setHours(0, 0, 0, 0);
+                                return d < todayMidnight;
+                            };
+
+                            const upcomingExams = allExams
+                                .filter(e => !isExamPast(e))
+                                .sort((a, b) => new Date(a.date) - new Date(b.date));
+
+                            const pastExams = allExams
+                                .filter(e => isExamPast(e))
+                                .sort((a, b) => new Date(b.date) - new Date(a.date));
+
+                            const pastExamsWithGrades = pastExams.filter(e => e.grade && !isNaN(Number(e.grade)));
+                            const avgPastGrade = pastExamsWithGrades.length > 0 
+                                ? (pastExamsWithGrades.reduce((sum, e) => sum + Number(e.grade), 0) / pastExamsWithGrades.length).toFixed(1)
+                                : null;
+                            const highestPastGrade = pastExamsWithGrades.length > 0
+                                ? Math.max(...pastExamsWithGrades.map(e => Number(e.grade)))
+                                : null;
+                            const pendingGradeCount = pastExams.filter(e => !e.grade).length;
+
+                            const pastSubjects = [...new Set(pastExams.map(e => e.subjectId))].map(id => (activeUserData.subjects || []).find(s => s.id === id)).filter(Boolean);
+
+                            const filteredPastExams = pastExamSubjectFilter === 'all'
+                                ? pastExams
+                                : pastExams.filter(e => e.subjectId === pastExamSubjectFilter);
 
                             return (
                             <div className="space-y-6 max-w-4xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -4224,10 +4445,10 @@ function App() {
                                     <div className="flex flex-col md:flex-row justify-between md:items-end gap-6 relative z-10">
                                         <div>
                                             <h2 className="text-2xl font-bold text-stone-800 tracking-tight flex items-center gap-2">
-                                                <span>🗓️</span> מחולל למידה אוטומטי
+                                                <span>🗓️</span> ניהול והכנה למבחנים
                                             </h2>
                                             <p className="text-sm text-stone-500 mt-2 max-w-xl leading-relaxed">
-                                                הזיני מבחן קרוב. המערכת תסרוק את הלו"ז שלך ותפזר עבורך זמני למידה בחלונות הפנויים בכל הימים שנותרו עד המבחן.
+                                                תכנון למידה מרוכז לקראת מבחנים קרובים, וארכיון הישגים וציונים מסודר לכל המבחנים שכבר התקיימו.
                                             </p>
                                         </div>
                                         <div className="flex flex-col sm:flex-row gap-3 shrink-0">
@@ -4240,86 +4461,305 @@ function App() {
                                         </div>
                                     </div>
 
+                                    {/* Segmented Sub-Tab Switcher for Upcoming vs Past Exams */}
+                                    <div className="mt-6 pt-5 border-t border-stone-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 relative z-10">
+                                        <div className="flex bg-stone-100 p-1.5 rounded-2xl border border-stone-200 gap-1.5 w-full sm:w-auto">
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setExamViewTab('upcoming')}
+                                                className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${examViewTab === 'upcoming' ? 'bg-white text-indigo-700 shadow-sm border border-stone-200/60' : 'text-stone-600 hover:text-stone-900'}`}
+                                            >
+                                                <span>🗓️</span> מבחנים קרובים
+                                                <span className={`text-[11px] px-2 py-0.5 rounded-full font-black ${examViewTab === 'upcoming' ? 'bg-indigo-100 text-indigo-700' : 'bg-stone-200 text-stone-600'}`}>
+                                                    {upcomingExams.length}
+                                                </span>
+                                            </button>
+                                            <button 
+                                                type="button" 
+                                                onClick={() => setExamViewTab('past')}
+                                                className={`flex-1 sm:flex-initial px-5 py-2.5 rounded-xl text-xs sm:text-sm font-bold transition-all flex items-center justify-center gap-2 active:scale-95 ${examViewTab === 'past' ? 'bg-white text-purple-700 shadow-sm border border-stone-200/60' : 'text-stone-600 hover:text-stone-900'}`}
+                                            >
+                                                <span>📜</span> מבחנים שהתקיימו (ארכיון)
+                                                <span className={`text-[11px] px-2 py-0.5 rounded-full font-black ${examViewTab === 'past' ? 'bg-purple-100 text-purple-700' : 'bg-stone-200 text-stone-600'}`}>
+                                                    {pastExams.length}
+                                                </span>
+                                            </button>
+                                        </div>
+                                        {examViewTab === 'upcoming' && upcomingExams.length > 0 && (
+                                            <div className="text-xs text-stone-400 font-medium text-right sm:text-left">
+                                                ממוין לפי תאריך המבחן הקרוב ביותר
+                                            </div>
+                                        )}
+                                    </div>
 
-                                    {(activeUserData.exams || []).length > 0 && (
-                                        <div className="mt-6 pt-6 border-t border-stone-100 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10">
-                                            {(activeUserData.exams || []).sort((a,b) => new Date(a.date) - new Date(b.date)).map(exam => {
-                                                const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
-                                                
-                                                const examDateObj = new Date(exam.date);
-                                                examDateObj.setHours(0,0,0,0);
-                                                const todayObj = new Date();
-                                                todayObj.setHours(0,0,0,0);
-                                                const isPassed = examDateObj <= todayObj;
-                                                
+                                    {/* 1. UPCOMING EXAMS VIEW */}
+                                    {examViewTab === 'upcoming' && (
+                                        upcomingExams.length > 0 ? (
+                                            <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10 animate-[fadeIn_0.2s_ease-out]">
+                                                {upcomingExams.map(exam => {
+                                                    const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
                                                     const examCountdown = getExamCountdown(exam.date);
                                                     return (
-                                                    <div key={exam.id} className={`p-5 rounded-3xl border transition-all ${isPassed ? 'bg-stone-50 border-stone-200 opacity-90' : 'bg-white border-indigo-100 shadow-sm hover:shadow-md'}`}>
-                                                        <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
-                                                            <div className="flex items-center gap-2 flex-wrap">
-                                                                <div className="text-xs font-bold text-stone-500" dir="ltr">{new Date(exam.date).toLocaleDateString('he-IL')}</div>
-                                                                {examCountdown && (
-                                                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${examCountdown.badgeClass}`}>
-                                                                        {examCountdown.text}
-                                                                    </span>
-                                                                )}
+                                                        <div key={exam.id} className="p-5 rounded-3xl border border-indigo-100 bg-white shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
+                                                            <div>
+                                                                <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
+                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                        <div className="text-xs font-bold text-stone-500" dir="ltr">{new Date(exam.date).toLocaleDateString('he-IL')}</div>
+                                                                        {examCountdown && (
+                                                                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${examCountdown.badgeClass}`}>
+                                                                                {examCountdown.text}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    {exam.cancellations > 0 && (
+                                                                        <div className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 rounded">
+                                                                            ביטולים: {exam.cancellations}/3
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="font-bold text-lg leading-tight text-stone-800">
+                                                                    {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
+                                                                </div>
+                                                                <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
+                                                                    תוכננו {exam.sessionsCount || 0} מפגשים ({exam.targetHours || 0} שעות)
+                                                                </div>
                                                             </div>
-                                                            <div className="flex items-center gap-1.5">
-                                                                {exam.cancellations > 0 && !isPassed && <div className="text-[10px] font-bold text-rose-600 bg-rose-100 px-1.5 rounded">ביטולים: {exam.cancellations}/3</div>}
-                                                                {exam.grade && <div className="text-xs font-black bg-emerald-100 text-emerald-700 px-2 py-0.5 rounded shadow-sm">{exam.grade} ציון</div>}
-                                                            </div>
-                                                        </div>
-                                                        <div className={`font-bold text-lg leading-tight ${isPassed ? 'text-stone-600' : 'text-stone-800'}`}>{exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}</div>
-                                                        <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
-                                                            תוכננו {exam.sessionsCount || 0} מפגשים ({exam.targetHours || 0} שעות)
-                                                        </div>
 
-
-                                                        <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-100">
-                                                            {!isPassed && (
+                                                            <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-100">
                                                                 <button onClick={() => handleAddExamToCalendar(exam)} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-2">
                                                                     📅 הוספה ליומן 
                                                                 </button>
-                                                            )}
-                                                            {!isPassed && !exam.grade && (
-                                                                <button onClick={() => {
-                                                                    setExamPlannerData({
-                                                                        step: 1,
-                                                                        existingExamId: exam.id,
-                                                                        subjectId: exam.subjectId,
-                                                                        examName: exam.examName || '',
-                                                                        date: exam.date,
-                                                                        hours: 5,
-                                                                        targetSessions: 3,
-                                                                        sessions: [],
-                                                                        remainingMinutes: 0
-                                                                    });
-                                                                    toggleModal('examPlanner', true);
-                                                                }} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
-                                                                    תכנון למידה
+                                                                {!exam.grade && (
+                                                                    <button onClick={() => {
+                                                                        setExamPlannerData({
+                                                                            step: 1,
+                                                                            existingExamId: exam.id,
+                                                                            subjectId: exam.subjectId,
+                                                                            examName: exam.examName || '',
+                                                                            date: exam.date,
+                                                                            hours: 5,
+                                                                            targetSessions: 3,
+                                                                            sessions: [],
+                                                                            remainingMinutes: 0
+                                                                        });
+                                                                        toggleModal('examPlanner', true);
+                                                                    }} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
+                                                                        תכנון למידה
+                                                                    </button>
+                                                                )}
+                                                                <button 
+                                                                    onClick={() => handleGenerateExam(exam.subjectId)} 
+                                                                    className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
+                                                                    title="הפקת חוברת הכנה מקיפה למבחן זה">
+                                                                    <span>📄</span> חוברת הכנה A4 / PDF למבחן
                                                                 </button>
-                                                            )}
-                                                            <button 
-                                                                onClick={() => handleGenerateExam(exam.subjectId)} 
-                                                                className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
-                                                                title="הפקת חוברת הכנה מקיפה למבחן זה">
-                                                                <span>📄</span> חוברת הכנה A4 / PDF למבחן
-                                                            </button>
-                                                            {!exam.grade && (
-                                                                <button onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
-                                                                    הזנת ציון למבחן
-                                                                </button>
-                                                            )}
-                                                            <button 
-                                                                onClick={() => handleDeleteExam(exam.id)} 
-                                                                className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5"
-                                                                title="מחיקת מבחן שבוטל">
-                                                                <IconTrash className="w-3.5 h-3.5" /> מחק מבחן
-                                                            </button>
+                                                                {!exam.grade ? (
+                                                                    <button onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
+                                                                        הזנת ציון למבחן
+                                                                    </button>
+                                                                ) : (
+                                                                    <div className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold py-2 rounded-xl">
+                                                                        הוזן ציון: {exam.grade}
+                                                                    </div>
+                                                                )}
+                                                                <div className="flex gap-2">
+                                                                    <button 
+                                                                        onClick={() => handleToggleArchiveExam(exam.id, true)}
+                                                                        className="flex-1 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                                                                        title="העברה לארכיון מבחנים שהתקיימו">
+                                                                        <span>📦</span> העבר לארכיון
+                                                                    </button>
+                                                                    <button 
+                                                                        onClick={() => handleDeleteExam(exam.id)} 
+                                                                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                                                                        title="מחיקת מבחן שבוטל">
+                                                                        <IconTrash className="w-3.5 h-3.5" />
+                                                                    </button>
+                                                                </div>
+                                                            </div>
                                                         </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        ) : (
+                                            <div className="mt-6 p-8 rounded-3xl bg-stone-50/80 border border-dashed border-stone-200 text-center relative z-10 animate-[fadeIn_0.2s_ease-out]">
+                                                <div className="text-4xl mb-2">🥳</div>
+                                                <h3 className="text-lg font-bold text-stone-800">אין מבחנים קרובים ברשימה</h3>
+                                                <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+                                                    כל הכבוד! לוח המבחנים הקרוב שלך פנוי. לחצי על "הוספה מהירה" או "תכנון למידה חכם" כדי להוסיף מבחן חדש.
+                                                </p>
+                                                <div className="flex flex-wrap justify-center gap-3 mt-4">
+                                                    <button onClick={() => toggleModal('quickExam', true)} className="bg-indigo-600 text-white text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-indigo-700 transition-all active:scale-95 shadow-xs">
+                                                        + הוספת מבחן חדש
+                                                    </button>
+                                                    {pastExams.length > 0 && (
+                                                        <button onClick={() => setExamViewTab('past')} className="bg-white text-stone-700 border border-stone-200 text-xs font-bold px-4 py-2.5 rounded-xl hover:bg-stone-100 transition-all active:scale-95">
+                                                            לצפייה במבחנים שהתקיימו ({pastExams.length}) 📜
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        )
+                                    )}
+
+                                    {/* 2. PAST EXAMS ARCHIVE VIEW */}
+                                    {examViewTab === 'past' && (
+                                        <div className="mt-5 space-y-4 relative z-10 animate-[fadeIn_0.2s_ease-out]">
+                                            {/* Summary Stats Banner */}
+                                            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                                                <div className="bg-purple-50/70 border border-purple-100 p-3.5 rounded-2xl">
+                                                    <div className="text-[11px] font-bold text-purple-700">🎓 סה"כ מבחנים</div>
+                                                    <div className="text-2xl font-black text-purple-900 mt-0.5">{pastExams.length}</div>
+                                                </div>
+                                                <div className="bg-emerald-50/70 border border-emerald-100 p-3.5 rounded-2xl">
+                                                    <div className="text-[11px] font-bold text-emerald-700">🏆 ממוצע ציונים</div>
+                                                    <div className="text-2xl font-black text-emerald-900 mt-0.5">{avgPastGrade ? avgPastGrade : '—'}</div>
+                                                </div>
+                                                <div className="bg-amber-50/70 border border-amber-100 p-3.5 rounded-2xl">
+                                                    <div className="text-[11px] font-bold text-amber-700">🌟 ציון שיא</div>
+                                                    <div className="text-2xl font-black text-amber-900 mt-0.5">{highestPastGrade !== null ? highestPastGrade : '—'}</div>
+                                                </div>
+                                                <div className="bg-stone-50 border border-stone-200 p-3.5 rounded-2xl">
+                                                    <div className="text-[11px] font-bold text-stone-600">⏳ ממתינים לציון</div>
+                                                    <div className="text-2xl font-black text-stone-800 mt-0.5">{pendingGradeCount}</div>
+                                                </div>
+                                            </div>
+
+                                            {/* Subject Filters */}
+                                            {pastSubjects.length > 1 && (
+                                                <div className="flex flex-wrap gap-2 pt-1 pb-1">
+                                                    <button 
+                                                        onClick={() => setPastExamSubjectFilter('all')}
+                                                        className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border active:scale-95 ${
+                                                            pastExamSubjectFilter === 'all' 
+                                                                ? 'bg-purple-700 text-white border-purple-700 shadow-xs' 
+                                                                : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                                                        }`}
+                                                    >
+                                                        הכל ({pastExams.length})
+                                                    </button>
+                                                    {pastSubjects.map(sub => {
+                                                        const count = pastExams.filter(e => e.subjectId === sub.id).length;
+                                                        return (
+                                                            <button 
+                                                                key={sub.id}
+                                                                onClick={() => setPastExamSubjectFilter(sub.id)}
+                                                                className={`px-3 py-1.5 rounded-full text-xs font-bold transition-all border flex items-center gap-1.5 active:scale-95 ${
+                                                                    pastExamSubjectFilter === sub.id 
+                                                                        ? 'bg-purple-100 text-purple-900 border-purple-300 shadow-xs' 
+                                                                        : 'bg-white text-stone-600 border-stone-200 hover:bg-stone-50'
+                                                                }`}
+                                                            >
+                                                                <span>{sub.emoji}</span> {sub.name} ({count})
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}
+
+                                            {/* Past Exams Grid */}
+                                            {pastExams.length > 0 ? (
+                                                filteredPastExams.length > 0 ? (
+                                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                                        {filteredPastExams.map(exam => {
+                                                            const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
+                                                            const pastLabel = typeof formatPastExamDate === 'function' ? formatPastExamDate(exam.date) : 'התקיים';
+                                                            const gradeNum = exam.grade ? Number(exam.grade) : null;
+                                                            const gradeBadgeColor = gradeNum >= 90 
+                                                                ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                                                                : gradeNum >= 80 
+                                                                ? 'bg-indigo-100 text-indigo-800 border-indigo-200' 
+                                                                : gradeNum >= 70 
+                                                                ? 'bg-amber-100 text-amber-800 border-amber-200' 
+                                                                : 'bg-stone-100 text-stone-800 border-stone-200';
+
+                                                            return (
+                                                                <div key={exam.id} className="p-5 rounded-3xl border border-stone-200 bg-stone-50/70 hover:bg-white hover:border-purple-200 shadow-xs hover:shadow-md transition-all flex flex-col justify-between">
+                                                                    <div>
+                                                                        <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
+                                                                            <div className="flex items-center gap-1.5 flex-wrap">
+                                                                                <span className="text-[11px] font-bold text-stone-500 bg-white px-2 py-0.5 rounded-lg border border-stone-200" dir="ltr">
+                                                                                    {new Date(exam.date).toLocaleDateString('he-IL')}
+                                                                                </span>
+                                                                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100">
+                                                                                    {pastLabel}
+                                                                                </span>
+                                                                            </div>
+                                                                        </div>
+
+                                                                        <div className="font-bold text-lg leading-tight text-stone-800 mt-1">
+                                                                            {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
+                                                                        </div>
+                                                                        
+                                                                        <div className="mt-3 p-3 rounded-2xl bg-white border border-stone-100 shadow-xs flex items-center justify-between">
+                                                                            <span className="text-xs font-bold text-stone-500">ציון שהושג:</span>
+                                                                            {exam.grade ? (
+                                                                                <span className={`text-base font-black px-3 py-0.5 rounded-xl border shadow-xs ${gradeBadgeColor}`}>
+                                                                                    {exam.grade}
+                                                                                </span>
+                                                                            ) : (
+                                                                                <button 
+                                                                                    onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }}
+                                                                                    className="text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-3 py-1 rounded-xl transition-all active:scale-95"
+                                                                                >
+                                                                                    + הזיני ציון
+                                                                                </button>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-200/60">
+                                                                        {exam.grade ? (
+                                                                            <button 
+                                                                                onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }}
+                                                                                className="w-full bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                                                                            >
+                                                                                ✏️ עריכת ציון
+                                                                            </button>
+                                                                        ) : null}
+                                                                        <button 
+                                                                            onClick={() => handleGenerateExam(exam.subjectId)} 
+                                                                            className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5"
+                                                                            title="הפקת חוברת סיכום/הכנה">
+                                                                            <span>📄</span> חוברת סיכום A4 / PDF
+                                                                        </button>
+                                                                        <div className="flex gap-2">
+                                                                            <button 
+                                                                                onClick={() => handleToggleArchiveExam(exam.id, false)}
+                                                                                className="flex-1 bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                                                                                title="החזרת המבחן לרשימת המבחנים הקרובים">
+                                                                                <span>↩️</span> החזר לקרובים
+                                                                            </button>
+                                                                            <button 
+                                                                                onClick={() => handleDeleteExam(exam.id)} 
+                                                                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
+                                                                                title="מחיקת מבחן זה מהארכיון">
+                                                                                <IconTrash className="w-3.5 h-3.5" />
+                                                                            </button>
+                                                                        </div>
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        })}
+                                                    </div>
+                                                ) : (
+                                                    <div className="p-8 rounded-3xl bg-stone-50 border border-dashed border-stone-200 text-center">
+                                                        <div className="text-3xl mb-2">🔍</div>
+                                                        <div className="text-sm font-bold text-stone-700">לא נמצאו מבחנים במקצוע שנבחר</div>
+                                                        <button onClick={() => setPastExamSubjectFilter('all')} className="mt-3 text-xs text-purple-700 font-bold underline">
+                                                            הצג את כל המבחנים בארכיון
+                                                        </button>
                                                     </div>
                                                 )
-                                            })}
+                                            ) : (
+                                                <div className="mt-4 p-8 rounded-3xl bg-stone-50/80 border border-dashed border-stone-200 text-center relative z-10 animate-[fadeIn_0.2s_ease-out]">
+                                                    <div className="text-4xl mb-2">📜</div>
+                                                    <h3 className="text-lg font-bold text-stone-800">אין עדיין מבחנים שהסתיימו בארכיון</h3>
+                                                    <p className="text-xs text-stone-500 mt-1 max-w-sm mx-auto">
+                                                        ברגע שיעבור תאריך של מבחן, הוא יישמר כאן אוטומטית בצורה מסודרת ונוחה עם אפשרות למעקב ציונים והפקת סיכומים!
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
                                     )}
                                 </div>
@@ -4986,10 +5426,20 @@ function App() {
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                                     {activeUserData.friends.map(friend => {
                                         const liveData = liveFriends[friend.username] || {};
-                                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (friend.streak || 0);
+                                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (liveData.streak !== undefined ? liveData.streak : (friend.streak || friend.taskStreak || 0));
                                         
                                         return (
-                                        <div key={friend.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => { setActiveFriend(friend); toggleModal('friend', true); }}>
+                                        <div key={friend.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 cursor-pointer hover:border-purple-300 hover:shadow-lg transition-all group relative overflow-hidden active:scale-95" onClick={() => {
+                                            setActiveFriend(friend);
+                                            if (!liveFriends[friend.username] && typeof db !== 'undefined' && db) {
+                                                db.collection("users").doc(friend.username).get().then(doc => {
+                                                    if (doc.exists) {
+                                                        setLiveFriends(prev => ({ ...prev, [friend.username]: { ...doc.data(), username: friend.username } }));
+                                                    }
+                                                }).catch(e => console.warn(e));
+                                            }
+                                            toggleModal('friend', true);
+                                        }}>
                                             <div className="absolute top-0 right-0 w-20 h-20 bg-purple-50 rounded-bl-full -mr-10 -mt-10 transition-transform group-hover:scale-150 pointer-events-none"></div>
                                             <div className="flex items-center gap-4 relative z-10">
                                                 <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-purple-100 to-rose-100 flex items-center justify-center text-xl font-black text-purple-700 shadow-sm border border-white">
@@ -5069,7 +5519,7 @@ function App() {
                                         <h3 className="font-bold text-lg mb-4 text-stone-800">ארון התגים 🏅</h3>
                                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                                             {ALL_BADGES.map(badge => {
-                                                const earned = userBadges.find(b => b.id === badge.id);
+                                                const earned = userBadges.find(b => (typeof b === 'string' ? b === badge.id : b?.id === badge.id));
                                                 return (
                                                     <div key={badge.id} className={`p-4 rounded-2xl border text-center transition-all ${earned ? 'bg-gradient-to-b from-amber-50 to-orange-50 border-amber-200 shadow-sm' : 'bg-stone-50 border-stone-200 opacity-60 grayscale'}`}>
                                                         <div className="text-3xl mb-2 drop-shadow-sm">{badge.icon}</div>
@@ -5335,7 +5785,10 @@ function App() {
 
                     {modals.complete && activeTask && (() => {
                         const onTimeSubmitted = typeof isTaskSubmittedOnTime === 'function' ? isTaskSubmittedOnTime(activeTask) : false;
-                        const activeTaskIsLate = !onTimeSubmitted && activeTask.dueDate && activeTask.dueTime ? (new Date() > new Date(`${activeTask.dueDate}T${activeTask.dueTime}`)) : false;
+                        const dueTimeStr = activeTask.dueTime || '23:59:59';
+                        const taskDueDateTime = activeTask.dueDate ? new Date(`${activeTask.dueDate}T${dueTimeStr}`) : null;
+                        const GRACE_PERIOD_MS = 5 * 60 * 1000;
+                        const activeTaskIsLate = !onTimeSubmitted && taskDueDateTime ? (new Date().getTime() > (taskDueDateTime.getTime() + GRACE_PERIOD_MS)) : false;
                         
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
@@ -5888,8 +6341,8 @@ function App() {
 
                     {modals.friend && activeFriend && (() => {
                         const liveData = liveFriends[activeFriend.username] || {};
-                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (activeFriend.streak || 0);
-                        const displayPoints = liveData.totalPoints !== undefined ? liveData.totalPoints : (activeFriend.points || 0);
+                        const displayStreak = liveData.taskStreak !== undefined ? liveData.taskStreak : (liveData.streak !== undefined ? liveData.streak : (activeFriend.streak || activeFriend.taskStreak || 0));
+                        const displayPoints = liveData.totalPoints !== undefined ? liveData.totalPoints : (activeFriend.points || activeFriend.totalPoints || 0);
                         const allFriendTasks = liveData.tasks || activeFriend.tasks || [];
                         const pendingTasks = allFriendTasks.filter(t => !t.completed);
                         const completedCount = allFriendTasks.filter(t => t.completed).length;
@@ -5932,7 +6385,7 @@ function App() {
                                     {(() => {
                                         const fBadges = liveData.badges || activeFriend.badges || [];
                                         const earnedBadges = ALL_BADGES.map(badge => {
-                                            const earned = fBadges.find(b => b.id === badge.id);
+                                            const earned = fBadges.find(b => (typeof b === 'string' ? b === badge.id : b?.id === badge.id));
                                             return earned ? { ...badge, count: earned.count || 1 } : null;
                                         }).filter(Boolean);
 
