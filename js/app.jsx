@@ -118,13 +118,6 @@ function App() {
                             const cleanData = sanitizeForFirestore(updatedUser);
                             db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true })
                               .catch(err => console.error("Error saving to Firebase: ", err));
-
-                            // Mirror sync for שלי and שליי to guarantee zero data divergence
-                            if (prev.activeUser === 'שלי' || prev.activeUser === 'שליי') {
-                                const mirrorDoc = prev.activeUser === 'שלי' ? 'שליי' : 'שלי';
-                                db.collection("users").doc(mirrorDoc).set(cleanData, { merge: true })
-                                  .catch(err => console.error("Error mirroring to Firebase: ", err));
-                            }
                         } catch (err) {
                             console.error("Firebase sync error (prevented app crash): ", err);
                         }
@@ -1378,8 +1371,7 @@ function App() {
 
 
                 if (db) {
-                    const cleanUserKey = (user === 'שלי' || user === 'שליי') ? 'שליי' : user;
-                    const userRef = db.collection("users").doc(cleanUserKey);
+                    const userRef = db.collection("users").doc(user);
                     userRef.get().then((doc) => {
                         if (doc.exists) {
                             const data = doc.data();
@@ -1388,16 +1380,8 @@ function App() {
                                 return;
                             }
                             setGlobalState(prev => {
-                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[cleanUserKey] || prev.users[user], data, null) || data);
-                                return {
-                                    ...prev, 
-                                    users: {
-                                        ...prev.users, 
-                                        [user]: merged,
-                                        [cleanUserKey]: merged
-                                    }, 
-                                    activeUser: cleanUserKey
-                                };
+                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[user], data, null) || data);
+                                return {...prev, users: {...prev.users, [user]: merged}, activeUser: user};
                             });
                             showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
                         } else {
