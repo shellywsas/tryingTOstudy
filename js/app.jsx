@@ -141,6 +141,7 @@ function App() {
                 
                 const hasBadge = (id) => newBadges.some(b => b.id === id);
                 
+                // 1. מצטיינת מבחנים: 4 מבחנים מעל 90
                 if (!hasBadge('b_exam_90')) {
                     const exams90PlusCount = (userData.exams || []).filter(e => e.grade && Number(e.grade) >= 90).length;
                     if (exams90PlusCount >= 4) {
@@ -150,6 +151,7 @@ function App() {
                     }
                 }
                 
+                // 2. טורבו: מעל 20 נקודות בשבוע
                 if (!hasBadge('b_weekly_20')) {
                     if ((userData.highestWeeklyPoints || 0) >= 20 || (userData.weeklyPoints || 0) >= 20) {
                         newBadges.push({ id: 'b_weekly_20', earnedAt: new Date().toISOString() });
@@ -158,6 +160,7 @@ function App() {
                     }
                 }
                 
+                // 3. חסינת איחורים: רצף של 14 ימים
                 if (!hasBadge('b_on_time')) {
                     if ((userData.longestStreak || 0) >= 14 || (userData.taskStreak || 0) >= 14) {
                         newBadges.push({ id: 'b_on_time', earnedAt: new Date().toISOString() });
@@ -166,11 +169,110 @@ function App() {
                     }
                 }
 
+                // 4. ספידי: הגשת 5 שיעורי בית בפחות מחצי מהזמן
+                if (!hasBadge('b_fast_hw')) {
+                    const fastHwCount = (userData.tasks || []).filter(t => {
+                        if (!t || !t.completed || !t.completedAt || !t.createdAt || !t.dueDate) return false;
+                        const cTime = new Date(t.completedAt).getTime();
+                        const crTime = new Date(t.createdAt).getTime();
+                        const dTime = new Date(t.dueDate + (t.dueTime ? `T${t.dueTime}` : 'T23:59:59')).getTime();
+                        const totalDuration = dTime - crTime;
+                        const usedDuration = cTime - crTime;
+                        return totalDuration > 0 && usedDuration <= Math.max(totalDuration / 2, 86400000);
+                    }).length;
+                    const fastPointsCount = (userData.pointsHistory || []).filter(p => p && p.details && (p.details.includes('הוגש מוקדם') || p.points >= 2)).length;
+                    if (Math.max(fastHwCount, fastPointsCount) >= 5) {
+                        newBadges.push({ id: 'b_fast_hw', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('💨 זכית בתג: ספידי!', 'success');
+                    }
+                }
+
+                // 5. קאמבק של אלופות: איבדת רצף, ולא נשברת - הגשת משימה ביום שאחרי
+                if (!hasBadge('b_comeback')) {
+                    const hasBrokenStreak = (userData.streakHistory && userData.streakHistory.length > 0) || 
+                                            (userData.pointsHistory || []).some(p => p && (p.points < 0 || (p.details && p.details.includes('איחור'))));
+                    const hasActiveStreakNow = (userData.taskStreak || 0) >= 1;
+                    if (hasBrokenStreak && hasActiveStreakNow) {
+                        newBadges.push({ id: 'b_comeback', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('🔄 זכית בתג: קאמבק של אלופות!', 'success');
+                    }
+                }
+
+                // 6. שותפות לגורל: את וחברה השלמתן משימה באותו יום
+                if (!hasBadge('b_sync_study')) {
+                    let friendsArr = [];
+                    try {
+                        if (typeof liveFriends !== 'undefined' && liveFriends) {
+                            friendsArr = Object.values(liveFriends);
+                        }
+                    } catch (e) {}
+                    const userCompletedDates = (userData.tasks || [])
+                        .filter(t => t && t.completed && t.completedAt)
+                        .map(t => new Date(t.completedAt).toDateString());
+                    
+                    let hasSync = false;
+                    for (const friend of friendsArr) {
+                        const friendTasks = friend.tasks || [];
+                        for (const ft of friendTasks) {
+                            if (ft && ft.completed && ft.completedAt) {
+                                const fDate = new Date(ft.completedAt).toDateString();
+                                if (userCompletedDates.includes(fDate)) {
+                                    hasSync = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasSync) break;
+                    }
+                    if (hasSync) {
+                        newBadges.push({ id: 'b_sync_study', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('🤝 זכית בתג: שותפות לגורל!', 'success');
+                    }
+                }
+
+                // 7. עקיפה בסיבוב: עקפת חברה בנקודות ביום שישי לקראת סגירת השבוע
+                if (!hasBadge('b_sprint')) {
+                    let friendsArr = [];
+                    try {
+                        if (typeof liveFriends !== 'undefined' && liveFriends) {
+                            friendsArr = Object.values(liveFriends);
+                        }
+                    } catch (e) {}
+                    const isFriday = new Date().getDay() === 5;
+                    const earnedOnFriday = (userData.pointsHistory || []).some(p => p && p.points > 0 && new Date(p.date).getDay() === 5);
+                    const userPts = userData.weeklyPoints || 0;
+                    const hasMorePointsThanFriend = friendsArr.some(f => userPts > (f.weeklyPoints || 0) && userPts > 0);
+                    if ((isFriday || earnedOnFriday) && hasMorePointsThanFriend) {
+                        newBadges.push({ id: 'b_sprint', earnedAt: new Date().toISOString() });
+                        earnedNew = true;
+                        showToast('🏎️ זכית בתג: עקיפה בסיבוב!', 'success');
+                    }
+                }
+
                 if (earnedNew) {
                     return { ...userData, badges: newBadges };
                 }
                 return userData;
             };
+
+            // Continuous badge check on data updates
+            useEffect(() => {
+                if (!activeUserData || !globalState.activeUser) return;
+                const checked = checkAndAwardBadges(activeUserData);
+                if (checked && checked !== activeUserData && checked.badges?.length !== (activeUserData.badges || []).length) {
+                    updateUserData(() => checked);
+                }
+            }, [
+                globalState.activeUser, 
+                activeUserData?.weeklyPoints, 
+                activeUserData?.taskStreak, 
+                activeUserData?.longestStreak, 
+                (activeUserData?.tasks || []).length, 
+                (activeUserData?.exams || []).length
+            ]);
 
 
             useEffect(() => {
@@ -990,6 +1092,7 @@ function App() {
 
             const [activeTask, setActiveTask] = useState(null);
             const [taskActionsMenu, setTaskActionsMenu] = useState(null);
+            const [examActionsMenu, setExamActionsMenu] = useState(null);
             const [selectedTaskForReminder, setSelectedTaskForReminder] = useState(null);
             const [selectedReminderWindow, setSelectedReminderWindow] = useState(null);
             const [reminderTemplateId, setReminderTemplateId] = useState('friendly');
@@ -4509,57 +4612,25 @@ function App() {
                                                                 </div>
                                                             </div>
 
-                                                            <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-100">
-                                                                <button onClick={() => handleAddExamToCalendar(exam)} className="w-full bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-2">
-                                                                    📅 הוספה ליומן 
-                                                                </button>
-                                                                {!exam.grade && (
-                                                                    <button onClick={() => {
-                                                                        setExamPlannerData({
-                                                                            step: 1,
-                                                                            existingExamId: exam.id,
-                                                                            subjectId: exam.subjectId,
-                                                                            examName: exam.examName || '',
-                                                                            date: exam.date,
-                                                                            hours: 5,
-                                                                            targetSessions: 3,
-                                                                            sessions: [],
-                                                                            remainingMinutes: 0
-                                                                        });
-                                                                        toggleModal('examPlanner', true);
-                                                                    }} className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
-                                                                        תכנון למידה
-                                                                    </button>
-                                                                )}
-                                                                <button 
-                                                                    onClick={() => handleGenerateExam(exam.subjectId)} 
-                                                                    className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold py-2.5 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5 shadow-xs"
-                                                                    title="הפקת חוברת הכנה מקיפה למבחן זה">
-                                                                    <span>📄</span> חוברת הכנה A4 / PDF למבחן
-                                                                </button>
+                                                            <div className="flex gap-2 w-full mt-4 pt-3 border-t border-stone-100 items-center">
                                                                 {!exam.grade ? (
-                                                                    <button onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} className="w-full bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold py-2.5 rounded-xl transition-colors active:scale-95">
-                                                                        הזנת ציון למבחן
+                                                                    <button 
+                                                                        onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} 
+                                                                        className="flex-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-sm font-bold py-2.5 rounded-2xl transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs">
+                                                                        <span>✍️</span> הזנת ציון
                                                                     </button>
                                                                 ) : (
-                                                                    <div className="text-center bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-bold py-2 rounded-xl">
-                                                                        הוזן ציון: {exam.grade}
+                                                                    <div className="flex-1 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs font-bold py-2.5 px-3 rounded-2xl flex items-center justify-center gap-1.5 shadow-xs">
+                                                                        <span>🏆</span> ציון: <span className="text-sm font-black">{exam.grade}</span>
                                                                     </div>
                                                                 )}
-                                                                <div className="flex gap-2">
-                                                                    <button 
-                                                                        onClick={() => handleToggleArchiveExam(exam.id, true)}
-                                                                        className="flex-1 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                                                                        title="העברה לארכיון מבחנים שהתקיימו">
-                                                                        <span>📦</span> העבר לארכיון
-                                                                    </button>
-                                                                    <button 
-                                                                        onClick={() => handleDeleteExam(exam.id)} 
-                                                                        className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                                                                        title="מחיקת מבחן שבוטל">
-                                                                        <IconTrash className="w-3.5 h-3.5" />
-                                                                    </button>
-                                                                </div>
+                                                                <button 
+                                                                    onClick={() => setExamActionsMenu(exam)} 
+                                                                    className="px-4 py-2.5 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 shadow-xs" 
+                                                                    title="אפשרויות נוספות">
+                                                                    <span className="text-base font-black leading-none">⋯</span>
+                                                                    <span className="text-xs">אפשרויות</span>
+                                                                </button>
                                                             </div>
                                                         </div>
                                                     );
@@ -4692,35 +4763,19 @@ function App() {
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="flex flex-col gap-2 mt-4 pt-4 border-t border-stone-200/60">
-                                                                        {exam.grade ? (
-                                                                            <button 
-                                                                                onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }}
-                                                                                className="w-full bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                                                                            >
-                                                                                ✏️ עריכת ציון
-                                                                            </button>
-                                                                        ) : null}
+                                                                    <div className="flex gap-2 w-full mt-4 pt-3 border-t border-stone-200/60 items-center">
                                                                         <button 
-                                                                            onClick={() => handleGenerateExam(exam.subjectId)} 
-                                                                            className="w-full bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1.5"
-                                                                            title="הפקת חוברת סיכום/הכנה">
-                                                                            <span>📄</span> חוברת סיכום A4 / PDF
+                                                                            onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} 
+                                                                            className="flex-1 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 text-xs sm:text-sm font-bold py-2.5 rounded-2xl transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs">
+                                                                            <span>✏️</span> {exam.grade ? 'עריכת ציון' : 'הזנת ציון'}
                                                                         </button>
-                                                                        <div className="flex gap-2">
-                                                                            <button 
-                                                                                onClick={() => handleToggleArchiveExam(exam.id, false)}
-                                                                                className="flex-1 bg-white hover:bg-stone-100 text-stone-600 border border-stone-200 text-xs font-bold py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                                                                                title="החזרת המבחן לרשימת המבחנים הקרובים">
-                                                                                <span>↩️</span> החזר לקרובים
-                                                                            </button>
-                                                                            <button 
-                                                                                onClick={() => handleDeleteExam(exam.id)} 
-                                                                                className="bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-xs font-bold px-3 py-2 rounded-xl transition-colors active:scale-95 flex items-center justify-center gap-1"
-                                                                                title="מחיקת מבחן זה מהארכיון">
-                                                                                <IconTrash className="w-3.5 h-3.5" />
-                                                                            </button>
-                                                                        </div>
+                                                                        <button 
+                                                                            onClick={() => setExamActionsMenu(exam)} 
+                                                                            className="px-4 py-2.5 bg-white hover:bg-stone-50 text-stone-600 border border-stone-200 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 shadow-xs" 
+                                                                            title="אפשרויות נוספות">
+                                                                            <span className="text-base font-black leading-none">⋯</span>
+                                                                            <span className="text-xs">אפשרויות</span>
+                                                                        </button>
                                                                     </div>
                                                                 </div>
                                                             );
@@ -6779,6 +6834,172 @@ function App() {
                                     <div className="mt-4 pt-3 border-t border-stone-100">
                                         <button 
                                             onClick={() => setTaskActionsMenu(null)}
+                                            className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-sm transition-colors active:scale-95">
+                                            סגירה
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {examActionsMenu && (() => {
+                        const exam = examActionsMenu;
+                        const sub = activeUserData.subjects.find(s => s.id === exam.subjectId);
+                        const subjectName = sub?.name || 'כללי';
+                        const examCountdown = getExamCountdown(exam.date);
+                        const isPast = exam.isArchived || (examCountdown && examCountdown.isPassed);
+
+                        return (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]">
+                                <div className="bg-white rounded-3xl p-5 sm:p-6 w-full max-w-md shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+                                    
+                                    <div className="flex justify-between items-start mb-4 pb-3 border-b border-stone-100">
+                                        <div className="flex-1 pr-1">
+                                            <div className="flex items-center gap-2 mb-1 flex-wrap">
+                                                <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700">
+                                                    {sub?.emoji || '📚'} {subjectName}
+                                                </span>
+                                                {examCountdown && (
+                                                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border ${examCountdown.badgeClass}`}>
+                                                        {examCountdown.text}
+                                                    </span>
+                                                )}
+                                                {exam.grade && (
+                                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                                        ציון: {exam.grade} 🏆
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h3 className="font-bold text-lg text-stone-800 leading-snug">
+                                                {exam.examName || 'מבחן'} ב{subjectName}
+                                            </h3>
+                                            <div className="text-xs text-stone-400 mt-0.5 font-medium flex items-center gap-2" dir="ltr">
+                                                <span>📅 {new Date(exam.date).toLocaleDateString('he-IL')}</span>
+                                                {exam.sessionsCount > 0 && (
+                                                    <span dir="rtl">• {exam.sessionsCount} מפגשים ({exam.targetHours} שעות)</span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <button onClick={() => setExamActionsMenu(null)} className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
+                                            <IconX className="w-4 h-4"/>
+                                        </button>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <button 
+                                            onClick={() => {
+                                                setActiveExamForGrade(exam);
+                                                toggleModal('examGrade', true);
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-emerald-50/70 hover:bg-emerald-100 text-emerald-900 border border-emerald-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">✍️</span>
+                                                <span>{exam.grade ? 'עריכת ציון המבחן' : 'הזנת ציון למבחן'}</span>
+                                            </div>
+                                            <span className="text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                                                {exam.grade ? `נוכחי: ${exam.grade}` : 'תיעוד הישג'}
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                setExamPlannerData({
+                                                    step: 1,
+                                                    existingExamId: exam.id,
+                                                    subjectId: exam.subjectId,
+                                                    examName: exam.examName || '',
+                                                    date: exam.date,
+                                                    hours: exam.targetHours || 5,
+                                                    targetSessions: exam.sessionsCount || 3,
+                                                    sessions: [],
+                                                    remainingMinutes: 0
+                                                });
+                                                toggleModal('examPlanner', true);
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-purple-50 hover:text-purple-800 text-stone-700 border border-stone-200 hover:border-purple-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">🎯</span>
+                                                <span>{exam.sessionsCount ? 'עריכת תכנון למידה ומפגשים' : 'תכנון למידה חכם למבחן'}</span>
+                                            </div>
+                                            <span className="text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md text-[11px] font-semibold">
+                                                חלוקת לו"ז
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                handleAddExamToCalendar(exam);
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-indigo-50 hover:text-indigo-800 text-stone-700 border border-stone-200 hover:border-indigo-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">📅</span>
+                                                <span>הוספה ליומן עם תזכורות</span>
+                                            </div>
+                                            <span className="text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md text-[11px] font-semibold">קובץ ICS ליומן</span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                handleGenerateExam(exam.subjectId);
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-purple-50 hover:text-purple-800 text-stone-700 border border-stone-200 hover:border-purple-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">📄</span>
+                                                <span>חוברת הכנה וסיכום A4 / PDF</span>
+                                            </div>
+                                            <span className="text-stone-400 text-xs">הפקה להדפסה</span>
+                                        </button>
+
+                                        {!isPast ? (
+                                            <button 
+                                                onClick={() => {
+                                                    handleToggleArchiveExam(exam.id, true);
+                                                    setExamActionsMenu(null);
+                                                }}
+                                                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 transition-all font-bold text-sm active:scale-98">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xl">📦</span>
+                                                    <span>העברה לארכיון המבחנים</span>
+                                                </div>
+                                                <span className="text-stone-400 text-xs">מבחן שהסתיים</span>
+                                            </button>
+                                        ) : (
+                                            <button 
+                                                onClick={() => {
+                                                    handleToggleArchiveExam(exam.id, false);
+                                                    setExamActionsMenu(null);
+                                                }}
+                                                className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-stone-100 text-stone-700 border border-stone-200 transition-all font-bold text-sm active:scale-98">
+                                                <div className="flex items-center gap-3">
+                                                    <span className="text-xl">↩️</span>
+                                                    <span>החזרה למבחנים קרובים</span>
+                                                </div>
+                                                <span className="text-stone-400 text-xs">לוח פעיל</span>
+                                            </button>
+                                        )}
+
+                                        <button 
+                                            onClick={() => {
+                                                setExamActionsMenu(null);
+                                                handleDeleteExam(exam.id);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-stone-50 hover:bg-rose-50 hover:text-rose-700 text-stone-600 border border-stone-200 hover:border-rose-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">🗑️</span>
+                                                <span>מחיקת מבחן מהמערכת</span>
+                                            </div>
+                                            <span className="text-rose-500 text-xs">הסרה לצמיתות</span>
+                                        </button>
+                                    </div>
+
+                                    <div className="mt-4 pt-3 border-t border-stone-100">
+                                        <button 
+                                            onClick={() => setExamActionsMenu(null)}
                                             className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-sm transition-colors active:scale-95">
                                             סגירה
                                         </button>
