@@ -51,6 +51,18 @@ input, textarea, select {
         margin: 0;
         background: #ffffff !important;
         color: #000000 !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+    #print-area img {
+        max-width: 100%;
+        height: auto;
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    .break-inside-avoid {
+        page-break-inside: avoid !important;
+        break-inside: avoid !important;
     }
     .no-print { display: none !important; }
     .page-break { page-break-before: always; }
