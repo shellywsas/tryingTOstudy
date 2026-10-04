@@ -178,6 +178,44 @@ const WhatsAppService = {
             return getRandomMotivationalMessage(subj, title, top, win, name);
         }
         return `היי ${name}! תזכורת חמה לשיעורי הבית ב-${subj}: "${title}". זמן מעולה להקדיש לזה קצת תשומת לב (${win}) 💪✨`;
+    },
+
+    /**
+     * Generates a single, polite, combined reminder digest when a student has multiple upcoming tasks.
+     * Prevents spamming multiple WhatsApp messages at once.
+     */
+    generateCombinedStudentReminderText(studentName, tasks = [], subjects = []) {
+        const name = studentName || 'שלי';
+        if (!tasks || tasks.length === 0) {
+            return `היי ${name}! 🌸 זמן מעולה ללמידה קצרה ושמירה על הרצף! 💪✨`;
+        }
+        if (tasks.length === 1) {
+            const task = tasks[0];
+            const sub = subjects.find(s => s && s.id === task.subjectId);
+            return this.generateStudentReminderText({
+                studentName: name,
+                subjectName: sub ? sub.name : 'כללי',
+                taskTitle: task.title,
+                dueDate: task.dueDate,
+                dueTime: task.dueTime,
+                freeSlotText: 'בזמן הפנוי שלך היום'
+            });
+        }
+
+        const taskLines = tasks.slice(0, 4).map((t, idx) => {
+            const sub = subjects.find(s => s && s.id === t.subjectId);
+            const sName = sub ? sub.name : (t.subject || 'כללי');
+            const timeInfo = t.dueDate ? ` (עד ${t.dueDate}${t.dueTime ? ' ' + t.dueTime : ''})` : '';
+            return `  ${idx + 1}. ${t.title} [${sName}]${timeInfo}`;
+        }).join('\n');
+
+        const moreCount = tasks.length - 4;
+        const moreLine = moreCount > 0 ? `\n  • ועוד ${moreCount} משימות נוספות שממתינות לך באפליקציה!` : '';
+
+        return `היי ${name}! 🌸 תזכורת חמה ומעודדת ללמידה מ-StudyStreak Pro ✨\n` +
+               `יש לך ${tasks.length} משימות לביצוע:\n` +
+               `${taskLines}${moreLine}\n\n` +
+               `כל התקדמות קטנה שומרת על הרצף שלך ומקרבת אותך למטרה! בהצלחה רבה 💪🍀`;
     }
 };
 

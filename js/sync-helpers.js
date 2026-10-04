@@ -55,6 +55,27 @@
         return { ...localT, ...incomingT };
     }
 
+    function mergeExams(localExams, remoteExams) {
+        const local = Array.isArray(localExams) ? localExams : [];
+        const remote = Array.isArray(remoteExams) ? remoteExams : [];
+        const byId = new Map();
+        for (const e of remote) {
+            if (e && e.id) byId.set(e.id, e);
+        }
+        for (const e of local) {
+            if (!e || !e.id) continue;
+            if (!byId.has(e.id)) {
+                byId.set(e.id, e);
+            } else {
+                const r = byId.get(e.id);
+                const localUpdated = e.updatedAt || e.lastModified || 0;
+                const remoteUpdated = r.updatedAt || r.lastModified || 0;
+                byId.set(e.id, localUpdated >= remoteUpdated ? { ...r, ...e } : { ...e, ...r });
+            }
+        }
+        return Array.from(byId.values());
+    }
+
     function mergeTasks(localTasks, incomingTasks, pointsHistory) {
         const local = Array.isArray(localTasks) ? localTasks : [];
         const incoming = Array.isArray(incomingTasks) ? incomingTasks : [];
@@ -68,10 +89,8 @@
         }
         for (const t of local) {
             if (!t || !t.id) continue;
-            if (!incoming.some((x) => x && x.id === t.id)) {
-                if (taskLooksCompleted(t, pointsHistory)) {
-                    byId.set(t.id, t);
-                }
+            if (!byId.has(t.id)) {
+                byId.set(t.id, t);
             }
         }
         return Array.from(byId.values());
@@ -123,23 +142,58 @@
         return Array.from(map.values());
     }
 
+    const OUTBOX_KEY_PREFIX = 'studyStreak_outbox_';
+
+    function markPendingSync(username, data) {
+        if (!username || typeof localStorage === 'undefined') return;
+        try {
+            const outboxItem = {
+                username,
+                timestamp: Date.now(),
+                data: data
+            };
+            localStorage.setItem(OUTBOX_KEY_PREFIX + username, JSON.stringify(outboxItem));
+        } catch (e) {
+            console.warn('Could not write to sync outbox:', e);
+        }
+    }
+
+    function getPendingSync(username) {
+        if (!username || typeof localStorage === 'undefined') return null;
+        try {
+            const raw = localStorage.getItem(OUTBOX_KEY_PREFIX + username);
+            return raw ? JSON.parse(raw) : null;
+        } catch (e) {
+            return null;
+        }
+    }
+
+    function clearPendingSync(username) {
+        if (!username || typeof localStorage === 'undefined') return;
+        try {
+            localStorage.removeItem(OUTBOX_KEY_PREFIX + username);
+        } catch (e) {}
+    }
+
     function applyRemoteUser(local, remote, tabWrittenSync) {
         if (!remote) return local;
         if (!local) return remote;
         const remoteSync = remote.lastSync || 0;
         const localSync = local.lastSync || 0;
         const mergedBadges = mergeBadges(local.badges, remote.badges);
+        const mergedExams = mergeExams(local.exams || [], remote.exams || []);
 
         if (tabWrittenSync && remoteSync && remoteSync <= tabWrittenSync) {
-            return { ...local, badges: mergedBadges };
+            return { ...local, badges: mergedBadges, exams: mergedExams };
         }
-        if (!remoteSync && localSync) return { ...local, badges: mergedBadges };
-        if (remoteSync && localSync && remoteSync < localSync) return { ...local, badges: mergedBadges };
-        if (remoteSync && localSync && remoteSync === localSync) return { ...local, badges: mergedBadges };
+        if (!remoteSync && localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
+        if (remoteSync && localSync && remoteSync < localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
+        if (remoteSync && localSync && remoteSync === localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
         const hist = local.pointsHistory || remote.pointsHistory || [];
         return {
             ...remote,
             badges: mergedBadges,
+            exams: mergedExams,
             tasks: mergeTasks(local.tasks || [], remote.tasks || [], hist),
         };
     }
@@ -342,6 +396,7 @@
 
     const api = {
         mergeTasks,
+        mergeExams,
         applyRemoteUser,
         healCompletedFromHistory,
         restoreOnDueEdit,
@@ -351,12 +406,16 @@
         getLastSaturday22PM,
         normalizeBadge,
         mergeBadges,
+        markPendingSync,
+        getPendingSync,
+        clearPendingSync,
     };
 
     if (typeof module !== "undefined" && module.exports) {
         module.exports = api;
     }
     root.mergeTasks = mergeTasks;
+    root.mergeExams = mergeExams;
     root.applyRemoteUser = applyRemoteUser;
     root.healCompletedFromHistory = healCompletedFromHistory;
     root.restoreOnDueEdit = restoreOnDueEdit;
@@ -365,4 +424,7 @@
     root.getLastSaturday22PM = getLastSaturday22PM;
     root.normalizeBadge = normalizeBadge;
     root.mergeBadges = mergeBadges;
+    root.markPendingSync = markPendingSync;
+    root.getPendingSync = getPendingSync;
+    root.clearPendingSync = clearPendingSync;
 })(typeof globalThis !== "undefined" ? globalThis : this);

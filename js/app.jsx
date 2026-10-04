@@ -34,6 +34,21 @@ function App() {
             const pendingWriteSync = useRef(0);
             const hasRemoteSynced = useRef(false);
 
+            // Cloud Sync Status & Outbox Diagnostics State
+            const [syncState, setSyncState] = useState(() => (typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'synced'));
+            const [syncErrorDetails, setSyncErrorDetails] = useState('');
+            const [isSyncDiagnosticsOpen, setIsSyncDiagnosticsOpen] = useState(false);
+            const [editingExam, setEditingExam] = useState(null);
+
+            // Safety snapshot backup before first remote sync session
+            useEffect(() => {
+                try {
+                    if (globalState.activeUser && !localStorage.getItem('studyStreakData_backup_pre_sync')) {
+                        localStorage.setItem('studyStreakData_backup_pre_sync', JSON.stringify(globalState));
+                    }
+                } catch (e) {}
+            }, [globalState.activeUser]);
+
             useEffect(() => {
                 hasRemoteSynced.current = false;
                 const timeout = setTimeout(() => {
@@ -48,14 +63,19 @@ function App() {
             }, [globalState]);
 
 
+            // Live Firestore Snapshot with error diagnosis
             useEffect(() => {
-                if (!globalState.activeUser || !db) return;
-
+                if (!globalState.activeUser || !db) {
+                    if (!db) setSyncState(navigator.onLine ? 'error' : 'offline');
+                    return;
+                }
 
                 const userRef = db.collection("users").doc(globalState.activeUser);
                 
                 const unsubscribe = userRef.onSnapshot((doc) => {
                     hasRemoteSynced.current = true;
+                    setSyncState('synced');
+                    setSyncErrorDetails('');
                     if (doc.exists) {
                         const liveData = doc.data();
                         
@@ -75,12 +95,111 @@ function App() {
                     }
                 }, (error) => {
                     console.error("Live sync error:", error);
+                    setSyncState('error');
+                    const isPerm = error.code === 'permission-denied' || String(error.message).includes('permission');
+                    setSyncErrorDetails(isPerm 
+                        ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לתיקון מהיר.' 
+                        : (error.message || 'שגיאת התחברות לענן'));
                 });
-
 
                 return () => unsubscribe();
             }, [globalState.activeUser]);
 
+            // Manual & Continuous Cloud Push for Outbox Queue
+            const pushPendingSyncToCloud = async (forceUser = null) => {
+                const targetUser = forceUser || globalState.activeUser;
+                if (!targetUser || !db) return false;
+                setSyncState('syncing');
+                try {
+                    const pending = typeof getPendingSync === 'function' ? getPendingSync(targetUser) : null;
+                    const userToUpload = pending?.data || globalState.users[targetUser];
+                    if (!userToUpload) {
+                        setSyncState('synced');
+                        return true;
+                    }
+                    const cleanData = sanitizeForFirestore(userToUpload);
+                    await db.collection("users").doc(targetUser).set(cleanData, { merge: true });
+                    if (typeof clearPendingSync === 'function') {
+                        clearPendingSync(targetUser);
+                    }
+                    setSyncState('synced');
+                    setSyncErrorDetails('');
+                    return true;
+                } catch (err) {
+                    console.error("Manual push sync failed:", err);
+                    setSyncState('error');
+                    const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
+                    setSyncErrorDetails(isPerm 
+                        ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied)' 
+                        : (err.message || 'שגיאה בסנכרון לענן'));
+                    return false;
+                }
+            };
+
+            // Continuous Background Health Check (Every 35 seconds + Focus + Online)
+            useEffect(() => {
+                if (!globalState.activeUser) return;
+
+                const runHealthCheck = async () => {
+                    if (!navigator.onLine) {
+                        setSyncState('offline');
+                        return;
+                    }
+                    if (!db) {
+                        setSyncState('error');
+                        setSyncErrorDetails('Firebase לא אותחל');
+                        return;
+                    }
+
+                    // 1. Drain pending outbox changes if any
+                    const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
+                    if (pending) {
+                        await pushPendingSyncToCloud();
+                        return;
+                    }
+
+                    // 2. Probe read permission
+                    try {
+                        await db.collection("users").doc(globalState.activeUser).get();
+                        setSyncState(prev => prev === 'error' ? 'synced' : prev);
+                        setSyncErrorDetails('');
+                    } catch (err) {
+                        const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
+                        setSyncState('error');
+                        if (isPerm) {
+                            setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied)');
+                        }
+                    }
+                };
+
+                runHealthCheck();
+                const interval = setInterval(runHealthCheck, 35000);
+
+                const onOnline = () => {
+                    setSyncState('syncing');
+                    runHealthCheck();
+                    showToast('חיבור האינטרנט חזר! מסנכרן שינויים לענן... 🔄', 'info');
+                };
+                const onOffline = () => {
+                    setSyncState('offline');
+                };
+                const onFocus = () => {
+                    runHealthCheck();
+                };
+
+                window.addEventListener('online', onOnline);
+                window.addEventListener('offline', onOffline);
+                window.addEventListener('focus', onFocus);
+                document.addEventListener('visibilitychange', onFocus);
+
+                return () => {
+                    clearInterval(interval);
+                    window.removeEventListener('online', onOnline);
+                    window.removeEventListener('offline', onOffline);
+                    window.removeEventListener('focus', onFocus);
+                    document.removeEventListener('visibilitychange', onFocus);
+                };
+            }, [globalState.activeUser]);
 
             const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
 
@@ -113,14 +232,37 @@ function App() {
                     updatedUser.lastSync = Date.now();
                     pendingWriteSync.current = updatedUser.lastSync;
                     
+                    if (typeof markPendingSync === 'function') {
+                        markPendingSync(prev.activeUser, updatedUser);
+                    }
+
                     if (db) {
+                        setSyncState('syncing');
                         try {
                             const cleanData = sanitizeForFirestore(updatedUser);
                             db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true })
-                              .catch(err => console.error("Error saving to Firebase: ", err));
+                              .then(() => {
+                                  setSyncState('synced');
+                                  setSyncErrorDetails('');
+                                  if (typeof clearPendingSync === 'function') {
+                                      clearPendingSync(prev.activeUser);
+                                  }
+                              })
+                              .catch(err => {
+                                  console.error("Error saving to Firebase: ", err);
+                                  setSyncState('error');
+                                  const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
+                                  setSyncErrorDetails(isPerm 
+                                      ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לבדיקה.' 
+                                      : (err.message || 'שגיאה בשמירה לענן'));
+                              });
                         } catch (err) {
                             console.error("Firebase sync error (prevented app crash): ", err);
+                            setSyncState('error');
+                            setSyncErrorDetails(err.message || 'שגיאה באתחול שמירה לענן');
                         }
+                    } else {
+                        setSyncState(navigator.onLine ? 'error' : 'offline');
                     }
 
                     return {
@@ -979,25 +1121,19 @@ function App() {
                         }
 
                         if (canSendRemindersNow) {
-                            const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
-                            const lastSentMap = activeUserData.lastTaskRemindersSent || {};
-                            let updatedSentMap = null;
+                            const lastGlobalSent = activeUserData.lastGlobalWhatsAppReminderSent || 0;
+                            const hoursSinceGlobal = (Date.now() - lastGlobalSent) / (1000 * 60 * 60);
 
-                            activeTasks.forEach(task => {
-                                const lastSentTime = lastSentMap[task.id] || 0;
-                                const hoursSince = (Date.now() - lastSentTime) / (1000 * 60 * 60);
-
-                                // שליחה מרווחת (פעם ב-4 שעות לכל היותר למשימה)
-                                if (hoursSince >= 4) {
-                                    const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
-                                    const reminderMsg = WhatsAppService.generateStudentReminderText({
-                                        studentName: activeUserData.name || 'שלי',
-                                        subjectName: sub ? sub.name : 'כללי',
-                                        taskTitle: task.title,
-                                        dueDate: task.dueDate,
-                                        dueTime: task.dueTime,
-                                        freeSlotText: 'הזמן הפנוי שלך לפי הלו"ז'
-                                    });
+                            // מרווח גלובלי של 3.5 שעות לפחות בין תזכורות כדי למנוע ספאם!
+                            if (hoursSinceGlobal >= 3.5) {
+                                const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
+                                if (activeTasks.length > 0) {
+                                    // מייצרים הודעה אחת מרוכזת ומעודנת במקום להציף בהודעות נפרדות
+                                    const reminderMsg = WhatsAppService.generateCombinedStudentReminderText(
+                                        activeUserData.name || 'שלי',
+                                        activeTasks,
+                                        activeUserData.subjects || []
+                                    );
 
                                     WhatsAppService.sendMessage({
                                         to: activeUserData.phoneNumber,
@@ -1005,16 +1141,14 @@ function App() {
                                         gatewayConfig: activeUserData.whatsappGateway
                                     }).then(res => {
                                         if (res && res.status === 'sent_gateway') {
-                                            if (!updatedSentMap) updatedSentMap = { ...lastSentMap };
-                                            updatedSentMap[task.id] = Date.now();
                                             updateUserData(prev => ({
                                                 ...prev,
-                                                lastTaskRemindersSent: updatedSentMap
+                                                lastGlobalWhatsAppReminderSent: Date.now()
                                             }));
                                         }
                                     }).catch(e => console.error('Automated WhatsApp reminder error:', e));
                                 }
-                            });
+                            }
                         }
                     }
                 };
@@ -1122,19 +1256,17 @@ function App() {
                 if (files.length === 0) return;
                 setIsUploadingAttachment(true);
                 try {
-                    const processedList = [];
-                    for (const f of files) {
-                        showToast(`מעבד: ${f.name}... ⏳`, 'info');
-                        const saved = await window.FileStorage.processAndSaveFile(f, category);
-                        if (saved) processedList.push(saved);
+                    showToast(`מעבד ${files.length} קבצים באיכות גבוהה... ⏳`, 'info');
+                    const processedList = await window.FileStorage.processAndSaveFiles(files, category);
+                    if (processedList && processedList.length > 0) {
+                        if (target === 'new') {
+                            setTaskFormAttachments(prev => [...prev, ...processedList]);
+                        } else if (target === 'edit') {
+                            setEditTaskAttachments(prev => [...prev, ...processedList]);
+                        }
+                        const label = category === 'board' ? 'צילומי לוח' : (category === 'homework' ? 'דפי עבודה' : 'קבצים');
+                        showToast(`התווספו ${processedList.length} ${label} בהצלחה! 📎`, 'success');
                     }
-                    if (target === 'new') {
-                        setTaskFormAttachments(prev => [...prev, ...processedList]);
-                    } else if (target === 'edit') {
-                        setEditTaskAttachments(prev => [...prev, ...processedList]);
-                    }
-                    const label = category === 'board' ? 'צילומי לוח' : (category === 'homework' ? 'דפי עבודה' : 'קבצים');
-                    showToast(`התווספו ${processedList.length} ${label} בהצלחה! 📎`, 'success');
                 } catch (err) {
                     console.error('File process error:', err);
                     showToast('שגיאה בעיבוד הקובץ: ' + (err.message || err), 'error');
@@ -1144,27 +1276,37 @@ function App() {
                 }
             };
 
-            const handleQuickAddAttachmentToTask = async (task, file, category = 'general') => {
-                if (!task || !file) return;
+            const handleQuickAddAttachmentsToTask = async (task, files, category = 'general') => {
+                const fileList = Array.isArray(files) ? files : Array.from(files || []);
+                if (!task || fileList.length === 0) return;
                 setIsUploadingAttachment(true);
                 try {
-                    showToast(`מעבד קובץ למשימה... ⏳`, 'info');
-                    const saved = await window.FileStorage.processAndSaveFile(file, category);
-                    if (saved) {
-                        const updatedAttachments = [...(task.attachments || []), saved];
+                    showToast(`מעבד ${fileList.length} קבצים באיכות חדה... ⏳`, 'info');
+                    const savedList = await window.FileStorage.processAndSaveFiles(fileList, category);
+                    if (savedList && savedList.length > 0) {
                         updateUserData(prev => ({
                             ...prev,
-                            tasks: prev.tasks.map(t => t.id === task.id ? { ...t, attachments: updatedAttachments } : t)
+                            tasks: (prev.tasks || []).map(t => {
+                                if (t.id !== task.id) return t;
+                                return {
+                                    ...t,
+                                    attachments: [...(t.attachments || []), ...savedList]
+                                };
+                            })
                         }));
-                        const label = category === 'board' ? 'צילום הלוח' : (category === 'homework' ? 'דף העבודה' : 'הקובץ');
-                        showToast(`${label} צורף בהצלחה! 📎`, 'success');
+                        const label = category === 'board' ? 'צילומי לוח' : (category === 'homework' ? 'דפי עבודה' : 'קבצים');
+                        showToast(`${savedList.length} ${label} צורפו בהצלחה! 📎`, 'success');
                     }
                 } catch (err) {
-                    console.error('Quick attachment error:', err);
-                    showToast('שגיאה בצירוף הקובץ: ' + (err.message || err), 'error');
+                    console.error('Quick attachment batch error:', err);
+                    showToast('שגיאה בצירוף הקבצים: ' + (err.message || err), 'error');
                 } finally {
                     setIsUploadingAttachment(false);
                 }
+            };
+
+            const handleQuickAddAttachmentToTask = (task, file, category) => {
+                return handleQuickAddAttachmentsToTask(task, file ? [file] : [], category);
             };
 
             const openAttachmentViewer = async (task, initialIndex = 0, filterCategory = null) => {
@@ -2740,6 +2882,31 @@ function App() {
                 showToast(shouldArchive ? 'המבחן הועבר לארכיון בהצלחה 📦' : 'המבחן הוחזר למבחנים קרובים 🗓️', 'success');
             };
 
+            const handleSaveEditedExam = (updatedFields) => {
+                if (!editingExam) return;
+                const newTitle = (updatedFields.examName || '').trim() || (editingExam.examName || '').trim() || 'מבחן';
+                const newDate = updatedFields.date || editingExam.date;
+                const newSubjectId = updatedFields.subjectId || editingExam.subjectId;
+
+                updateUserData(prev => ({
+                    ...prev,
+                    exams: (prev.exams || []).map(ex => {
+                        if (ex.id !== editingExam.id) return ex;
+                        return {
+                            ...ex,
+                            ...updatedFields,
+                            examName: newTitle,
+                            date: newDate,
+                            subjectId: newSubjectId,
+                            updatedAt: Date.now()
+                        };
+                    })
+                }));
+
+                setEditingExam(null);
+                showToast('פרטי המבחן עודכנו בהצלחה! ✏️', 'success');
+            };
+
 
             const handleAddExamToCalendar = (exam) => {
                 const sub = activeUserData.subjects.find(s => s.id === exam.subjectId);
@@ -4047,7 +4214,27 @@ function App() {
                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-rose-100 rounded-xl flex items-center justify-center text-xl shadow-sm">✨</div>
                                 <div>
                                     <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
-                                    <span className="text-xs text-stone-500 font-medium block mt-0.5">היי, {activeUserData.name}</span>
+                                    <div className="flex items-center gap-1.5 mt-0.5">
+                                        <span className="text-xs text-stone-500 font-medium">היי, {activeUserData.name}</span>
+                                        <button 
+                                            onClick={() => setIsSyncDiagnosticsOpen(true)}
+                                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                                                syncState === 'synced' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' :
+                                                syncState === 'syncing' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
+                                                syncState === 'offline' ? 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200' :
+                                                'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                                            }`}
+                                            title="סטטוס סנכרון ענן - לחצי לבדיקה ואבחון">
+                                            <span className={`w-1.5 h-1.5 rounded-full ${
+                                                syncState === 'synced' ? 'bg-emerald-500' :
+                                                syncState === 'syncing' ? 'bg-amber-500' :
+                                                syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500'
+                                            }`}></span>
+                                            {syncState === 'synced' ? 'מסונכרן' :
+                                             syncState === 'syncing' ? 'מסנכרן...' :
+                                             syncState === 'offline' ? 'מצב מקומי' : 'שגיאת סנכרון'}
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -4083,6 +4270,24 @@ function App() {
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
                         </div>
                         <div className="flex gap-2 items-center">
+                            <button 
+                                onClick={() => setIsSyncDiagnosticsOpen(true)}
+                                className={`text-[10px] px-2.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer ${
+                                    syncState === 'synced' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                                    syncState === 'syncing' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
+                                    syncState === 'offline' ? 'bg-stone-100 text-stone-600 border border-stone-200' :
+                                    'bg-rose-50 text-rose-700 border border-rose-200'
+                                }`}
+                                title="סטטוס סנכרון ענן">
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                    syncState === 'synced' ? 'bg-emerald-500' :
+                                    syncState === 'syncing' ? 'bg-amber-500' :
+                                    syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500'
+                                }`}></span>
+                                <span>{syncState === 'synced' ? 'מסונכרן' :
+                                       syncState === 'syncing' ? 'מסנכרן...' :
+                                       syncState === 'offline' ? 'מקומי' : 'שגיאה'}</span>
+                            </button>
                             <button onClick={()=>toggleModal('streakHistory', true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95">
                                 <span>🔥</span> {activeUserData.taskStreak}
                             </button>
@@ -4515,9 +4720,7 @@ function App() {
                                                                 onChange={async (e) => {
                                                                     const files = Array.from(e.target.files || []);
                                                                     if (files.length === 0) return;
-                                                                    for (const f of files) {
-                                                                        await handleQuickAddAttachmentToTask(task, f, 'board');
-                                                                    }
+                                                                    await handleQuickAddAttachmentsToTask(task, files, 'board');
                                                                     e.target.value = '';
                                                                 }} 
                                                             />
@@ -4534,9 +4737,7 @@ function App() {
                                                                     onChange={async (e) => {
                                                                         const files = Array.from(e.target.files || []);
                                                                         if (files.length === 0) return;
-                                                                        for (const f of files) {
-                                                                            await handleQuickAddAttachmentToTask(task, f, 'homework');
-                                                                        }
+                                                                        await handleQuickAddAttachmentsToTask(task, files, 'homework');
                                                                         e.target.value = '';
                                                                     }} 
                                                                 />
@@ -5335,9 +5536,7 @@ function App() {
                                                                     onChange={async (e) => {
                                                                         const files = Array.from(e.target.files || []);
                                                                         if (files.length === 0) return;
-                                                                        for (const f of files) {
-                                                                            await handleQuickAddAttachmentToTask(t, f, 'homework');
-                                                                        }
+                                                                        await handleQuickAddAttachmentsToTask(t, files, 'homework');
                                                                         e.target.value = '';
                                                                     }} 
                                                                 />
@@ -7456,11 +7655,9 @@ function App() {
                                                 onChange={async (e) => {
                                                     const files = Array.from(e.target.files || []);
                                                     if (files.length === 0) return;
-                                                    for (const f of files) {
-                                                        await handleQuickAddAttachmentToTask(task, f, 'board');
-                                                    }
-                                                    e.target.value = '';
                                                     setTaskActionsMenu(null);
+                                                    await handleQuickAddAttachmentsToTask(task, files, 'board');
+                                                    e.target.value = '';
                                                 }} 
                                             />
                                             <div className="flex items-center gap-3">
@@ -7480,11 +7677,9 @@ function App() {
                                                     onChange={async (e) => {
                                                         const files = Array.from(e.target.files || []);
                                                         if (files.length === 0) return;
-                                                        for (const f of files) {
-                                                            await handleQuickAddAttachmentToTask(task, f, 'homework');
-                                                        }
-                                                        e.target.value = '';
                                                         setTaskActionsMenu(null);
+                                                        await handleQuickAddAttachmentsToTask(task, files, 'homework');
+                                                        e.target.value = '';
                                                     }} 
                                                 />
                                                 <div className="flex items-center gap-3">
@@ -7656,6 +7851,21 @@ function App() {
                                             </div>
                                             <span className="text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
                                                 {exam.grade ? `נוכחי: ${exam.grade}` : 'תיעוד הישג'}
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                setEditingExam({ ...exam });
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">✏️</span>
+                                                <span>עריכת פרטי מבחן (כותרת ותאריך)</span>
+                                            </div>
+                                            <span className="text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                                                שינוי פרטים
                                             </span>
                                         </button>
 
@@ -8211,6 +8421,208 @@ function App() {
                                     <button 
                                         onClick={() => setIsMoreMenuOpen(false)}
                                         className="flex-1 py-3 bg-stone-800 hover:bg-stone-900 text-white rounded-2xl font-bold text-xs transition-colors active:scale-95">
+                                        סגירה
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
+                    {editingExam && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]" dir="rtl">
+                            <div className="bg-white rounded-3xl p-6 w-full max-w-md shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative">
+                                <div className="flex justify-between items-center mb-5 pb-3 border-b border-stone-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <span className="p-2.5 bg-amber-50 text-amber-600 rounded-2xl text-xl">✏️</span>
+                                        <div>
+                                            <h3 className="font-bold text-lg text-stone-800">עריכת פרטי מבחן</h3>
+                                            <p className="text-xs text-stone-500">שינוי שם/כותרת, מקצוע ותאריך</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setEditingExam(null)} 
+                                        className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full transition-colors active:scale-95">
+                                        <IconX className="w-4 h-4"/>
+                                    </button>
+                                </div>
+
+                                <form onSubmit={(e) => {
+                                    e.preventDefault();
+                                    handleSaveEditedExam(editingExam);
+                                }} className="space-y-4">
+                                    <div>
+                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">מקצוע</label>
+                                        <select
+                                            value={editingExam.subjectId}
+                                            onChange={(e) => setEditingExam({ ...editingExam, subjectId: e.target.value })}
+                                            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all">
+                                            {(activeUserData.subjects || []).map(sub => (
+                                                <option key={sub.id} value={sub.id}>{sub.emoji} {sub.name}</option>
+                                            ))}
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">שם / כותרת המבחן</label>
+                                        <input
+                                            type="text"
+                                            required
+                                            value={editingExam.examName || ''}
+                                            onChange={(e) => setEditingExam({ ...editingExam, examName: e.target.value })}
+                                            placeholder="לדוגמה: מבחן אמצע, בגרות מועד א'..."
+                                            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">תאריך המבחן</label>
+                                        <input
+                                            type="date"
+                                            required
+                                            value={editingExam.date || ''}
+                                            onChange={(e) => setEditingExam({ ...editingExam, date: e.target.value })}
+                                            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                                        />
+                                    </div>
+
+                                    <div className="flex gap-2.5 pt-3">
+                                        <button
+                                            type="button"
+                                            onClick={() => setEditingExam(null)}
+                                            className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-xl font-bold text-sm transition-colors active:scale-95">
+                                            ביטול
+                                        </button>
+                                        <button
+                                            type="submit"
+                                            className="flex-1 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-sm shadow-md hover:shadow-lg transition-all active:scale-95">
+                                            שמירת שינויים 💾
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
+
+                    {isSyncDiagnosticsOpen && (
+                        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]" dir="rtl">
+                            <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+                                <div className="flex justify-between items-center mb-4 pb-3 border-b border-stone-100">
+                                    <div className="flex items-center gap-2.5">
+                                        <div className={`w-9 h-9 rounded-2xl flex items-center justify-center text-lg ${
+                                            syncState === 'synced' ? 'bg-emerald-100 text-emerald-700' :
+                                            syncState === 'syncing' ? 'bg-amber-100 text-amber-700' :
+                                            syncState === 'offline' ? 'bg-stone-100 text-stone-600' : 'bg-rose-100 text-rose-700'
+                                        }`}>
+                                            {syncState === 'synced' ? '🟢' :
+                                             syncState === 'syncing' ? '🟡' :
+                                             syncState === 'offline' ? '⚪' : '🔴'}
+                                        </div>
+                                        <div>
+                                            <h3 className="font-bold text-lg text-stone-800">בדיקת סנכרון ענן וחיבור</h3>
+                                            <p className="text-xs text-stone-500">סטטוס חיבור בזמן אמת בין הטלפון למחשב</p>
+                                        </div>
+                                    </div>
+                                    <button 
+                                        onClick={() => setIsSyncDiagnosticsOpen(false)} 
+                                        className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full transition-colors active:scale-95">
+                                        <IconX className="w-4 h-4"/>
+                                    </button>
+                                </div>
+
+                                <div className="space-y-4">
+                                    <div className={`p-4 rounded-2xl border ${
+                                        syncState === 'synced' ? 'bg-emerald-50/70 border-emerald-200 text-emerald-950' :
+                                        syncState === 'syncing' ? 'bg-amber-50/70 border-amber-200 text-amber-950' :
+                                        syncState === 'offline' ? 'bg-stone-50 border-stone-200 text-stone-800' :
+                                        'bg-rose-50/70 border-rose-200 text-rose-950'
+                                    }`}>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="font-black text-sm">
+                                                {syncState === 'synced' ? '✅ הסנכרון פועל בצורה מושלמת' :
+                                                 syncState === 'syncing' ? '⏳ סנכרון מתבצע כעת מול הענן...' :
+                                                 syncState === 'offline' ? '📴 עבודה במצב מקומי (Offline)' :
+                                                 '⚠️ שגיאת הרשאות ענן (Firebase Permission Denied)'}
+                                            </span>
+                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/80 border">
+                                                {syncState.toUpperCase()}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs leading-relaxed opacity-90">
+                                            {syncState === 'synced' ? 'כל השינויים, המשימות והנקודות שמורים ומסונכרנים אוטומטית לענן וזמינים גם בטלפון וגם במחשב.' :
+                                             syncState === 'syncing' ? 'מעביר נתונים עדכניים לענן ומושך שינויים ממכשירים אחרים...' :
+                                             syncState === 'offline' ? 'הדפדפן אינו מחובר כרגע לאינטרנט. כל המידע והשינויים שלך נשמרים בזיכרון המקומי ויסונכרנו אוטומטית ברגע שהחיבור יחזור!' :
+                                             'כל המידע שלך שמור ומאובטח במכשיר! השגיאה נובעת מסיום 30 ימי הטסט ב-Firebase. כדי לאפשר סנכרון דו-כיווני בין הטלפון למחשב, יש לעדכן את החוקים ב-Firebase Console.'}
+                                        </p>
+                                        {syncErrorDetails && (
+                                            <div className="mt-2.5 p-2 bg-white/90 rounded-xl text-[11px] font-mono text-stone-600 border border-stone-200 overflow-x-auto text-left" dir="ltr">
+                                                {syncErrorDetails}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    <button
+                                        onClick={async () => {
+                                            showToast('בודק חיבור ומסנכרן מול הענן... 🔄', 'info');
+                                            await pushPendingSyncToCloud();
+                                        }}
+                                        disabled={syncState === 'syncing'}
+                                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                                        <span>🔄</span> סנכרן עכשיו ובדוק חיבור
+                                    </button>
+
+                                    <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2.5 text-xs text-stone-700">
+                                        <div className="font-bold text-stone-900 flex items-center justify-between">
+                                            <span>🛠️ הגדרת חוקי גישה קבועים (Firebase Rules)</span>
+                                            <a 
+                                                href="https://console.firebase.google.com/project/loos-77484/firestore/rules" 
+                                                target="_blank" 
+                                                rel="noopener noreferrer"
+                                                className="text-indigo-600 hover:underline font-bold flex items-center gap-1">
+                                                פתיחת הקונסול ↗️
+                                            </a>
+                                        </div>
+                                        <p className="text-[11px] text-stone-500 leading-normal">
+                                            ב-Firebase נפתח את לשונית <b>Firestore Database</b> &gt; <b>Rules</b>, נדביק את החוקים הבאים ונלחץ <b>Publish</b>:
+                                        </p>
+                                        <div className="relative">
+                                            <pre className="p-2.5 bg-stone-900 text-stone-100 rounded-xl text-[10px] font-mono overflow-x-auto text-left leading-relaxed" dir="ltr">
+{`rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read, write: if true;
+    }
+    match /task_attachments/{attachmentId} {
+      allow read, write: if true;
+    }
+  }
+}`}
+                                            </pre>
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    navigator.clipboard?.writeText(`rules_version = '2';\nservice cloud.firestore {\n  match /databases/{database}/documents {\n    match /users/{userId} {\n      allow read, write: if true;\n    }\n    match /task_attachments/{attachmentId} {\n      allow read, write: if true;\n    }\n  }\n}`);
+                                                    showToast('חוקי הגישה הועתקו ללוח! 📋', 'success');
+                                                }}
+                                                className="absolute top-2 left-2 px-2 py-1 bg-stone-700 hover:bg-stone-600 text-white rounded text-[10px] font-bold active:scale-95">
+                                                העתקה 📋
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    <div className="p-3 bg-purple-50/60 border border-purple-100 rounded-2xl flex items-start gap-2.5 text-xs text-purple-900">
+                                        <span className="text-base shrink-0">🛡️</span>
+                                        <div>
+                                            <span className="font-bold">הגנת מידע כפולה: </span>
+                                            <span>ההתקדמות, הסטריק, הנקודות והקבצים שלך מגובים באופן רציף גם בזיכרון המקומי של המכשיר וגם בגיבוי חירום מבודד, כך ששום נתון לא הולך לאיבוד.</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="mt-5 pt-3 border-t border-stone-100">
+                                    <button 
+                                        onClick={() => setIsSyncDiagnosticsOpen(false)}
+                                        className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-sm transition-colors active:scale-95">
                                         סגירה
                                     </button>
                                 </div>

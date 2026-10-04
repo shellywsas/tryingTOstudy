@@ -81,11 +81,19 @@ const FileStorage = (() => {
         }
     };
 
-    // Compress an image file via HTML5 Canvas (max 1600px, 0.75 quality)
-    const compressImage = (file, maxWidth = 1600, quality = 0.75) => {
+    // Compress an image file via HTML5 Canvas (high sharpness max 2048px, 0.90 quality for clear chalkboard text)
+    const compressImage = (file, maxWidth = 2048, quality = 0.90) => {
         return new Promise((resolve) => {
             if (!file.type.startsWith('image/')) {
                 return resolve(null);
+            }
+            // If already light (< 600KB), keep original without canvas re-encoding to preserve 100% sharpness
+            if (file.size <= 600 * 1024) {
+                const r = new FileReader();
+                r.onload = (e) => resolve(e.target.result);
+                r.onerror = () => resolve(null);
+                r.readAsDataURL(file);
+                return;
             }
             const reader = new FileReader();
             reader.onload = (e) => {
@@ -103,9 +111,11 @@ const FileStorage = (() => {
                     canvas.width = width;
                     canvas.height = height;
                     const ctx = canvas.getContext('2d');
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
                     ctx.drawImage(img, 0, 0, width, height);
 
-                    // Prefer webp if supported, otherwise jpeg
+                    // Prefer webp if supported, otherwise jpeg with high 0.90 quality
                     let dataUrl = canvas.toDataURL('image/webp', quality);
                     if (!dataUrl || dataUrl.startsWith('data:image/png')) {
                         dataUrl = canvas.toDataURL('image/jpeg', quality);
@@ -128,6 +138,28 @@ const FileStorage = (() => {
             reader.onerror = (e) => reject(e);
             reader.readAsDataURL(file);
         });
+    };
+
+    /**
+     * Process multiple attachments in parallel with progress tracking
+     */
+    const processAndSaveFiles = async (files, category = 'general', onProgress = null) => {
+        if (!files) return [];
+        const fileArr = Array.from(files);
+        if (fileArr.length === 0) return [];
+        
+        let completed = 0;
+        const promises = fileArr.map(async (file) => {
+            const result = await processAndSaveFile(file, category);
+            completed++;
+            if (typeof onProgress === 'function') {
+                onProgress(completed, fileArr.length, file.name);
+            }
+            return result;
+        });
+        
+        const results = await Promise.all(promises);
+        return results.filter(Boolean);
     };
 
     /**
@@ -406,6 +438,7 @@ const FileStorage = (() => {
 
     return {
         processAndSaveFile,
+        processAndSaveFiles,
         loadAttachmentData,
         deleteAttachment,
         formatFileSize,
