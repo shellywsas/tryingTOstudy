@@ -1247,9 +1247,7 @@ function App() {
                 examId: '',
                 customExamName: '',
                 customSubjectId: '',
-                title: '',
-                date: new Date().toISOString().split('T')[0],
-                dueTime: '23:59'
+                title: ''
             });
 
             useEffect(() => {
@@ -2876,7 +2874,6 @@ function App() {
             };
 
             const handleOpenSingleSessionModal = (exam = null) => {
-                const todayStr = new Date().toISOString().split('T')[0];
                 const availableExams = activeUserData.exams || [];
                 const targetExam = exam || (availableExams.length > 0 ? availableExams[0] : null);
                 const defaultTitle = targetExam ? `ללמוד למבחן: ${targetExam.examName || 'מבחן'}` : 'ללמוד למבחן';
@@ -2885,9 +2882,7 @@ function App() {
                     examId: targetExam ? targetExam.id : '',
                     customExamName: '',
                     customSubjectId: activeUserData.subjects?.[0]?.id || '',
-                    title: defaultTitle,
-                    date: todayStr,
-                    dueTime: '23:59'
+                    title: defaultTitle
                 });
                 toggleModal('singleExamSession', true);
             };
@@ -2895,14 +2890,30 @@ function App() {
             const handleCreateSingleExamSession = (e) => {
                 e.preventDefault();
                 const todayStr = new Date().toISOString().split('T')[0];
-                const { examId, customExamName, customSubjectId, title, date, dueTime } = singleExamSessionData;
+                const { examId, customExamName, customSubjectId, title } = singleExamSessionData;
                 
                 const selectedExam = (activeUserData.exams || []).find(ex => ex.id === examId);
                 const examTitle = selectedExam ? (selectedExam.examName || 'מבחן') : (customExamName.trim() || 'מבחן');
                 const subjectId = selectedExam ? selectedExam.subjectId : (customSubjectId || activeUserData.subjects?.[0]?.id || '');
                 const sessionTitle = (title || '').trim() || `ללמוד למבחן: ${examTitle}`;
-                const sessionDate = date || todayStr;
-                const sessionDueTime = dueTime || '23:59';
+
+                // Study session can be done anytime until midnight (00:00 / 23:59) before the exam
+                let sessionDueDate = todayStr;
+                if (selectedExam && selectedExam.date) {
+                    const parts = selectedExam.date.split('-');
+                    if (parts.length === 3) {
+                        const year = parseInt(parts[0], 10);
+                        const month = parseInt(parts[1], 10) - 1;
+                        const day = parseInt(parts[2], 10);
+                        const examDateObj = new Date(year, month, day);
+                        examDateObj.setDate(examDateObj.getDate() - 1);
+                        const y = examDateObj.getFullYear();
+                        const m = String(examDateObj.getMonth() + 1).padStart(2, '0');
+                        const d = String(examDateObj.getDate()).padStart(2, '0');
+                        const eveDate = `${y}-${m}-${d}`;
+                        sessionDueDate = eveDate >= todayStr ? eveDate : selectedExam.date;
+                    }
+                }
 
                 const newSingleTask = {
                     id: 't_' + Date.now(),
@@ -2916,10 +2927,10 @@ function App() {
                     isExamPrep: true,
                     isFlexibleExamSession: true,
                     rewardPoints: 3,
-                    givenDate: sessionDate,
-                    dueDate: sessionDate,
+                    givenDate: todayStr,
+                    dueDate: sessionDueDate,
                     startTime: '',
-                    dueTime: sessionDueTime,
+                    dueTime: '23:59',
                     autoPenaltyApplied: false
                 };
 
@@ -2942,7 +2953,7 @@ function App() {
                 });
 
                 toggleModal('singleExamSession', false);
-                showToast('מפגש הלמידה נוצר בהצלחה! 3 נקודות יוענקו בסיומו 🎯', 'success');
+                showToast('סשן הלמידה נוצר בהצלחה! 3 נקודות יוענקו בסיומו 🎯', 'success');
             };
 
             const handleDeleteExam = (examId) => {
@@ -4531,9 +4542,6 @@ function App() {
                                         <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות.</p>
                                     </div>
                                     <div className="flex items-center gap-2.5 flex-wrap">
-                                        <button onClick={() => handleOpenSingleSessionModal()} className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-4 py-3 rounded-2xl text-sm font-bold shadow-xs transition-all flex items-center justify-center gap-2 active:scale-95" title="מפגש למידה בודד למבחן ללא התחייבות (3 נקודות)">
-                                            <span>⚡</span> סשן למידה למבחן (+3 נק')
-                                        </button>
                                         <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
                                             <IconPlus className="w-4 h-4"/> הוספת חדש
                                         </button>
@@ -5259,9 +5267,6 @@ function App() {
                                             </p>
                                         </div>
                                         <div className="flex flex-col sm:flex-row gap-3 shrink-0">
-                                            <button onClick={() => handleOpenSingleSessionModal()} className="bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 px-5 py-4 rounded-2xl text-sm font-bold shadow-xs transition-all flex items-center justify-center gap-2 active:scale-95" title="מפגש למידה בודד ללא התחייבות (3 נקודות)">
-                                                <span>⚡</span> מפגש למידה למבחן (+3 נק')
-                                            </button>
                                             <button onClick={() => toggleModal('quickExam', true)} className="bg-white text-indigo-600 px-6 py-4 rounded-2xl text-sm font-bold shadow-sm border border-indigo-100 hover:bg-indigo-50 transition-all flex items-center justify-center gap-2 active:scale-95">
                                                 <IconPlus className="w-4 h-4"/> הוספה מהירה (ללא לו"ז)
                                             </button>
@@ -5338,12 +5343,6 @@ function App() {
                                                             </div>
 
                                                             <div className="flex gap-2 w-full mt-4 pt-3 border-t border-stone-100 items-center">
-                                                                <button 
-                                                                    onClick={() => handleOpenSingleSessionModal(exam)} 
-                                                                    className="px-3 py-2.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 rounded-2xl transition-all font-bold text-xs flex items-center justify-center gap-1 active:scale-95 shadow-xs" 
-                                                                    title="מפגש למידה בודד ללא התחייבות (3 נקודות)">
-                                                                    <span>⚡</span> למידה (+3)
-                                                                </button>
                                                                 {!exam.grade ? (
                                                                     <button 
                                                                         onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }} 
@@ -7147,26 +7146,14 @@ function App() {
                                         </div>
                                     </div>
 
-                                    {/* Date & Time */}
-                                    <div className="grid grid-cols-2 gap-3">
-                                        <div>
-                                            <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">תאריך המפגש</label>
-                                            <input 
-                                                type="date" 
-                                                value={singleExamSessionData.date}
-                                                onChange={(e) => setSingleExamSessionData(prev => ({ ...prev, date: e.target.value }))}
-                                                required 
-                                                className="w-full p-3 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-amber-400 font-bold"
-                                            />
+                                    {/* Flexible Time Info Notice */}
+                                    <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center gap-3">
+                                        <div className="w-9 h-9 rounded-xl bg-white border border-stone-200 flex items-center justify-center text-base shrink-0 shadow-2xs">
+                                            🕒
                                         </div>
-                                        <div>
-                                            <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">שעה (אופציונלי)</label>
-                                            <input 
-                                                type="time" 
-                                                value={singleExamSessionData.dueTime || '23:59'}
-                                                onChange={(e) => setSingleExamSessionData(prev => ({ ...prev, dueTime: e.target.value }))}
-                                                className="w-full p-3 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-amber-400 font-bold"
-                                            />
+                                        <div className="text-xs text-stone-600">
+                                            <b className="text-stone-800 font-bold block mb-0.5">זמן גמיש לחלוטין</b>
+                                            לומדים מתי שרוצים – הסשן פתוח עד 00:00 בלילה שלפני המבחן.
                                         </div>
                                     </div>
 
@@ -7174,7 +7161,7 @@ function App() {
                                     <div className="flex items-center justify-between p-3.5 bg-amber-50 rounded-2xl border border-amber-200">
                                         <div className="flex items-center gap-2">
                                             <span className="text-xl">🏆</span>
-                                            <div className="text-xs font-bold text-amber-950">ניקוד מובטח בסיום המפגש:</div>
+                                            <div className="text-xs font-bold text-amber-950">ניקוד מובטח בסיום הסשן:</div>
                                         </div>
                                         <div className="text-sm font-black text-amber-800 bg-amber-200/80 px-2.5 py-1 rounded-xl shadow-2xs">
                                             +3 נקודות
@@ -7186,7 +7173,7 @@ function App() {
                                         className="w-full bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white py-4 mt-2 rounded-2xl text-sm font-bold shadow-md hover:shadow-lg transition-all active:scale-95 flex items-center justify-center gap-2"
                                     >
                                         <span>⚡</span>
-                                        <span>יצירת מפגש למידה (3 נקודות)</span>
+                                        <span>יצירת סשן למידה (+3 נקודות)</span>
                                     </button>
                                 </form>
                             </div>
@@ -8185,7 +8172,7 @@ function App() {
                                             className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-orange-50 hover:from-amber-100 hover:to-orange-100 text-amber-950 border border-amber-200 transition-all font-bold text-sm active:scale-98">
                                             <div className="flex items-center gap-3">
                                                 <span className="text-xl">⚡</span>
-                                                <span>הוספת מפגש למידה בודד (3 נקודות)</span>
+                                                <span>סשן למידה למבחן (+3 נקודות)</span>
                                             </div>
                                             <span className="text-amber-800 bg-amber-100 px-2 py-0.5 rounded-md text-[11px] font-black">
                                                 ללא התחייבות
