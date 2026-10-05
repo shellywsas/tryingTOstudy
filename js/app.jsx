@@ -1864,7 +1864,8 @@ function App() {
 
                 if (task.rewardPoints || task.isFlexibleExamSession) {
                     pointsDelta = task.rewardPoints || 3;
-                    pointsText = `בוצע סשן למידה למבחן (+${pointsDelta} נקודות)! 🎯`;
+                    const sessionNumStr = task.sessionNumber ? ` ${task.sessionNumber}` : '';
+                    pointsText = `בוצע סשן למידה${sessionNumStr} למבחן (+${pointsDelta} נקודות)! 🎯`;
                     streakBroken = false;
                 } else if (!isLate) {
                     if (usedDurationMs <= Math.max(totalDurationMs / 2, 86400000)) { 
@@ -1944,24 +1945,41 @@ function App() {
                     });
                 }
 
-                updateUserData(prev => checkAndAwardBadges({
-                    ...prev,
-                    tasks: prev.tasks.map(t => t.id === task.id ? { 
+                updateUserData(prev => {
+                    const updatedTasks = prev.tasks.map(t => t.id === task.id ? { 
                         ...t, completed: true, completedAt: t.completedAt || now.toISOString(), 
                         understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: isLate ? chosenLateReason : '',
                         autoPenaltyApplied: isLate ? (t.autoPenaltyApplied || false) : false,
                         remindersEnabled: false,
                         whatsappRemindersEnabled: false
-                    } : t),
-                    totalPoints: prev.totalPoints + pointsDelta,
-                    weeklyPoints: prev.weeklyPoints + pointsDelta,
-                    taskStreak: newStreak,
-                    longestStreak: newLongest,
-                    currentStreakStart: newStreakStart,
-                    currentStreakEmojis: newStreakEmojis,
-                    pointsHistory: pointsDelta !== 0 ? [historyLog, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []),
-                    streakHistory: newStreakHistory
-                }));
+                    } : t);
+
+                    const updatedExams = (prev.exams || []).map(ex => {
+                        if (task.examId && ex.id === task.examId) {
+                            const completedCount = updatedTasks.filter(t => t.examId === ex.id && (t.completed || t.completedAt)).length;
+                            return {
+                                ...ex,
+                                completedSessionsCount: completedCount,
+                                sessionsCount: Math.max(ex.sessionsCount || 0, completedCount)
+                            };
+                        }
+                        return ex;
+                    });
+
+                    return checkAndAwardBadges({
+                        ...prev,
+                        exams: updatedExams,
+                        tasks: updatedTasks,
+                        totalPoints: prev.totalPoints + pointsDelta,
+                        weeklyPoints: prev.weeklyPoints + pointsDelta,
+                        taskStreak: newStreak,
+                        longestStreak: newLongest,
+                        currentStreakStart: newStreakStart,
+                        currentStreakEmojis: newStreakEmojis,
+                        pointsHistory: pointsDelta !== 0 ? [historyLog, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []),
+                        streakHistory: newStreakHistory
+                    });
+                });
 
 
                 toggleModal('complete', false);
@@ -2027,7 +2045,26 @@ function App() {
 
 
             const handleDeleteTask = (taskId) => {
-                updateUserData(prev => ({ ...prev, tasks: prev.tasks.filter(t => t.id !== taskId) }));
+                updateUserData(prev => {
+                    const taskToDelete = (prev.tasks || []).find(t => t.id === taskId);
+                    const remainingTasks = (prev.tasks || []).filter(t => t.id !== taskId);
+                    let updatedExams = prev.exams;
+                    if (taskToDelete && taskToDelete.examId) {
+                        updatedExams = (prev.exams || []).map(ex => {
+                            if (ex.id === taskToDelete.examId) {
+                                const remainingForExam = remainingTasks.filter(rt => rt.examId === ex.id);
+                                const completedForExam = remainingTasks.filter(rt => rt.examId === ex.id && (rt.completed || rt.completedAt)).length;
+                                return {
+                                    ...ex,
+                                    sessionsCount: Math.max(0, remainingForExam.length),
+                                    completedSessionsCount: completedForExam
+                                };
+                            }
+                            return ex;
+                        });
+                    }
+                    return { ...prev, tasks: remainingTasks, exams: updatedExams };
+                });
                 showToast('משימה נמחקה', 'success');
             };
 
@@ -2873,15 +2910,43 @@ function App() {
                 showToast('המבחן נוסף למערכת בהצלחה! 🎉', 'success');
             };
 
+            const getNextSessionNumberForExam = (examId, tasks = activeUserData.tasks) => {
+                if (!examId) return 1;
+                const examTasks = (tasks || []).filter(t => t.examId === examId);
+                if (examTasks.length === 0) return 1;
+
+                let maxNum = 0;
+                examTasks.forEach(t => {
+                    if (typeof t.sessionNumber === 'number' && t.sessionNumber > maxNum) {
+                        maxNum = t.sessionNumber;
+                    }
+                    const match = (t.title || '').match(/סשן\s*(\d+)/) || (t.title || '').match(/מפגש\s*(\d+)/);
+                    if (match && match[1]) {
+                        const parsed = parseInt(match[1], 10);
+                        if (!isNaN(parsed) && parsed > maxNum) {
+                            maxNum = parsed;
+                        }
+                    }
+                });
+
+                if (maxNum > 0) {
+                    return maxNum + 1;
+                }
+                return examTasks.length + 1;
+            };
+
             const handleOpenSingleSessionModal = (exam = null) => {
                 const availableExams = activeUserData.exams || [];
                 const targetExam = exam || (availableExams.length > 0 ? availableExams[0] : null);
-                const defaultTitle = targetExam ? `ללמוד למבחן: ${targetExam.examName || 'מבחן'}` : 'ללמוד למבחן';
+                const nextNum = targetExam ? getNextSessionNumberForExam(targetExam.id, activeUserData.tasks) : 1;
+                const defaultTitle = targetExam 
+                    ? `ללמוד למבחן: ${targetExam.examName || 'מבחן'} - סשן ${nextNum}` 
+                    : `ללמוד למבחן - סשן 1`;
                 
                 setSingleExamSessionData({
                     examId: targetExam ? targetExam.id : '',
                     customExamName: '',
-                    customSubjectId: activeUserData.subjects?.[0]?.id || '',
+                    customSubjectId: targetExam ? targetExam.subjectId : (activeUserData.subjects?.[0]?.id || ''),
                     title: defaultTitle
                 });
                 toggleModal('singleExamSession', true);
@@ -2895,7 +2960,14 @@ function App() {
                 const selectedExam = (activeUserData.exams || []).find(ex => ex.id === examId);
                 const examTitle = selectedExam ? (selectedExam.examName || 'מבחן') : (customExamName.trim() || 'מבחן');
                 const subjectId = selectedExam ? selectedExam.subjectId : (customSubjectId || activeUserData.subjects?.[0]?.id || '');
-                const sessionTitle = (title || '').trim() || `ללמוד למבחן: ${examTitle}`;
+                
+                const nextNum = selectedExam ? getNextSessionNumberForExam(selectedExam.id, activeUserData.tasks) : 1;
+                let sessionTitle = (title || '').trim();
+                if (!sessionTitle) {
+                    sessionTitle = selectedExam 
+                        ? `ללמוד למבחן: ${examTitle} - סשן ${nextNum}` 
+                        : `ללמוד למבחן - סשן 1`;
+                }
 
                 // Study session can be done anytime until midnight (00:00 / 23:59) before the exam
                 let sessionDueDate = todayStr;
@@ -2926,6 +2998,7 @@ function App() {
                     isLessonLog: false,
                     isExamPrep: true,
                     isFlexibleExamSession: true,
+                    sessionNumber: nextNum,
                     rewardPoints: 3,
                     givenDate: todayStr,
                     dueDate: sessionDueDate,
@@ -2937,12 +3010,13 @@ function App() {
                 updateUserData(prev => {
                     const exams = [...(prev.exams || [])];
                     if (selectedExam) {
+                        const existingExamTasks = (prev.tasks || []).filter(t => t.examId === selectedExam.id);
                         return {
                             ...prev,
                             tasks: [newSingleTask, ...(prev.tasks || [])],
                             exams: exams.map(ex => ex.id === selectedExam.id ? {
                                 ...ex,
-                                sessionsCount: (ex.sessionsCount || 0) + 1
+                                sessionsCount: Math.max(ex.sessionsCount || 0, existingExamTasks.length + 1)
                             } : ex)
                         };
                     }
@@ -2953,7 +3027,7 @@ function App() {
                 });
 
                 toggleModal('singleExamSession', false);
-                showToast('סשן הלמידה נוצר בהצלחה! 3 נקודות יוענקו בסיומו 🎯', 'success');
+                showToast(`סשן ${nextNum} נוצר בהצלחה! 3 נקודות יוענקו בסיומו 🎯`, 'success');
             };
 
             const handleDeleteExam = (examId) => {
@@ -2978,13 +3052,46 @@ function App() {
 
             const handleSaveEditedExam = (updatedFields) => {
                 if (!editingExam) return;
-                const newTitle = (updatedFields.examName || '').trim() || (editingExam.examName || '').trim() || 'מבחן';
-                const newDate = updatedFields.date || editingExam.date;
-                const newSubjectId = updatedFields.subjectId || editingExam.subjectId;
+                const oldExamName = (editingExam.examName || '').trim();
+                const oldExamDate = editingExam.date;
+                const oldSubjectId = editingExam.subjectId;
 
-                updateUserData(prev => ({
-                    ...prev,
-                    exams: (prev.exams || []).map(ex => {
+                const newTitle = (updatedFields.examName || '').trim() || oldExamName || 'מבחן';
+                const newDate = updatedFields.date || oldExamDate;
+                const newSubjectId = updatedFields.subjectId || oldSubjectId;
+
+                // Calculate date shift in days if date changed
+                let diffDays = 0;
+                if (oldExamDate && newDate && oldExamDate !== newDate) {
+                    const oldD = new Date(oldExamDate + 'T00:00:00');
+                    const newD = new Date(newDate + 'T00:00:00');
+                    if (!isNaN(oldD.getTime()) && !isNaN(newD.getTime())) {
+                        diffDays = Math.round((newD.getTime() - oldD.getTime()) / (1000 * 60 * 60 * 24));
+                    }
+                }
+
+                const todayStr = new Date().toISOString().split('T')[0];
+                
+                // Calculate new eve date for flexible sessions (day before exam)
+                let newEveDate = newDate;
+                if (newDate) {
+                    const parts = newDate.split('-');
+                    if (parts.length === 3) {
+                        const y = parseInt(parts[0], 10);
+                        const m = parseInt(parts[1], 10) - 1;
+                        const d = parseInt(parts[2], 10);
+                        const dObj = new Date(y, m, d);
+                        dObj.setDate(dObj.getDate() - 1);
+                        const yStr = dObj.getFullYear();
+                        const mStr = String(dObj.getMonth() + 1).padStart(2, '0');
+                        const dStr = String(dObj.getDate()).padStart(2, '0');
+                        const calcEve = `${yStr}-${mStr}-${dStr}`;
+                        newEveDate = calcEve >= todayStr ? calcEve : newDate;
+                    }
+                }
+
+                updateUserData(prev => {
+                    const updatedExams = (prev.exams || []).map(ex => {
                         if (ex.id !== editingExam.id) return ex;
                         return {
                             ...ex,
@@ -2994,11 +3101,63 @@ function App() {
                             subjectId: newSubjectId,
                             updatedAt: Date.now()
                         };
-                    })
-                }));
+                    });
+
+                    // Update existing study plans and tasks linked to this exam
+                    const updatedTasks = (prev.tasks || []).map(t => {
+                        if (t.examId !== editingExam.id) return t;
+
+                        let updatedTask = { ...t, subjectId: newSubjectId };
+
+                        // 1. Update Title and Lesson Topic with new exam name
+                        if (oldExamName && newTitle !== oldExamName) {
+                            if (updatedTask.title && updatedTask.title.includes(oldExamName)) {
+                                updatedTask.title = updatedTask.title.split(oldExamName).join(newTitle);
+                            } else if (updatedTask.title && updatedTask.title.startsWith('ללמוד למבחן')) {
+                                const sessionSuffixMatch = updatedTask.title.match(/(-\s*סשן\s*\d+|\(סשן\s*\d+\))/);
+                                const suffix = sessionSuffixMatch ? ` ${sessionSuffixMatch[0]}` : '';
+                                updatedTask.title = `ללמוד למבחן: ${newTitle}${suffix}`;
+                            }
+
+                            if (updatedTask.lessonTopic && updatedTask.lessonTopic.includes(oldExamName)) {
+                                updatedTask.lessonTopic = updatedTask.lessonTopic.split(oldExamName).join(newTitle);
+                            } else {
+                                updatedTask.lessonTopic = `הכנה למבחן: ${newTitle}`;
+                            }
+                        }
+
+                        // 2. Update Date for uncompleted tasks
+                        if (!updatedTask.completed && !updatedTask.completedAt && newDate !== oldExamDate) {
+                            if (updatedTask.isFlexibleExamSession) {
+                                updatedTask.dueDate = newEveDate;
+                            } else if (diffDays !== 0 && updatedTask.dueDate) {
+                                const curD = new Date(updatedTask.dueDate + 'T00:00:00');
+                                if (!isNaN(curD.getTime())) {
+                                    curD.setDate(curD.getDate() + diffDays);
+                                    const yStr = curD.getFullYear();
+                                    const mStr = String(curD.getMonth() + 1).padStart(2, '0');
+                                    const dStr = String(curD.getDate()).padStart(2, '0');
+                                    let shiftedDate = `${yStr}-${mStr}-${dStr}`;
+                                    if (shiftedDate > newDate) {
+                                        shiftedDate = newDate;
+                                    }
+                                    updatedTask.dueDate = shiftedDate;
+                                }
+                            }
+                        }
+
+                        return updatedTask;
+                    });
+
+                    return {
+                        ...prev,
+                        exams: updatedExams,
+                        tasks: updatedTasks
+                    };
+                });
 
                 setEditingExam(null);
-                showToast('פרטי המבחן עודכנו בהצלחה! ✏️', 'success');
+                showToast('פרטי המבחן ותוכניות הלמידה עודכנו בהצלחה! ✏️', 'success');
             };
 
 
@@ -4585,7 +4744,7 @@ function App() {
                                                             </span>
                                                             {task.isExamPrep && (
                                                                 <span className="text-[10px] font-bold text-white bg-gradient-to-r from-indigo-500 to-purple-500 px-2 py-1 rounded-lg shadow-sm flex items-center gap-1">
-                                                                    <span>🎯</span> סשן למידה
+                                                                    <span>🎯</span> {task.sessionNumber ? `סשן למידה ${task.sessionNumber}` : 'סשן למידה'}
                                                                 </span>
                                                             )}
                                                             {task.rewardPoints && (
@@ -5335,11 +5494,56 @@ function App() {
                                                                 <div className="font-bold text-lg leading-tight text-stone-800">
                                                                     {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
                                                                 </div>
-                                                                <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
-                                                                    {exam.targetHours > 0 
-                                                                        ? `תוכננו ${exam.sessionsCount || 0} מפגשים (${exam.targetHours} שעות)`
-                                                                        : (exam.sessionsCount > 0 ? `תוכננו ${exam.sessionsCount} מפגשי למידה` : 'ללא תוכנית שעות')}
-                                                                </div>
+                                                                {(() => {
+                                                                    const examTasks = (activeUserData.tasks || []).filter(t => t.examId === exam.id && !t.givenUp);
+                                                                    const completedSessions = examTasks.filter(t => t.completed || t.completedAt).length;
+                                                                    const openSessions = examTasks.filter(t => !t.completed && !t.completedAt).length;
+                                                                    const totalSessions = Math.max(exam.sessionsCount || 0, completedSessions + openSessions);
+
+                                                                    if (exam.targetHours > 0) {
+                                                                        if (completedSessions > 0) {
+                                                                            return (
+                                                                                <div className="text-xs font-bold mt-2 bg-emerald-50 text-emerald-800 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs">
+                                                                                    <span>🎯</span>
+                                                                                    <span>הושלמו {completedSessions}/{totalSessions} מפגשים ({exam.targetHours} שעות)</span>
+                                                                                </div>
+                                                                            );
+                                                                        }
+                                                                        return (
+                                                                            <div className="text-xs text-stone-500 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
+                                                                                תוכננו {totalSessions} מפגשים ({exam.targetHours} שעות)
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    if (completedSessions > 0) {
+                                                                        return (
+                                                                            <div className="text-xs font-bold mt-2 bg-emerald-50 text-emerald-800 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-emerald-200 shadow-2xs">
+                                                                                <span>{openSessions === 0 ? '✅' : '🎯'}</span>
+                                                                                <span>
+                                                                                    {openSessions > 0 
+                                                                                        ? (completedSessions === 1 ? `הושלם סשן 1 (${openSessions} בתהליך)` : `הושלמו ${completedSessions} סשנים (${openSessions} בתהליך)`)
+                                                                                        : (completedSessions === 1 ? 'הושלם סשן 1 למבחן' : `הושלמו ${completedSessions} סשנים למבחן`)}
+                                                                                </span>
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    if (openSessions > 0) {
+                                                                        return (
+                                                                            <div className="text-xs font-bold mt-2 bg-amber-50 text-amber-900 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-amber-200 shadow-2xs">
+                                                                                <span>⚡</span>
+                                                                                <span>{openSessions === 1 ? 'תוכנן סשן למידה 1' : `תוכננו ${openSessions} סשני למידה`}</span>
+                                                                            </div>
+                                                                        );
+                                                                    }
+
+                                                                    return (
+                                                                        <div className="text-xs text-stone-400 mt-2 bg-stone-50 inline-block px-2 py-1 rounded-lg border border-stone-200">
+                                                                            ללא תוכנית שעות
+                                                                        </div>
+                                                                    );
+                                                                })()}
                                                             </div>
 
                                                             <div className="flex gap-2 w-full mt-4 pt-3 border-t border-stone-100 items-center">
@@ -7052,10 +7256,11 @@ function App() {
                                                     onChange={(e) => {
                                                         const newId = e.target.value;
                                                         const ex = (activeUserData.exams || []).find(x => x.id === newId);
+                                                        const nextNum = ex ? getNextSessionNumberForExam(ex.id, activeUserData.tasks) : 1;
                                                         setSingleExamSessionData(prev => ({
                                                             ...prev,
                                                             examId: newId,
-                                                            title: ex ? `ללמוד למבחן: ${ex.examName || 'מבחן'}` : prev.title
+                                                            title: ex ? `ללמוד למבחן: ${ex.examName || 'מבחן'} - סשן ${nextNum}` : (prev.title || 'ללמוד למבחן - סשן 1')
                                                         }));
                                                     }}
                                                     className="w-full p-3.5 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-amber-400 font-bold transition-all"
@@ -7133,16 +7338,27 @@ function App() {
                                         />
                                         <div className="mt-2 flex flex-wrap gap-1.5 items-center">
                                             <span className="text-[11px] font-bold text-stone-400">קיצורים:</span>
-                                            {['ללמוד למבחן', 'מרתון שאלות ותרגול', 'חזרה על החומר וסיכומים', 'פתרון מבחן לדוגמה'].map(preset => (
-                                                <button 
-                                                    key={preset} 
-                                                    type="button" 
-                                                    onClick={() => setSingleExamSessionData(prev => ({ ...prev, title: preset }))}
-                                                    className="text-[11px] bg-stone-100 hover:bg-amber-100 text-stone-600 hover:text-amber-800 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95 border border-stone-200/60"
-                                                >
-                                                    {preset}
-                                                </button>
-                                            ))}
+                                            {(() => {
+                                                const selectedEx = (activeUserData.exams || []).find(x => x.id === singleExamSessionData.examId);
+                                                const nextNum = selectedEx ? getNextSessionNumberForExam(selectedEx.id, activeUserData.tasks) : 1;
+                                                const exName = selectedEx ? (selectedEx.examName || 'מבחן') : (singleExamSessionData.customExamName || 'מבחן');
+                                                const presets = [
+                                                    `ללמוד למבחן: ${exName} - סשן ${nextNum}`,
+                                                    `סשן ${nextNum} - חזרה על החומר וסיכומים`,
+                                                    `סשן ${nextNum} - מרתון שאלות ותרגול`,
+                                                    `סשן ${nextNum} - פתרון מבחן לדוגמה`
+                                                ];
+                                                return presets.map(preset => (
+                                                    <button 
+                                                        key={preset} 
+                                                        type="button" 
+                                                        onClick={() => setSingleExamSessionData(prev => ({ ...prev, title: preset }))}
+                                                        className="text-[11px] bg-stone-100 hover:bg-amber-100 text-stone-600 hover:text-amber-800 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95 border border-stone-200/60"
+                                                    >
+                                                        {preset}
+                                                    </button>
+                                                ));
+                                            })()}
                                         </div>
                                     </div>
 
@@ -8030,7 +8246,13 @@ function App() {
                                                             const remainingTasks = (prev.tasks || []).filter(t => t.id !== task.id);
                                                             const updatedExams = (prev.exams || []).map(ex => {
                                                                 if (task.examId && ex.id === task.examId) {
-                                                                    return { ...ex, sessionsCount: Math.max(0, (ex.sessionsCount || 1) - 1) };
+                                                                    const remainingForExam = remainingTasks.filter(rt => rt.examId === ex.id);
+                                                                    const completedForExam = remainingTasks.filter(rt => rt.examId === ex.id && (rt.completed || rt.completedAt)).length;
+                                                                    return {
+                                                                        ...ex,
+                                                                        sessionsCount: Math.max(0, remainingForExam.length),
+                                                                        completedSessionsCount: completedForExam
+                                                                    };
                                                                 }
                                                                 return ex;
                                                             });
@@ -8122,9 +8344,26 @@ function App() {
                                             </h3>
                                             <div className="text-xs text-stone-400 mt-0.5 font-medium flex items-center gap-2" dir="ltr">
                                                 <span>📅 {new Date(exam.date).toLocaleDateString('he-IL')}</span>
-                                                {exam.sessionsCount > 0 && (
-                                                    <span dir="rtl">• {exam.sessionsCount} מפגשים ({exam.targetHours} שעות)</span>
-                                                )}
+                                                {(() => {
+                                                    const examTasks = (activeUserData.tasks || []).filter(t => t.examId === exam.id && !t.givenUp);
+                                                    const completedSessions = examTasks.filter(t => t.completed || t.completedAt).length;
+                                                    const openSessions = examTasks.filter(t => !t.completed && !t.completedAt).length;
+                                                    const totalSessions = Math.max(exam.sessionsCount || 0, completedSessions + openSessions);
+
+                                                    if (completedSessions > 0) {
+                                                        return (
+                                                            <span dir="rtl" className="text-emerald-700 font-bold">
+                                                                • {completedSessions}/{totalSessions} סשנים הושלמו {exam.targetHours ? `(${exam.targetHours} שעות)` : ''}
+                                                            </span>
+                                                        );
+                                                    }
+                                                    if (totalSessions > 0) {
+                                                        return (
+                                                            <span dir="rtl">• {totalSessions} מפגשים {exam.targetHours ? `(${exam.targetHours} שעות)` : 'מתוכננים'}</span>
+                                                        );
+                                                    }
+                                                    return null;
+                                                })()}
                                             </div>
                                         </div>
                                         <button onClick={() => setExamActionsMenu(null)} className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
