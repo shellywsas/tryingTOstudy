@@ -891,6 +891,10 @@ function App() {
                 const totalPointsGained = Math.max(activeUserData.weeklyPoints || 0, historySum);
                 const currentStreak = activeUserData.taskStreak !== undefined ? activeUserData.taskStreak : (activeUserData.streak || 0);
 
+                const weekTasksWithHours = thisWeekTasks.filter(t => !t.givenUp && t.studyDurationHours);
+                const totalStudyHoursNum = weekTasksWithHours.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
+                const totalStudyHours = totalStudyHoursNum > 0 ? parseFloat(totalStudyHoursNum.toFixed(1)) : 0;
+
                 return {
                     startDate: startOfWeek.toLocaleDateString('he-IL'),
                     endDate: endOfWeek.toLocaleDateString('he-IL'),
@@ -900,6 +904,7 @@ function App() {
                     lessonsLogged,
                     thisWeekExams,
                     totalPointsGained,
+                    totalStudyHours,
                     currentStreak,
                     subjects: activeUserData.subjects || []
                 };
@@ -1388,6 +1393,10 @@ function App() {
             const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [lateReason, setLateReason] = useState('');
             const [otherLateReason, setOtherLateReason] = useState('');
+            const [studyTimeMode, setStudyTimeMode] = useState('direct'); // 'direct' | 'range'
+            const [studyDurationHoursInput, setStudyDurationHoursInput] = useState('');
+            const [studyTimeStart, setStudyTimeStart] = useState('');
+            const [studyTimeEnd, setStudyTimeEnd] = useState('');
             const [taskFormSubject, setTaskFormSubject] = useState('');
             const [nowTime, setNowTime] = useState(() => Date.now());
 
@@ -1833,8 +1842,72 @@ function App() {
                 }
             };
 
+            const calculateStudyDuration = (mode, directInput, startTime, endTime) => {
+                if (mode === 'direct') {
+                    const val = parseFloat(directInput);
+                    if (isNaN(val) || val <= 0) return null;
+                    const totalMinutes = Math.round(val * 60);
+                    const hours = Math.floor(totalMinutes / 60);
+                    const mins = totalMinutes % 60;
+                    let formattedStr = '';
+                    if (hours > 0 && mins > 0) {
+                        formattedStr = `${hours} שע' ו-${mins} דק'`;
+                    } else if (hours > 0) {
+                        formattedStr = `${val} שעות`;
+                    } else {
+                        formattedStr = `${mins} דקות`;
+                    }
+                    return {
+                        studyDurationHours: parseFloat(val.toFixed(2)),
+                        studyDurationMinutes: totalMinutes,
+                        studyTimeRange: formattedStr,
+                        studyTimeStart: '',
+                        studyTimeEnd: ''
+                    };
+                } else if (mode === 'range') {
+                    if (!startTime || !endTime) return null;
+                    const [startH, startM] = startTime.split(':').map(Number);
+                    const [endH, endM] = endTime.split(':').map(Number);
+                    if (isNaN(startH) || isNaN(startM) || isNaN(endH) || isNaN(endM)) return null;
 
-            const handleCompleteTask = (task, rating, hardExercises, chosenLateReason) => {
+                    let startTotalMins = startH * 60 + startM;
+                    let endTotalMins = endH * 60 + endM;
+                    if (endTotalMins < startTotalMins) {
+                        endTotalMins += 24 * 60; // חציית חצות
+                    }
+                    const diffMins = endTotalMins - startTotalMins;
+                    if (diffMins <= 0) return null;
+
+                    const hoursExact = parseFloat((diffMins / 60).toFixed(2));
+                    const hours = Math.floor(diffMins / 60);
+                    const mins = diffMins % 60;
+                    const durText = (hours > 0 && mins > 0)
+                        ? `${hours} שע' ו-${mins} דק'`
+                        : (hours > 0 ? `${hours} שעות` : `${mins} דקות`);
+
+                    return {
+                        studyDurationHours: hoursExact,
+                        studyDurationMinutes: diffMins,
+                        studyTimeRange: `${startTime} - ${endTime} (${durText})`,
+                        studyTimeStart: startTime,
+                        studyTimeEnd: endTime
+                    };
+                }
+                return null;
+            };
+
+            const handleOpenCompleteModal = (task) => {
+                setActiveTask(task);
+                setLateReason('');
+                setOtherLateReason('');
+                setStudyTimeMode('direct');
+                setStudyDurationHoursInput('');
+                setStudyTimeStart('');
+                setStudyTimeEnd('');
+                toggleModal('complete', true);
+            };
+
+            const handleCompleteTask = (task, rating, hardExercises, chosenLateReason, durationInfo = null) => {
                 const now = new Date();
                 const createdAt = new Date(task.createdAt);
                 let dueDate;
@@ -1899,7 +1972,9 @@ function App() {
                     subjectEmoji: sub ? sub.emoji : '📚',
                     points: pointsDelta,
                     date: now.toISOString(),
-                    details: pointsText
+                    details: pointsText,
+                    studyDurationHours: durationInfo?.studyDurationHours || null,
+                    studyTimeRange: durationInfo?.studyTimeRange || null
                 };
 
 
@@ -1951,7 +2026,12 @@ function App() {
                         understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: isLate ? chosenLateReason : '',
                         autoPenaltyApplied: isLate ? (t.autoPenaltyApplied || false) : false,
                         remindersEnabled: false,
-                        whatsappRemindersEnabled: false
+                        whatsappRemindersEnabled: false,
+                        studyDurationHours: durationInfo?.studyDurationHours || t.studyDurationHours || null,
+                        studyDurationMinutes: durationInfo?.studyDurationMinutes || t.studyDurationMinutes || null,
+                        studyTimeRange: durationInfo?.studyTimeRange || t.studyTimeRange || null,
+                        studyTimeStart: durationInfo?.studyTimeStart || t.studyTimeStart || null,
+                        studyTimeEnd: durationInfo?.studyTimeEnd || t.studyTimeEnd || null
                     } : t);
 
                     const updatedExams = (prev.exams || []).map(ex => {
@@ -1984,6 +2064,9 @@ function App() {
 
                 toggleModal('complete', false);
                 setActiveTask(null);
+                setStudyDurationHoursInput('');
+                setStudyTimeStart('');
+                setStudyTimeEnd('');
                 
                 if (pointsDelta > 0) {
                     showToast(`כל הכבוד! ${pointsDelta}+ נקודות. ${streakMessage}`, 'success');
@@ -2106,6 +2189,21 @@ function App() {
                                 updated.startTime = newStartTime;
                             } else {
                                 delete updated.startTime;
+                            }
+                            const durInput = form.elements['studyDurationHours'];
+                            if (durInput) {
+                                const val = parseFloat(durInput.value);
+                                if (!isNaN(val) && val > 0) {
+                                    updated.studyDurationHours = parseFloat(val.toFixed(2));
+                                    updated.studyDurationMinutes = Math.round(val * 60);
+                                    const h = Math.floor(updated.studyDurationMinutes / 60);
+                                    const m = updated.studyDurationMinutes % 60;
+                                    updated.studyTimeRange = (h > 0 && m > 0) ? `${h} שע' ו-${m} דק'` : `${val} שעות`;
+                                } else if (durInput.value === '') {
+                                    updated.studyDurationHours = null;
+                                    updated.studyDurationMinutes = null;
+                                    updated.studyTimeRange = null;
+                                }
                             }
                             return updated;
                         })
@@ -3543,16 +3641,20 @@ function App() {
                                 <p className="text-sm text-stone-500 font-medium">שבוע: {weeklyReportData.startDate} עד {weeklyReportData.endDate}</p>
                             </div>
                             
-                            <div className="flex gap-4 mb-8">
-                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                            <div className="grid grid-cols-4 gap-4 mb-8">
+                                <div className="bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
                                     <div className="text-sm text-stone-500 font-bold mb-1 uppercase">משימות הושלמו</div>
                                     <div className="text-3xl font-black text-emerald-600">{weeklyReportData.completedHW.length}</div>
                                 </div>
-                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
-                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">סשנים למבחנים</div>
-                                    <div className="text-3xl font-black text-indigo-600">{weeklyReportData.examPrepDone.length}</div>
+                                <div className="bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">שעות למידה ⏳</div>
+                                    <div className="text-3xl font-black text-indigo-600">{weeklyReportData.totalStudyHours || 0}</div>
                                 </div>
-                                <div className="flex-1 bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                <div className="bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
+                                    <div className="text-sm text-stone-500 font-bold mb-1 uppercase">סשנים למבחנים</div>
+                                    <div className="text-3xl font-black text-amber-600">{weeklyReportData.examPrepDone.length}</div>
+                                </div>
+                                <div className="bg-stone-100 p-5 rounded-2xl text-center border border-stone-200">
                                     <div className="text-sm text-stone-500 font-bold mb-1 uppercase">נקודות השבוע</div>
                                     <div className="text-3xl font-black text-purple-600">{weeklyReportData.totalPointsGained}</div>
                                 </div>
@@ -3565,7 +3667,7 @@ function App() {
                                     <ul className="list-disc list-inside space-y-2 text-base">
                                         {weeklyReportData.completedHW.map(t => {
                                             const sub = activeUserData.subjects.find(s=>s.id === t.subjectId);
-                                            return <li key={t.id}><strong>{sub ? sub.name : 'כללי'}:</strong> {t.title} <span className="text-stone-500 text-sm font-medium mr-1">(דירוג הבנה: {t.understandingRating}/5)</span></li>
+                                            return <li key={t.id}><strong>{sub ? sub.name : 'כללי'}:</strong> {t.title} <span className="text-stone-500 text-sm font-medium mr-1">(דירוג הבנה: {t.understandingRating}/5){t.studyTimeRange ? ` • ⏳ ${t.studyTimeRange}` : ''}</span></li>
                                         })}
                                     </ul>
                                 ) : <p className="text-base text-stone-500 italic">לא הושלמו משימות השבוע.</p>}
@@ -3635,6 +3737,11 @@ function App() {
                         if (analyticsTimeFilter === 'all') return true;
                         const taskDate = getTaskDate(t);
                         if (!taskDate || isNaN(taskDate.getTime())) return false;
+                        if (analyticsTimeFilter === 'last7') {
+                            const sevenDaysAgo = new Date();
+                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                            return taskDate >= sevenDaysAgo;
+                        }
                         if (analyticsTimeFilter === 'last30') {
                             const thirtyDaysAgo = new Date();
                             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -3648,6 +3755,11 @@ function App() {
                         if (!ex.date) return false;
                         const exDate = new Date(ex.date);
                         if (!exDate || isNaN(exDate.getTime())) return false;
+                        if (analyticsTimeFilter === 'last7') {
+                            const sevenDaysAgo = new Date();
+                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                            return exDate >= sevenDaysAgo;
+                        }
                         if (analyticsTimeFilter === 'last30') {
                             const thirtyDaysAgo = new Date();
                             thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -3661,9 +3773,15 @@ function App() {
                     const exams = rawExams.filter(isExamInFilter);
                     const printFilterLabel = analyticsTimeFilter === 'all' 
                         ? 'כל הזמנים' 
-                        : analyticsTimeFilter === 'last30' 
-                            ? '30 ימים אחרונים' 
-                            : formatMonthLabel(analyticsTimeFilter);
+                        : analyticsTimeFilter === 'last7'
+                            ? 'השבוע (7 ימים אחרונים)'
+                            : analyticsTimeFilter === 'last30' 
+                                ? '30 ימים אחרונים' 
+                                : formatMonthLabel(analyticsTimeFilter);
+
+                    const printTasksWithHours = completedTasks.filter(t => t.studyDurationHours && !isNaN(Number(t.studyDurationHours)));
+                    const printTotalStudyHoursNum = printTasksWithHours.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
+                    const printTotalStudyHours = printTotalStudyHoursNum > 0 ? parseFloat(printTotalStudyHoursNum.toFixed(1)) : 0;
 
                     const onTimeCount = completedTasks.filter(t => {
                         if (!t.dueDate || !t.dueTime || !t.completedAt) return true;
@@ -3715,10 +3833,14 @@ function App() {
                                 <p className="text-base font-bold text-stone-600">תלמידה: {activeUserData.name} • טווח נתונים: {printFilterLabel}</p>
                             </div>
 
-                            <div className="grid grid-cols-4 gap-3 mb-6">
+                            <div className="grid grid-cols-5 gap-2.5 mb-6">
                                 <div className="bg-stone-50 p-4 rounded-xl text-center border border-stone-200">
                                     <div className="text-xs text-stone-500 font-bold mb-1 uppercase">משימות שהוגשו</div>
                                     <div className="text-2xl font-black text-purple-700">{completedTasks.length}</div>
+                                </div>
+                                <div className="bg-stone-50 p-4 rounded-xl text-center border border-stone-200">
+                                    <div className="text-xs text-stone-500 font-bold mb-1 uppercase">שעות למידה ⏳</div>
+                                    <div className="text-2xl font-black text-indigo-600">{printTotalStudyHours > 0 ? `${printTotalStudyHours} שע'` : '0'}</div>
                                 </div>
                                 <div className="bg-stone-50 p-4 rounded-xl text-center border border-stone-200">
                                     <div className="text-xs text-stone-500 font-bold mb-1 uppercase">הגשה בזמן</div>
@@ -4570,6 +4692,23 @@ function App() {
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
                                         <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{activeUserData.weeklyPoints}</div>
+                                        {(() => {
+                                            const weekHours = (activeUserData.tasks || [])
+                                                .filter(t => {
+                                                    if (!t.completed || !t.studyDurationHours) return false;
+                                                    const d = t.completedAt ? new Date(t.completedAt) : (t.dueDate ? new Date(t.dueDate) : null);
+                                                    if (!d) return false;
+                                                    const sevenDaysAgo = new Date();
+                                                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                                    return d >= sevenDaysAgo;
+                                                })
+                                                .reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
+                                            return weekHours > 0 ? (
+                                                <div className="text-[11px] font-bold text-indigo-600 mt-1.5 flex items-center gap-1">
+                                                    <span>⏳</span> {parseFloat(weekHours.toFixed(1))} שעות למידה
+                                                </div>
+                                            ) : null;
+                                        })()}
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
@@ -4648,7 +4787,7 @@ function App() {
                                                         {task.lessonTopic && <div className="text-sm text-stone-500 mt-1">{task.lessonTopic}</div>}
                                                     </div>
                                                     <div className="flex gap-2 w-full mt-1 items-center">
-                                                        <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 border px-4 py-3 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-2 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
+                                                        <button onClick={() => handleOpenCompleteModal(task)} className={`flex-1 border px-4 py-3 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-2 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                             <IconCheck className="w-4 h-4 text-emerald-600"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
                                                         </button>
                                                         <button onClick={() => setTaskActionsMenu(task)} className="px-4 py-3 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-1.5 active:scale-95 shadow-xs" title="אפשרויות נוספות">
@@ -4814,6 +4953,11 @@ function App() {
                                                                 <span className={`px-3 py-1.5 rounded-lg font-semibold flex items-center gap-1 shadow-sm ${(task.pointsEarned ?? 0) > 0 ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-rose-50 text-rose-700 border border-rose-100'}`}>
                                                                     {(task.pointsEarned ?? 0) > 0 ? '+'+task.pointsEarned : (task.pointsEarned ?? 0)} נק'
                                                                 </span>
+                                                                {task.studyTimeRange && (
+                                                                    <span className="bg-indigo-50 border border-indigo-100 text-indigo-700 px-3 py-1.5 rounded-lg font-bold flex items-center gap-1 shadow-sm">
+                                                                        ⏳ {task.studyTimeRange}
+                                                                    </span>
+                                                                )}
                                                                 {task.hardExercises && <span className="text-rose-700 font-semibold bg-rose-50 px-3 py-1.5 rounded-lg border border-rose-100 shadow-sm">קשה: {task.hardExercises}</span>}
                                                             </div>
                                                         )}
@@ -4822,7 +4966,7 @@ function App() {
                                                     <div className="flex md:flex-col gap-2 w-full md:w-44 shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4">
                                                         {!isTaskDone ? (
                                                             <div className="flex gap-2 w-full items-center">
-                                                                <button onClick={() => { setActiveTask(task); setLateReason(''); setOtherLateReason(''); toggleModal('complete', true); }} className={`flex-1 border px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
+                                                                <button onClick={() => handleOpenCompleteModal(task)} className={`flex-1 border px-3 py-2.5 rounded-xl text-sm font-bold transition-all flex items-center justify-center gap-1.5 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
                                                                     <IconCheck className="w-4 h-4 text-emerald-600"/> {isLate ? 'הגשה באיחור' : 'סיימתי!'}
                                                                 </button>
                                                                 <button onClick={() => setTaskActionsMenu(task)} className="px-3 py-2.5 bg-stone-50 hover:bg-stone-100 text-stone-600 border border-stone-200 rounded-xl transition-all font-bold text-sm flex items-center justify-center gap-1 active:scale-95 shadow-xs" title="אפשרויות נוספות">
@@ -5912,6 +6056,11 @@ function App() {
                                 if (analyticsTimeFilter === 'all') return true;
                                 const taskDate = getTaskDate(t);
                                 if (!taskDate || isNaN(taskDate.getTime())) return false;
+                                if (analyticsTimeFilter === 'last7') {
+                                    const sevenDaysAgo = new Date();
+                                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                    return taskDate >= sevenDaysAgo;
+                                }
                                 if (analyticsTimeFilter === 'last30') {
                                     const thirtyDaysAgo = new Date();
                                     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -5926,6 +6075,11 @@ function App() {
                                 if (!ex.date) return false;
                                 const exDate = new Date(ex.date);
                                 if (!exDate || isNaN(exDate.getTime())) return false;
+                                if (analyticsTimeFilter === 'last7') {
+                                    const sevenDaysAgo = new Date();
+                                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                    return exDate >= sevenDaysAgo;
+                                }
                                 if (analyticsTimeFilter === 'last30') {
                                     const thirtyDaysAgo = new Date();
                                     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -5979,12 +6133,20 @@ function App() {
                                 const subTasks = completedTasks.filter(t => !t.isLessonLog && t.subjectId === sub.id && t.understandingRating);
                                 const ratings = subTasks.map(t => t.understandingRating);
                                 const avg = ratings.length > 0 ? (ratings.reduce((a, b) => a + b, 0) / ratings.length).toFixed(1) : null;
+                                const subTasksWithHours = completedTasks.filter(t => !t.isLessonLog && t.subjectId === sub.id && t.studyDurationHours);
+                                const subHours = subTasksWithHours.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
                                 return {
                                     ...sub,
                                     completedCount: subTasks.length,
-                                    avgRating: avg ? parseFloat(avg) : null
+                                    avgRating: avg ? parseFloat(avg) : null,
+                                    totalStudyHours: subHours > 0 ? parseFloat(subHours.toFixed(1)) : 0
                                 };
                             }).filter(s => s.completedCount > 0).sort((a, b) => (b.avgRating || 0) - (a.avgRating || 0));
+
+                            const tasksWithDuration = completedTasks.filter(t => t.studyDurationHours && !isNaN(Number(t.studyDurationHours)));
+                            const totalStudyHoursNum = tasksWithDuration.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
+                            const totalStudyHours = totalStudyHoursNum > 0 ? parseFloat(totalStudyHoursNum.toFixed(1)) : 0;
+                            const avgHoursPerSession = tasksWithDuration.length > 0 ? (totalStudyHoursNum / tasksWithDuration.length).toFixed(1) : null;
 
                             const allRatings = completedTasks.filter(t => !t.isLessonLog && t.understandingRating).map(t => t.understandingRating);
                             const overallAvgRating = allRatings.length > 0 ? (allRatings.reduce((a, b) => a + b, 0) / allRatings.length).toFixed(1) : null;
@@ -5994,9 +6156,11 @@ function App() {
 
                             const currentFilterLabel = analyticsTimeFilter === 'all' 
                                 ? 'כל הזמנים 🌟' 
-                                : analyticsTimeFilter === 'last30' 
-                                    ? '30 ימים אחרונים ⏱️' 
-                                    : `חודש ${formatMonthLabel(analyticsTimeFilter)} 📅`;
+                                : analyticsTimeFilter === 'last7'
+                                    ? 'השבוע (7 ימים אחרונים) 🗓️'
+                                    : analyticsTimeFilter === 'last30' 
+                                        ? '30 ימים אחרונים ⏱️' 
+                                        : `חודש ${formatMonthLabel(analyticsTimeFilter)} 📅`;
 
                             return (
                                 <div className="space-y-6 max-w-5xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -6042,6 +6206,15 @@ function App() {
                                                 הכל (כל הזמנים) 🌟
                                             </button>
                                             <button 
+                                                onClick={() => setAnalyticsTimeFilter('last7')}
+                                                className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
+                                                    analyticsTimeFilter === 'last7' 
+                                                        ? 'bg-purple-600 text-white shadow-sm shadow-purple-200' 
+                                                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                                                }`}>
+                                                השבוע (7 ימים) 🗓️
+                                            </button>
+                                            <button 
                                                 onClick={() => setAnalyticsTimeFilter('last30')}
                                                 className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
                                                     analyticsTimeFilter === 'last30' 
@@ -6079,11 +6252,18 @@ function App() {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5 md:gap-4">
                                         <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
                                             <div className="text-stone-400 text-xs font-semibold mb-1">סה"כ משימות שהושלמו</div>
                                             <div className="text-2xl md:text-3xl font-black text-stone-800">{completedTasks.length}</div>
                                             <div className="text-[11px] text-emerald-600 font-bold mt-1">מתוכן {onTimeCount} בזמן!</div>
+                                        </div>
+                                        <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
+                                            <div className="text-stone-400 text-xs font-semibold mb-1">סה"כ שעות למידה ⏳</div>
+                                            <div className="text-2xl md:text-3xl font-black text-indigo-600">{totalStudyHours > 0 ? `${totalStudyHours} שע'` : '0 שע\''}</div>
+                                            <div className="text-[11px] text-stone-500 font-medium mt-1">
+                                                {tasksWithDuration.length > 0 ? `ממוצע ${avgHoursPerSession} שע' לסשן (${tasksWithDuration.length} מתועדות)` : 'הזיני משך זמן בהגשת משימות'}
+                                            </div>
                                         </div>
                                         <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100">
                                             <div className="text-stone-400 text-xs font-semibold mb-1">אחוז הגשה בזמן</div>
@@ -6190,7 +6370,12 @@ function App() {
                                                                         {isStrong && <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full font-bold">חזקה! 💪</span>}
                                                                         {isWeak && <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full font-bold">חיזוק נדרש 🎯</span>}
                                                                     </div>
-                                                                    <div className="flex items-center gap-1 text-sm font-black text-stone-800">
+                                                                    <div className="flex items-center gap-1.5 text-sm font-black text-stone-800">
+                                                                        {sub.totalStudyHours > 0 && (
+                                                                            <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-lg shadow-2xs">
+                                                                                ⏳ {sub.totalStudyHours} שע'
+                                                                            </span>
+                                                                        )}
                                                                         <span className="text-amber-500">★</span> {rating} <span className="text-xs text-stone-400 font-normal">({sub.completedCount} משימות)</span>
                                                                     </div>
                                                                 </div>
@@ -6898,6 +7083,28 @@ function App() {
                                             <input name="startTime" type="time" defaultValue={editingTask.startTime || ''} className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
                                         </div>
                                     )}
+                                    {editingTask.completed && !editingTask.isLessonLog && (
+                                        <div className="bg-indigo-50/50 p-3.5 rounded-2xl border border-indigo-100">
+                                            <label className="text-xs font-bold text-indigo-900 block mb-1 uppercase flex items-center gap-1.5">
+                                                <span>⏳</span> משך למידה בפועל (בשעות - אופציונלי)
+                                            </label>
+                                            <input 
+                                                name="studyDurationHours" 
+                                                type="number" 
+                                                step="0.25" 
+                                                min="0.1" 
+                                                max="24" 
+                                                defaultValue={editingTask.studyDurationHours || ''} 
+                                                placeholder="למשל: 1.5, 3, 3.5..." 
+                                                className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300" 
+                                            />
+                                            {editingTask.studyTimeRange && (
+                                                <div className="text-[11px] text-indigo-700 mt-1 font-semibold">
+                                                    תועד: {editingTask.studyTimeRange}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                     {/* 1. צילומי לוח מהשיעור בעריכה */}
                                     <div className="pt-2 border-t border-stone-100">
                                         <div className="flex items-center justify-between mb-1.5">
@@ -7063,7 +7270,8 @@ function App() {
                                             showToast('אנא בחרי סיבת איחור', 'error');
                                             return;
                                         }
-                                        handleCompleteTask(activeTask, Number(e.target.rating.value), e.target.hard.value, chosenReason);
+                                        const durationInfo = calculateStudyDuration(studyTimeMode, studyDurationHoursInput, studyTimeStart, studyTimeEnd);
+                                        handleCompleteTask(activeTask, Number(e.target.rating.value), e.target.hard.value, chosenReason, durationInfo);
                                     }} className="space-y-6">
                                         
                                         {activeTaskIsLate && (
@@ -7103,6 +7311,140 @@ function App() {
                                                 <span>הכל מובן (5)</span>
                                             </div>
                                         </div>
+
+                                        {/* משך זמן הלמידה (אופציונלי - בחירה) */}
+                                        <div className="bg-indigo-50/60 p-4 md:p-5 rounded-2xl border border-indigo-100 space-y-3">
+                                            <div className="flex justify-between items-center gap-2">
+                                                <label className="text-sm font-bold text-indigo-950 flex items-center gap-1.5">
+                                                    <span>⏳</span> כמה זמן למדת? <span className="text-xs font-normal text-indigo-600">(בחירה - לא חובה)</span>
+                                                </label>
+                                                <div className="flex bg-white p-0.5 rounded-xl border border-indigo-200/80 text-xs font-bold shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setStudyTimeMode('direct')}
+                                                        className={`px-2.5 py-1 rounded-lg transition-all ${
+                                                            studyTimeMode === 'direct' 
+                                                                ? 'bg-indigo-600 text-white shadow-xs' 
+                                                                : 'text-indigo-600 hover:text-indigo-800'
+                                                        }`}
+                                                    >
+                                                        לפי שעות
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setStudyTimeMode('range')}
+                                                        className={`px-2.5 py-1 rounded-lg transition-all ${
+                                                            studyTimeMode === 'range' 
+                                                                ? 'bg-indigo-600 text-white shadow-xs' 
+                                                                : 'text-indigo-600 hover:text-indigo-800'
+                                                        }`}
+                                                    >
+                                                        בין שעות
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            {studyTimeMode === 'direct' ? (
+                                                <div className="space-y-2.5">
+                                                    <div className="flex items-center gap-2">
+                                                        <input
+                                                            type="number"
+                                                            step="0.25"
+                                                            min="0.1"
+                                                            max="24"
+                                                            placeholder="למשל: 1.5, 3, 3.5..."
+                                                            value={studyDurationHoursInput}
+                                                            onChange={(e) => setStudyDurationHoursInput(e.target.value)}
+                                                            className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                        />
+                                                        <span className="text-sm font-bold text-indigo-900 whitespace-nowrap">שעות</span>
+                                                        {studyDurationHoursInput && (
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setStudyDurationHoursInput('')}
+                                                                className="text-stone-400 hover:text-rose-500 text-xs font-bold px-2 py-1"
+                                                                title="איפוס"
+                                                            >
+                                                                ✕
+                                                            </button>
+                                                        )}
+                                                    </div>
+
+                                                    <div className="flex flex-wrap gap-1.5 pt-1">
+                                                        {[
+                                                            { label: '30 דק\'', val: '0.5' },
+                                                            { label: 'שעה', val: '1' },
+                                                            { label: '1.5 שע\'', val: '1.5' },
+                                                            { label: 'שעתיים', val: '2' },
+                                                            { label: '2.5 שע\'', val: '2.5' },
+                                                            { label: '3 שעות', val: '3' },
+                                                            { label: '3.5 שע\'', val: '3.5' },
+                                                            { label: '4 שעות', val: '4' }
+                                                        ].map(chip => (
+                                                            <button
+                                                                key={chip.val}
+                                                                type="button"
+                                                                onClick={() => setStudyDurationHoursInput(chip.val)}
+                                                                className={`text-xs px-2.5 py-1 rounded-lg border transition-all active:scale-95 font-semibold ${
+                                                                    studyDurationHoursInput === chip.val
+                                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                                                        : 'bg-white text-indigo-700 border-indigo-200/70 hover:bg-indigo-100/50'
+                                                                }`}
+                                                            >
+                                                                {chip.label}
+                                                            </button>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="space-y-2.5">
+                                                    <div className="grid grid-cols-2 gap-3">
+                                                        <div>
+                                                            <label className="text-[11px] font-bold text-indigo-900 mb-1 block">משעה:</label>
+                                                            <input
+                                                                type="time"
+                                                                value={studyTimeStart}
+                                                                onChange={(e) => setStudyTimeStart(e.target.value)}
+                                                                className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-[11px] font-bold text-indigo-900 mb-1 block">עד שעה:</label>
+                                                            <input
+                                                                type="time"
+                                                                value={studyTimeEnd}
+                                                                onChange={(e) => setStudyTimeEnd(e.target.value)}
+                                                                className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300"
+                                                            />
+                                                        </div>
+                                                    </div>
+
+                                                    {studyTimeStart && studyTimeEnd && (() => {
+                                                        const dur = calculateStudyDuration('range', '', studyTimeStart, studyTimeEnd);
+                                                        if (!dur) return null;
+                                                        return (
+                                                            <div className="bg-white/90 p-2.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center justify-between shadow-2xs">
+                                                                <span>✨ חושב אוטומטית:</span>
+                                                                <span className="text-indigo-700">{dur.studyTimeRange}</span>
+                                                            </div>
+                                                        );
+                                                    })()}
+
+                                                    {(studyTimeStart || studyTimeEnd) && (
+                                                        <div className="flex justify-end">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => { setStudyTimeStart(''); setStudyTimeEnd(''); }}
+                                                                className="text-stone-400 hover:text-rose-500 text-xs font-bold"
+                                                            >
+                                                                איפוס שעות ✕
+                                                            </button>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div className="bg-rose-50/50 p-4 rounded-2xl border border-rose-100">
                                             <label className="text-sm font-bold text-rose-700 mb-2 block flex items-center gap-2"><span>📌</span> אילו תרגילים היו קשים? (לא חובה)</label>
                                             <textarea name="hard" rows="2" placeholder="למשל: סעיף ד' בשאלה 5..." className="w-full p-4 border border-rose-200 bg-white rounded-xl text-sm outline-none focus:ring-2 focus:ring-rose-200 resize-none shadow-sm"></textarea>
@@ -7689,6 +8031,11 @@ function App() {
                                             </div>
                                             <div className="text-[10px] font-bold text-stone-400 mb-2" dir="ltr">{new Date(log.date).toLocaleString('he-IL')}</div>
                                             <div className={`text-xs font-medium p-2 rounded-lg ${log.points > 0 ? 'bg-emerald-100/30 text-emerald-700' : log.points === 0 ? 'bg-stone-200/50 text-stone-700' : 'bg-rose-100/30 text-rose-700'}`}>{log.details}</div>
+                                            {log.studyTimeRange && (
+                                                <div className="mt-1.5 text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200/70 px-2 py-0.5 rounded-lg inline-flex items-center gap-1">
+                                                    <span>⏳</span> משך למידה: {log.studyTimeRange}
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>
@@ -8105,6 +8452,11 @@ function App() {
                                                 {isLate && (
                                                     <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-rose-50 text-rose-700 border border-rose-100">
                                                         באיחור
+                                                    </span>
+                                                )}
+                                                {task.studyTimeRange && (
+                                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                                        ⏳ {task.studyTimeRange}
                                                     </span>
                                                 )}
                                             </div>

@@ -119,7 +119,8 @@ const WhatsAppService = {
                     if (found) sName = found.name;
                 }
                 if (!sName) sName = h.subject || 'כללי';
-                return `  • ${h.title} (${sName})`;
+                const durStr = h.studyTimeRange ? ` [⏳ ${h.studyTimeRange}]` : '';
+                return `  • ${h.title} (${sName})${durStr}`;
             }).slice(0, 10).join('\n');
             if (completedHW.length > 10) hwDetails += `\n  • ועוד ${completedHW.length - 10} משימות נוספות!`;
         } else {
@@ -140,6 +141,7 @@ const WhatsAppService = {
                `📅 שבוע: ${start} - ${end}\n\n` +
                `📊 סיכום ההישגים השבוע:\n` +
                `  ✅ משימות ושיעורי בית שהושלמו: ${completedHW.length}\n` +
+               (reportData?.totalStudyHours > 0 ? `  ⏳ סה"כ שעות למידה השבוע: ${reportData.totalStudyHours} שעות\n` : '') +
                (examPrep.length > 0 ? `  🎯 סשנים של הכנה למבחנים: ${examPrep.length}\n` : '') +
                `  ⭐ נקודות שנצברו השבוע: ${points} נק'\n` +
                `${streakLine}\n\n` +
