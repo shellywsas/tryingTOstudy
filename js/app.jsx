@@ -1416,7 +1416,7 @@ function App() {
             }, [activeUserData?.tasks, taskFormSubject]);
             
             const [examPlannerData, setExamPlannerData] = useState({ 
-                step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' 
+                step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' 
             });
 
 
@@ -2938,48 +2938,84 @@ function App() {
                 const reuseId = examPlannerData.existingExamId;
                 const examId = reuseId || ('ex_' + Date.now());
                 
-                const newTasks = examPlannerData.sessions.map((ses, idx) => ({
-                    id: 't_' + Date.now() + idx,
-                    examId: examId,
-                    subjectId: examPlannerData.subjectId,
-                    title: `למידה ל${examTitle} ב${sub?.name || 'כללי'} (מפגש ${idx+1}/${examPlannerData.sessions.length})`,
-                    lessonTopic: `הכנה למבחן: ${examTitle}`,
-                    createdAt: new Date().toISOString(),
-                    completed: false,
-                    isLessonLog: false,
-                    isExamPrep: true,
-                    givenDate: new Date().toISOString().split('T')[0],
-                    dueDate: ses.date,
-                    startTime: ses.startTime,
-                    dueTime: ses.endTime,
-                    autoPenaltyApplied: false
-                }));
-
-
                 updateUserData(prev => {
+                    let completedTasksCount = 0;
+                    let remainingTasks = prev.tasks || [];
+                    
+                    if (reuseId) {
+                        // Count completed tasks for this exam to preserve streak/points/session numbering
+                        completedTasksCount = (prev.tasks || []).filter(t => 
+                            (t.examId === reuseId || (t.isExamPrep && t.lessonTopic && t.lessonTopic.includes(examTitle))) && 
+                            (t.completed || t.completedAt)
+                        ).length;
+
+                        // Remove old uncompleted tasks for this exam so old dates and times don't remain
+                        remainingTasks = (prev.tasks || []).filter(t => 
+                            !( (t.examId === reuseId || (t.isExamPrep && t.lessonTopic && t.lessonTopic.includes(examTitle))) && 
+                               !t.completed && !t.completedAt )
+                        );
+                    }
+
+                    const newTasks = examPlannerData.sessions.map((ses, idx) => {
+                        const sessionIdx = completedTasksCount + idx + 1;
+                        const totalSessions = completedTasksCount + examPlannerData.sessions.length;
+                        return {
+                            id: 't_' + Date.now() + '_' + idx,
+                            examId: examId,
+                            subjectId: examPlannerData.subjectId,
+                            title: `למידה ל${examTitle} ב${sub?.name || 'כללי'} (מפגש ${sessionIdx}/${totalSessions})`,
+                            lessonTopic: `הכנה למבחן: ${examTitle}`,
+                            createdAt: new Date().toISOString(),
+                            completed: false,
+                            isLessonLog: false,
+                            isExamPrep: true,
+                            sessionNumber: sessionIdx,
+                            givenDate: new Date().toISOString().split('T')[0],
+                            dueDate: ses.date,
+                            startTime: ses.startTime,
+                            dueTime: ses.endTime,
+                            autoPenaltyApplied: false
+                        };
+                    });
+
                     const exams = [...(prev.exams || [])];
                     if (reuseId) {
                         return {
                             ...prev,
-                            tasks: [...prev.tasks, ...newTasks],
+                            tasks: [...remainingTasks, ...newTasks],
                             exams: exams.map(ex => ex.id === reuseId ? {
                                 ...ex,
-                                sessionsCount: (ex.sessionsCount || 0) + newTasks.length,
-                                targetHours: (ex.targetHours || 0) + examPlannerData.hours
+                                examName: examTitle,
+                                subjectId: examPlannerData.subjectId,
+                                date: examPlannerData.date,
+                                time: examPlannerData.time || ex.time || '',
+                                sessionsCount: completedTasksCount + newTasks.length,
+                                completedSessionsCount: completedTasksCount,
+                                targetHours: examPlannerData.hours,
+                                updatedAt: Date.now()
                             } : ex)
                         };
                     }
                     return {
                         ...prev,
                         tasks: [...prev.tasks, ...newTasks],
-                        exams: [...exams, { id: examId, examName: examTitle, subjectId: examPlannerData.subjectId, date: examPlannerData.date, targetHours: examPlannerData.hours, sessionsCount: examPlannerData.sessions.length, cancellations: 0 }]
+                        exams: [...exams, { 
+                            id: examId, 
+                            examName: examTitle, 
+                            subjectId: examPlannerData.subjectId, 
+                            date: examPlannerData.date, 
+                            time: examPlannerData.time || '',
+                            targetHours: examPlannerData.hours, 
+                            sessionsCount: examPlannerData.sessions.length, 
+                            completedSessionsCount: 0,
+                            cancellations: 0 
+                        }]
                     };
                 });
 
-
                 toggleModal('examPlanner', false);
                 showToast(`שובצו ${examPlannerData.sessions.length} מפגשי למידה בהצלחה! תוכלי לראות אותם במשימות. 🧠`, 'success');
-                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' });
+                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' });
             };
 
 
@@ -2988,14 +3024,17 @@ function App() {
                 const subjectId = e.target.subjectId.value;
                 const examName = e.target.examName.value;
                 const date = e.target.date.value;
+                const time = e.target.time?.value || '';
                 
                 const newExam = {
                     id: 'ex_' + Date.now(),
                     subjectId,
                     examName,
                     date,
+                    time,
                     targetHours: 0,
                     sessionsCount: 0,
+                    completedSessionsCount: 0,
                     cancellations: 0
                 };
                 
@@ -3150,114 +3189,85 @@ function App() {
 
             const handleSaveEditedExam = (updatedFields) => {
                 if (!editingExam) return;
-                const oldExamName = (editingExam.examName || '').trim();
-                const oldExamDate = editingExam.date;
-                const oldSubjectId = editingExam.subjectId;
+                const examId = editingExam.id;
 
-                const newTitle = (updatedFields.examName || '').trim() || oldExamName || 'מבחן';
-                const newDate = updatedFields.date || oldExamDate;
-                const newSubjectId = updatedFields.subjectId || oldSubjectId;
-
-                // Calculate date shift in days if date changed
-                let diffDays = 0;
-                if (oldExamDate && newDate && oldExamDate !== newDate) {
-                    const oldD = new Date(oldExamDate + 'T00:00:00');
-                    const newD = new Date(newDate + 'T00:00:00');
-                    if (!isNaN(oldD.getTime()) && !isNaN(newD.getTime())) {
-                        diffDays = Math.round((newD.getTime() - oldD.getTime()) / (1000 * 60 * 60 * 24));
-                    }
-                }
-
-                const todayStr = new Date().toISOString().split('T')[0];
-                
-                // Calculate new eve date for flexible sessions (day before exam)
-                let newEveDate = newDate;
-                if (newDate) {
-                    const parts = newDate.split('-');
-                    if (parts.length === 3) {
-                        const y = parseInt(parts[0], 10);
-                        const m = parseInt(parts[1], 10) - 1;
-                        const d = parseInt(parts[2], 10);
-                        const dObj = new Date(y, m, d);
-                        dObj.setDate(dObj.getDate() - 1);
-                        const yStr = dObj.getFullYear();
-                        const mStr = String(dObj.getMonth() + 1).padStart(2, '0');
-                        const dStr = String(dObj.getDate()).padStart(2, '0');
-                        const calcEve = `${yStr}-${mStr}-${dStr}`;
-                        newEveDate = calcEve >= todayStr ? calcEve : newDate;
-                    }
-                }
-
+                let updatedCount = 0;
                 updateUserData(prev => {
+                    const originalExam = (prev.exams || []).find(ex => String(ex.id) === String(examId));
+                    const oldExamName = (originalExam?.examName || editingExam.originalExamName || editingExam.examName || '').trim();
+                    const oldExamDate = originalExam?.date || editingExam.originalDate || editingExam.date;
+                    const oldExamTime = originalExam?.time || editingExam.originalTime || editingExam.time || '';
+                    const oldSubjectId = originalExam?.subjectId || editingExam.originalSubjectId || editingExam.subjectId;
+
+                    const newTitle = (updatedFields.examName || '').trim() || oldExamName || 'מבחן';
+                    const newDate = updatedFields.date || oldExamDate;
+                    const newTime = updatedFields.time !== undefined ? updatedFields.time : (editingExam.time || oldExamTime || '');
+                    const newSubjectId = updatedFields.subjectId || oldSubjectId;
+
                     const updatedExams = (prev.exams || []).map(ex => {
-                        if (ex.id !== editingExam.id) return ex;
+                        if (String(ex.id) !== String(examId)) return ex;
                         return {
                             ...ex,
                             ...updatedFields,
                             examName: newTitle,
                             date: newDate,
+                            time: newTime,
                             subjectId: newSubjectId,
                             updatedAt: Date.now()
                         };
                     });
 
-                    // Update existing study plans and tasks linked to this exam
-                    const updatedTasks = (prev.tasks || []).map(t => {
-                        if (t.examId !== editingExam.id) return t;
-
-                        let updatedTask = { ...t, subjectId: newSubjectId };
-
-                        // 1. Update Title and Lesson Topic with new exam name
-                        if (oldExamName && newTitle !== oldExamName) {
-                            if (updatedTask.title && updatedTask.title.includes(oldExamName)) {
-                                updatedTask.title = updatedTask.title.split(oldExamName).join(newTitle);
-                            } else if (updatedTask.title && updatedTask.title.startsWith('ללמוד למבחן')) {
-                                const sessionSuffixMatch = updatedTask.title.match(/(-\s*סשן\s*\d+|\(סשן\s*\d+\))/);
-                                const suffix = sessionSuffixMatch ? ` ${sessionSuffixMatch[0]}` : '';
-                                updatedTask.title = `ללמוד למבחן: ${newTitle}${suffix}`;
-                            }
-
-                            if (updatedTask.lessonTopic && updatedTask.lessonTopic.includes(oldExamName)) {
-                                updatedTask.lessonTopic = updatedTask.lessonTopic.split(oldExamName).join(newTitle);
-                            } else {
-                                updatedTask.lessonTopic = `הכנה למבחן: ${newTitle}`;
-                            }
-                        }
-
-                        // 2. Update Date for uncompleted tasks
-                        if (!updatedTask.completed && !updatedTask.completedAt && newDate !== oldExamDate) {
-                            if (updatedTask.isFlexibleExamSession) {
-                                updatedTask.dueDate = newEveDate;
-                            } else if (diffDays !== 0 && updatedTask.dueDate) {
-                                const curD = new Date(updatedTask.dueDate + 'T00:00:00');
-                                if (!isNaN(curD.getTime())) {
-                                    curD.setDate(curD.getDate() + diffDays);
-                                    const yStr = curD.getFullYear();
-                                    const mStr = String(curD.getMonth() + 1).padStart(2, '0');
-                                    const dStr = String(curD.getDate()).padStart(2, '0');
-                                    let shiftedDate = `${yStr}-${mStr}-${dStr}`;
-                                    if (shiftedDate > newDate) {
-                                        shiftedDate = newDate;
-                                    }
-                                    updatedTask.dueDate = shiftedDate;
-                                }
-                            }
-                        }
-
-                        return updatedTask;
-                    });
+                    const syncResult = syncExamStudyTasks(
+                        examId,
+                        newDate,
+                        newTitle,
+                        newSubjectId,
+                        prev.tasks || [],
+                        prev.scheduleSettings || [],
+                        { oldName: oldExamName, oldDate: oldExamDate, newTime: newTime }
+                    );
+                    updatedCount = syncResult.updatedCount;
 
                     return {
                         ...prev,
                         exams: updatedExams,
-                        tasks: updatedTasks
+                        tasks: syncResult.updatedTasks
                     };
                 });
 
                 setEditingExam(null);
-                showToast('פרטי המבחן ותוכניות הלמידה עודכנו בהצלחה! ✏️', 'success');
+                if (updatedCount > 0) {
+                    showToast(`פרטי המבחן ו-${updatedCount} מפגשי למידה עודכנו וסונכרנו בהצלחה! 🎯`, 'success');
+                } else {
+                    showToast('פרטי המבחן עודכנו בהצלחה! ✏️', 'success');
+                }
             };
 
+            const handleResyncExamStudySessions = (exam) => {
+                if (!exam) return;
+                let syncCount = 0;
+                updateUserData(prev => {
+                    const syncResult = syncExamStudyTasks(
+                        exam.id,
+                        exam.date,
+                        exam.examName,
+                        exam.subjectId,
+                        prev.tasks || [],
+                        prev.scheduleSettings || [],
+                        { oldName: exam.examName, oldDate: exam.date, newTime: exam.time, forceRecalculate: true }
+                    );
+                    syncCount = syncResult.updatedCount;
+                    return {
+                        ...prev,
+                        tasks: syncResult.updatedTasks
+                    };
+                });
+                if (syncCount > 0) {
+                    showToast(`שעות ותאריכי הלמידה ל-${exam.examName || 'מבחן'} רועננו וסונכרנו בהצלחה (${syncCount} מפגשים)! 🎯`, 'success');
+                } else {
+                    showToast(`כל מפגשי הלמידה ל-${exam.examName || 'מבחן'} כבר מסונכרנים ללו״ז! ✨`, 'info');
+                }
+            };
 
             const handleAddExamToCalendar = (exam) => {
                 const sub = activeUserData.subjects.find(s => s.id === exam.subjectId);
@@ -3265,7 +3275,12 @@ function App() {
                 const title = `מבחן: ${exam.examName || 'מבחן'} ב${subjectName}`;
                 
                 const dueDate = new Date(exam.date);
-                dueDate.setHours(8, 0, 0);
+                if (exam.time) {
+                    const [h, m] = exam.time.split(':');
+                    dueDate.setHours(parseInt(h, 10) || 8, parseInt(m, 10) || 0, 0);
+                } else {
+                    dueDate.setHours(8, 0, 0);
+                }
 
 
                 const formatICSDate = (date) => {
@@ -5616,13 +5631,16 @@ function App() {
                                             <div className="mt-5 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 relative z-10 animate-[fadeIn_0.2s_ease-out]">
                                                 {upcomingExams.map(exam => {
                                                     const sub = activeUserData.subjects.find(s=>s.id === exam.subjectId);
-                                                    const examCountdown = getExamCountdown(exam.date);
+                                                    const examCountdown = getExamCountdown(exam.date, exam.time);
                                                     return (
                                                         <div key={exam.id} className="p-5 rounded-3xl border border-indigo-100 bg-white shadow-sm hover:shadow-md transition-all flex flex-col justify-between">
                                                             <div>
                                                                 <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
                                                                     <div className="flex items-center gap-2 flex-wrap">
-                                                                        <div className="text-xs font-bold text-stone-500" dir="ltr">{new Date(exam.date).toLocaleDateString('he-IL')}</div>
+                                                                        <div className="text-xs font-bold text-stone-500 flex items-center gap-1.5" dir="ltr">
+                                                                            <span>{new Date(exam.date).toLocaleDateString('he-IL')}</span>
+                                                                            {exam.time && <span className="text-stone-700 font-extrabold">• ⏰ {exam.time}</span>}
+                                                                        </div>
                                                                         {examCountdown && (
                                                                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${examCountdown.badgeClass}`}>
                                                                                 {examCountdown.text}
@@ -5812,7 +5830,7 @@ function App() {
                                                                         <div className="flex justify-between items-start mb-2 gap-2 flex-wrap">
                                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                                 <span className="text-[11px] font-bold text-stone-500 bg-white px-2 py-0.5 rounded-lg border border-stone-200" dir="ltr">
-                                                                                    {new Date(exam.date).toLocaleDateString('he-IL')}
+                                                                                    {new Date(exam.date).toLocaleDateString('he-IL')}{exam.time ? ` • ⏰ ${exam.time}` : ''}
                                                                                 </span>
                                                                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-purple-50 text-purple-700 border border-purple-100">
                                                                                     {pastLabel}
@@ -7556,9 +7574,15 @@ function App() {
                                         <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">נושא / שם המבחן</label>
                                         <input type="text" name="examName" required placeholder="למשל: בוחן פתע, מתכונת..." className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
                                     </div>
-                                    <div>
-                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">תאריך</label>
-                                        <input type="date" name="date" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">תאריך</label>
+                                            <input type="date" name="date" required className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
+                                        </div>
+                                        <div>
+                                            <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">שעה (אופציונלי)</label>
+                                            <input type="time" name="time" className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
+                                        </div>
                                     </div>
                                     <button type="submit" className="w-full bg-indigo-600 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all active:scale-95">שמירת המבחן</button>
                                 </form>
@@ -7774,7 +7798,8 @@ function App() {
                                                         existingExamId: id,
                                                         subjectId: exam.subjectId,
                                                         examName: exam.examName || '',
-                                                        date: exam.date
+                                                        date: exam.date,
+                                                        time: exam.time || ''
                                                     });
                                                 }}
                                                 className="w-full p-4 bg-white border border-indigo-200 rounded-2xl text-sm outline-none font-bold focus:border-indigo-400 transition-all cursor-pointer"
@@ -7819,16 +7844,27 @@ function App() {
                                         </div>
 
 
-                                        <div>
-                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">תאריך המבחן</label>
-                                            <input 
-                                                type="date" 
-                                                value={examPlannerData.date} 
-                                                onChange={e => setExamPlannerData({...examPlannerData, date: e.target.value})} 
-                                                required 
-                                                min={new Date().toISOString().split('T')[0]} 
-                                                className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
-                                            />
+                                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">תאריך המבחן</label>
+                                                <input 
+                                                    type="date" 
+                                                    value={examPlannerData.date} 
+                                                    onChange={e => setExamPlannerData({...examPlannerData, date: e.target.value})} 
+                                                    required 
+                                                    min={new Date().toISOString().split('T')[0]} 
+                                                    className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">שעת המבחן (אופציונלי)</label>
+                                                <input 
+                                                    type="time" 
+                                                    value={examPlannerData.time || ''} 
+                                                    onChange={e => setExamPlannerData({...examPlannerData, time: e.target.value})} 
+                                                    className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
+                                                />
+                                            </div>
                                         </div>
 
 
@@ -8696,6 +8732,7 @@ function App() {
                                             </h3>
                                             <div className="text-xs text-stone-400 mt-0.5 font-medium flex items-center gap-2" dir="ltr">
                                                 <span>📅 {new Date(exam.date).toLocaleDateString('he-IL')}</span>
+                                                {exam.time && <span className="text-stone-600 font-bold">• ⏰ {exam.time}</span>}
                                                 {(() => {
                                                     const examTasks = (activeUserData.tasks || []).filter(t => t.examId === exam.id && !t.givenUp);
                                                     const completedSessions = examTasks.filter(t => t.completed || t.completedAt).length;
@@ -8742,16 +8779,38 @@ function App() {
 
                                         <button 
                                             onClick={() => {
-                                                setEditingExam({ ...exam });
+                                                setEditingExam({
+                                                    ...exam,
+                                                    originalExamId: exam.id,
+                                                    originalExamName: exam.examName,
+                                                    originalDate: exam.date,
+                                                    originalTime: exam.time || '',
+                                                    originalSubjectId: exam.subjectId
+                                                });
                                                 setExamActionsMenu(null);
                                             }}
                                             className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-all font-bold text-sm active:scale-98">
                                             <div className="flex items-center gap-3">
                                                 <span className="text-xl">✏️</span>
-                                                <span>עריכת פרטי מבחן (כותרת ותאריך)</span>
+                                                <span>עריכת פרטי מבחן (כותרת, תאריך ושעה)</span>
                                             </div>
                                             <span className="text-amber-700 bg-amber-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
                                                 שינוי פרטים
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                setExamActionsMenu(null);
+                                                handleResyncExamStudySessions(exam);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-indigo-50/80 hover:bg-indigo-100 text-indigo-950 border border-indigo-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">🔄</span>
+                                                <span>סנכרון מחדש של שעות ותאריכי למידה</span>
+                                            </div>
+                                            <span className="text-indigo-700 bg-indigo-100 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                                                עדכון שעות ולו"ז
                                             </span>
                                         </button>
 
@@ -9337,7 +9396,7 @@ function App() {
                                         <span className="p-2.5 bg-amber-50 text-amber-600 rounded-2xl text-xl">✏️</span>
                                         <div>
                                             <h3 className="font-bold text-lg text-stone-800">עריכת פרטי מבחן</h3>
-                                            <p className="text-xs text-stone-500">שינוי שם/כותרת, מקצוע ותאריך</p>
+                                            <p className="text-xs text-stone-500">שינוי שם/כותרת, מקצוע, תאריך ושעה</p>
                                         </div>
                                     </div>
                                     <button 
@@ -9375,16 +9434,47 @@ function App() {
                                         />
                                     </div>
 
-                                    <div>
-                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">תאריך המבחן</label>
-                                        <input
-                                            type="date"
-                                            required
-                                            value={editingExam.date || ''}
-                                            onChange={(e) => setEditingExam({ ...editingExam, date: e.target.value })}
-                                            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
-                                        />
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block text-xs font-bold text-stone-600 mb-1.5">תאריך המבחן</label>
+                                            <input
+                                                type="date"
+                                                required
+                                                value={editingExam.date || ''}
+                                                onChange={(e) => setEditingExam({ ...editingExam, date: e.target.value })}
+                                                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block text-xs font-bold text-stone-600 mb-1.5">שעת המבחן (אופציונלי)</label>
+                                            <input
+                                                type="time"
+                                                value={editingExam.time || ''}
+                                                onChange={(e) => setEditingExam({ ...editingExam, time: e.target.value })}
+                                                className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
+                                            />
+                                        </div>
                                     </div>
+
+                                    {(() => {
+                                        const openTasksCount = (activeUserData.tasks || []).filter(t => 
+                                            ((t.examId && String(t.examId) === String(editingExam.id)) || 
+                                             (t.isExamPrep && t.lessonTopic && (editingExam.originalExamName || editingExam.examName) && t.lessonTopic.includes(editingExam.originalExamName || editingExam.examName)) ||
+                                             (t.isExamPrep && t.title && (editingExam.originalExamName || editingExam.examName) && t.title.includes(editingExam.originalExamName || editingExam.examName))) &&
+                                            !t.completed && !t.completedAt
+                                        ).length;
+
+                                        if (openTasksCount === 0) return null;
+                                        return (
+                                            <div className="bg-indigo-50/80 border border-indigo-100 rounded-2xl p-3 text-xs text-indigo-900 leading-relaxed flex items-start gap-2.5">
+                                                <span className="text-base shrink-0">⚡</span>
+                                                <div>
+                                                    <span className="font-bold block text-indigo-950">סנכרון שעות ותאריכים אוטומטי ({openTasksCount} מפגשים פתוחים)</span>
+                                                    <span>שינוי התאריך יעדכן ויפזר מחדש את תאריכי ושעות הלמידה בחלונות הזמן הפנויים בלו"ז שלך עד המבחן.</span>
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
 
                                     <div className="flex gap-2.5 pt-3">
                                         <button

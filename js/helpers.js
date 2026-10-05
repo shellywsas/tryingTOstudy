@@ -331,27 +331,244 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             };
         };
 
-        const getExamCountdown = (examDateStr) => {
+        const getExamCountdown = (examDateStr, examTimeStr) => {
             if (!examDateStr) return null;
-            const target = new Date(examDateStr);
-            target.setHours(8, 0, 0, 0);
+            const target = new Date(examDateStr + 'T' + (examTimeStr || '08:00'));
+            const now = new Date();
             const today = new Date();
             today.setHours(0, 0, 0, 0);
 
-            const diffDays = Math.round((target.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+            const targetDay = new Date(examDateStr + 'T00:00:00');
+            const diffDays = Math.round((targetDay.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
             if (diffDays < 0) {
                 return { isPassed: true, text: 'התקיים', badgeClass: 'bg-stone-100 text-stone-500' };
             }
             if (diffDays === 0) {
+                if (examTimeStr) {
+                    const diffMs = target.getTime() - now.getTime();
+                    if (diffMs > 0) {
+                        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+                        const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+                        if (diffHours > 0) {
+                            return { isPassed: false, isToday: true, text: `היום ב-${examTimeStr} (בעוד ${diffHours} ש') 🍀`, badgeClass: 'bg-emerald-500 text-white animate-pulse font-black' };
+                        } else {
+                            return { isPassed: false, isToday: true, text: `היום ב-${examTimeStr} (בעוד ${diffMins} דק') 🍀`, badgeClass: 'bg-emerald-500 text-white animate-pulse font-black' };
+                        }
+                    } else {
+                        return { isPassed: true, text: 'התקיים היום', badgeClass: 'bg-stone-200 text-stone-700 font-bold' };
+                    }
+                }
                 return { isPassed: false, isToday: true, text: 'היום! בהצלחה 🍀', badgeClass: 'bg-emerald-500 text-white animate-pulse font-black' };
             }
             if (diffDays === 1) {
-                return { isPassed: false, text: 'מחר! ⏰', badgeClass: 'bg-amber-500 text-white font-bold' };
+                return { isPassed: false, text: examTimeStr ? `מחר ב-${examTimeStr}! ⏰` : 'מחר! ⏰', badgeClass: 'bg-amber-500 text-white font-bold' };
             }
             if (diffDays <= 7) {
                 return { isPassed: false, text: `עוד ${diffDays} ימים!`, badgeClass: 'bg-purple-100 text-purple-800 border border-purple-200 font-bold' };
             }
             return { isPassed: false, text: `עוד ${diffDays} ימים`, badgeClass: 'bg-stone-50 text-stone-600 border border-stone-200' };
+        };
+
+        const syncExamStudyTasks = (examId, newDate, newName, newSubjectId, allTasks = [], scheduleSettings = [], options = {}) => {
+            if (!examId || !newDate) return { updatedTasks: allTasks, updatedCount: 0 };
+
+            const todayStr = new Date().toISOString().split('T')[0];
+            const oldName = (options.oldName || '').trim();
+
+            // 1. Calculate new eve date (day before the exam, or today if eve is before today)
+            let newEveDate = newDate;
+            const parts = newDate.split('-');
+            if (parts.length === 3) {
+                const y = parseInt(parts[0], 10);
+                const m = parseInt(parts[1], 10) - 1;
+                const d = parseInt(parts[2], 10);
+                const dObj = new Date(y, m, d);
+                dObj.setDate(dObj.getDate() - 1);
+                const yStr = dObj.getFullYear();
+                const mStr = String(dObj.getMonth() + 1).padStart(2, '0');
+                const dStr = String(dObj.getDate()).padStart(2, '0');
+                const calcEve = `${yStr}-${mStr}-${dStr}`;
+                newEveDate = calcEve >= todayStr ? calcEve : newDate;
+            }
+
+            // 2. Identify all tasks belonging to this exam
+            const isTaskForExam = (t) => {
+                if (t.examId && String(t.examId) === String(examId)) return true;
+                if (oldName && t.isExamPrep && t.lessonTopic && t.lessonTopic.includes(oldName)) return true;
+                if (oldName && t.isExamPrep && t.title && t.title.includes(oldName)) return true;
+                return false;
+            };
+
+            const uncompletedPrepTasks = [];
+            allTasks.forEach(t => {
+                if (isTaskForExam(t) && !t.completed && !t.completedAt) {
+                    uncompletedPrepTasks.push(t);
+                }
+            });
+
+            if (uncompletedPrepTasks.length === 0) {
+                const updated = allTasks.map(t => {
+                    if (!isTaskForExam(t)) return t;
+                    return {
+                        ...t,
+                        examId: examId,
+                        subjectId: newSubjectId || t.subjectId,
+                        title: newName && oldName && oldName !== newName ? t.title.split(oldName).join(newName) : t.title,
+                        lessonTopic: newName ? `הכנה למבחן: ${newName}` : t.lessonTopic
+                    };
+                });
+                return { updatedTasks: updated, updatedCount: 0 };
+            }
+
+            // 3. Pre-calculate available smart windows between today and newEveDate
+            const startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            const endDate = new Date(newDate + 'T00:00:00');
+            endDate.setHours(0, 0, 0, 0);
+            
+            const totalDaysAvailable = Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+            const dayWindowsList = [];
+            const nowTime = new Date();
+            const currentMinsNow = nowTime.getHours() * 60 + nowTime.getMinutes();
+
+            for (let i = 0; i < totalDaysAvailable; i++) {
+                const curD = new Date();
+                curD.setDate(curD.getDate() + i);
+                const curDStr = curD.toISOString().split('T')[0];
+                
+                if (totalDaysAvailable > 1 && curDStr > newEveDate) continue;
+
+                const dayOfWeek = curD.getDay();
+                const dayPlan = (scheduleSettings || [])[dayOfWeek] || {};
+                const isToday = i === 0;
+                const isFreeDay = !dayPlan.schoolEndTime;
+                
+                const rawWindows = (isFreeDay && (!dayPlan.anchors || dayPlan.anchors.length === 0))
+                    ? [{ start: '09:00', end: '22:00', reason: 'יום חופשי מלא' }]
+                    : (typeof calculateSmartWindows === 'function' 
+                        ? calculateSmartWindows(dayPlan.schoolEndTime || '08:30', dayPlan.anchors || []) 
+                        : [{ start: '16:00', end: '21:00' }]);
+
+                if (!rawWindows || rawWindows.length === 0) {
+                    dayWindowsList.push({
+                        dateStr: curDStr,
+                        start: '16:00',
+                        end: '18:00',
+                        durationMins: 120
+                    });
+                    continue;
+                }
+
+                for (let w of rawWindows) {
+                    const startM = typeof timeToMins === 'function' ? timeToMins(w.start) : 960;
+                    const endM = typeof timeToMins === 'function' ? timeToMins(w.end) : 1080;
+                    
+                    if (isToday && endM <= currentMinsNow) continue;
+                    let actualStartM = startM;
+                    if (isToday && startM < currentMinsNow) {
+                        actualStartM = currentMinsNow + 15;
+                    }
+
+                    if (endM - actualStartM >= 30) {
+                        dayWindowsList.push({
+                            dateStr: curDStr,
+                            start: typeof minsToTime === 'function' ? minsToTime(actualStartM) : w.start,
+                            end: w.end,
+                            durationMins: endM - actualStartM
+                        });
+                    }
+                }
+            }
+
+            if (dayWindowsList.length === 0) {
+                dayWindowsList.push({
+                    dateStr: newEveDate,
+                    start: '16:00',
+                    end: '18:00',
+                    durationMins: 120
+                });
+            }
+
+            const structuredTasks = uncompletedPrepTasks.filter(t => !t.isFlexibleExamSession);
+            const taskWindowMap = new Map();
+
+            if (structuredTasks.length > 0) {
+                if (structuredTasks.length === 1) {
+                    taskWindowMap.set(structuredTasks[0].id, dayWindowsList[dayWindowsList.length - 1]);
+                } else if (dayWindowsList.length >= structuredTasks.length) {
+                    const step = (dayWindowsList.length - 1) / (structuredTasks.length - 1);
+                    structuredTasks.forEach((st, idx) => {
+                        const winIdx = Math.min(dayWindowsList.length - 1, Math.round(idx * step));
+                        taskWindowMap.set(st.id, dayWindowsList[winIdx]);
+                    });
+                } else {
+                    structuredTasks.forEach((st, idx) => {
+                        const winIdx = idx % dayWindowsList.length;
+                        taskWindowMap.set(st.id, dayWindowsList[winIdx]);
+                    });
+                }
+            }
+
+            let updatedCount = 0;
+            const updatedTasks = allTasks.map(t => {
+                if (!isTaskForExam(t)) return t;
+
+                if (t.completed || t.completedAt) {
+                    return {
+                        ...t,
+                        examId: examId,
+                        subjectId: newSubjectId || t.subjectId
+                    };
+                }
+
+                updatedCount++;
+                let updatedTask = {
+                    ...t,
+                    examId: examId,
+                    subjectId: newSubjectId || t.subjectId
+                };
+
+                if (newName && oldName && oldName !== newName) {
+                    if (updatedTask.title && updatedTask.title.includes(oldName)) {
+                        updatedTask.title = updatedTask.title.split(oldName).join(newName);
+                    } else if (updatedTask.title && updatedTask.title.startsWith('ללמוד למבחן')) {
+                        const sessionSuffixMatch = updatedTask.title.match(/(-\s*סשן\s*\d+|\(סשן\s*\d+\))/);
+                        const suffix = sessionSuffixMatch ? ` ${sessionSuffixMatch[0]}` : '';
+                        updatedTask.title = `ללמוד למבחן: ${newName}${suffix}`;
+                    }
+                    updatedTask.lessonTopic = `הכנה למבחן: ${newName}`;
+                } else if (newName && (!updatedTask.lessonTopic || !updatedTask.lessonTopic.includes(newName))) {
+                    updatedTask.lessonTopic = `הכנה למבחן: ${newName}`;
+                }
+
+                if (updatedTask.isFlexibleExamSession) {
+                    updatedTask.dueDate = newEveDate;
+                    updatedTask.dueTime = '23:59';
+                    if (!updatedTask.startTime) updatedTask.startTime = '16:00';
+                } else {
+                    const win = taskWindowMap.get(updatedTask.id);
+                    if (win) {
+                        updatedTask.dueDate = win.dateStr;
+                        let dur = 90;
+                        if (updatedTask.startTime && updatedTask.dueTime && typeof timeToMins === 'function') {
+                            const prevDur = timeToMins(updatedTask.dueTime) - timeToMins(updatedTask.startTime);
+                            if (prevDur >= 30) dur = prevDur;
+                        }
+                        const winStartM = typeof timeToMins === 'function' ? timeToMins(win.start) : 960;
+                        const winEndM = typeof timeToMins === 'function' ? timeToMins(win.end) : 1080;
+                        const taskDur = Math.min(dur, winEndM - winStartM);
+
+                        updatedTask.startTime = win.start;
+                        updatedTask.dueTime = typeof minsToTime === 'function' ? minsToTime(winStartM + taskDur) : win.end;
+                    } else {
+                        updatedTask.dueDate = newEveDate;
+                    }
+                }
+
+                return updatedTask;
+            });
+
+            return { updatedTasks, updatedCount };
         };
 
         const formatPastExamDate = (examDateStr) => {
