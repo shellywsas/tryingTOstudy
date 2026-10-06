@@ -1844,16 +1844,19 @@ function App() {
 
             const calculateStudyDuration = (mode, directInput, startTime, endTime) => {
                 if (mode === 'direct') {
-                    const val = parseFloat(directInput);
+                    if (directInput === undefined || directInput === null || directInput === '') return null;
+                    const cleanedStr = String(directInput).replace(',', '.').trim();
+                    const val = parseFloat(cleanedStr);
                     if (isNaN(val) || val <= 0) return null;
                     const totalMinutes = Math.round(val * 60);
+                    if (totalMinutes <= 0) return null;
                     const hours = Math.floor(totalMinutes / 60);
                     const mins = totalMinutes % 60;
                     let formattedStr = '';
                     if (hours > 0 && mins > 0) {
                         formattedStr = `${hours} שע' ו-${mins} דק'`;
                     } else if (hours > 0) {
-                        formattedStr = `${val} שעות`;
+                        formattedStr = hours === 1 ? 'שעה' : (hours === 2 ? 'שעתיים' : `${hours} שעות`);
                     } else {
                         formattedStr = `${mins} דקות`;
                     }
@@ -1883,7 +1886,7 @@ function App() {
                     const mins = diffMins % 60;
                     const durText = (hours > 0 && mins > 0)
                         ? `${hours} שע' ו-${mins} דק'`
-                        : (hours > 0 ? `${hours} שעות` : `${mins} דקות`);
+                        : (hours === 1 ? 'שעה' : (hours === 2 ? 'שעתיים' : (hours > 0 ? `${hours} שעות` : `${mins} דקות`)));
 
                     return {
                         studyDurationHours: hoursExact,
@@ -2192,14 +2195,17 @@ function App() {
                             }
                             const durInput = form.elements['studyDurationHours'];
                             if (durInput) {
-                                const val = parseFloat(durInput.value);
+                                const rawVal = String(durInput.value || '').replace(',', '.').trim();
+                                const val = parseFloat(rawVal);
                                 if (!isNaN(val) && val > 0) {
                                     updated.studyDurationHours = parseFloat(val.toFixed(2));
                                     updated.studyDurationMinutes = Math.round(val * 60);
                                     const h = Math.floor(updated.studyDurationMinutes / 60);
                                     const m = updated.studyDurationMinutes % 60;
-                                    updated.studyTimeRange = (h > 0 && m > 0) ? `${h} שע' ו-${m} דק'` : `${val} שעות`;
-                                } else if (durInput.value === '') {
+                                    updated.studyTimeRange = (h > 0 && m > 0)
+                                        ? `${h} שע' ו-${m} דק'`
+                                        : (h === 1 ? 'שעה' : (h === 2 ? 'שעתיים' : (h > 0 ? `${h} שעות` : `${m} דקות`)));
+                                } else if (rawVal === '') {
                                     updated.studyDurationHours = null;
                                     updated.studyDurationMinutes = null;
                                     updated.studyTimeRange = null;
@@ -7108,12 +7114,11 @@ function App() {
                                             </label>
                                             <input 
                                                 name="studyDurationHours" 
-                                                type="number" 
-                                                step="0.25" 
-                                                min="0.1" 
-                                                max="24" 
+                                                type="text" 
+                                                inputMode="decimal" 
+                                                autoComplete="off" 
                                                 defaultValue={editingTask.studyDurationHours || ''} 
-                                                placeholder="למשל: 1.5, 3, 3.5..." 
+                                                placeholder="למשל: 1.5, 2, 3.5..." 
                                                 className="w-full p-2.5 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300" 
                                             />
                                             {editingTask.studyTimeRange && (
@@ -7366,13 +7371,19 @@ function App() {
                                                 <div className="space-y-2.5">
                                                     <div className="flex items-center gap-2">
                                                         <input
-                                                            type="number"
-                                                            step="0.25"
-                                                            min="0.1"
-                                                            max="24"
-                                                            placeholder="למשל: 1.5, 3, 3.5..."
+                                                            type="text"
+                                                            inputMode="decimal"
+                                                            autoComplete="off"
+                                                            placeholder="למשל: 1.5, 2, 3.5..."
                                                             value={studyDurationHoursInput}
-                                                            onChange={(e) => setStudyDurationHoursInput(e.target.value)}
+                                                            onChange={(e) => {
+                                                                let val = e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.');
+                                                                const parts = val.split('.');
+                                                                if (parts.length > 2) {
+                                                                    val = parts[0] + '.' + parts.slice(1).join('');
+                                                                }
+                                                                setStudyDurationHoursInput(val);
+                                                            }}
                                                             className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300"
                                                         />
                                                         <span className="text-sm font-bold text-indigo-900 whitespace-nowrap">שעות</span>
@@ -7388,6 +7399,17 @@ function App() {
                                                         )}
                                                     </div>
 
+                                                    {studyDurationHoursInput && (() => {
+                                                        const dur = calculateStudyDuration('direct', studyDurationHoursInput);
+                                                        if (!dur) return null;
+                                                        return (
+                                                            <div className="bg-white/90 p-2.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center justify-between shadow-2xs">
+                                                                <span>✨ משך למידה שחושב:</span>
+                                                                <span className="text-indigo-700 font-extrabold">{dur.studyTimeRange} ({dur.studyDurationHours} שעות)</span>
+                                                            </div>
+                                                        );
+                                                    })()}
+
                                                     <div className="flex flex-wrap gap-1.5 pt-1">
                                                         {[
                                                             { label: '30 דק\'', val: '0.5' },
@@ -7398,20 +7420,25 @@ function App() {
                                                             { label: '3 שעות', val: '3' },
                                                             { label: '3.5 שע\'', val: '3.5' },
                                                             { label: '4 שעות', val: '4' }
-                                                        ].map(chip => (
-                                                            <button
-                                                                key={chip.val}
-                                                                type="button"
-                                                                onClick={() => setStudyDurationHoursInput(chip.val)}
-                                                                className={`text-xs px-2.5 py-1 rounded-lg border transition-all active:scale-95 font-semibold ${
-                                                                    studyDurationHoursInput === chip.val
-                                                                        ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
-                                                                        : 'bg-white text-indigo-700 border-indigo-200/70 hover:bg-indigo-100/50'
-                                                                }`}
-                                                            >
-                                                                {chip.label}
-                                                            </button>
-                                                        ))}
+                                                        ].map(chip => {
+                                                            const numVal = parseFloat(studyDurationHoursInput);
+                                                            const isChipActive = studyDurationHoursInput === chip.val || 
+                                                                (studyDurationHoursInput && !studyDurationHoursInput.endsWith('.') && !isNaN(numVal) && numVal === parseFloat(chip.val));
+                                                            return (
+                                                                <button
+                                                                    key={chip.val}
+                                                                    type="button"
+                                                                    onClick={() => setStudyDurationHoursInput(chip.val)}
+                                                                    className={`text-xs px-2.5 py-1 rounded-lg border transition-all active:scale-95 font-semibold ${
+                                                                        isChipActive
+                                                                            ? 'bg-indigo-600 text-white border-indigo-600 shadow-2xs'
+                                                                            : 'bg-white text-indigo-700 border-indigo-200/70 hover:bg-indigo-100/50'
+                                                                    }`}
+                                                                >
+                                                                    {chip.label}
+                                                                </button>
+                                                            );
+                                                        })}
                                                     </div>
                                                 </div>
                                             ) : (
