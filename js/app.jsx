@@ -2949,16 +2949,32 @@ function App() {
                     let remainingTasks = prev.tasks || [];
                     
                     if (reuseId) {
+                        const targetSubjId = examPlannerData.subjectId;
+                        const cleanExamTitle = (examTitle || '').trim();
+                        const isTaskMatchingExam = (t) => {
+                            if (t.examId) {
+                                return String(t.examId) === String(reuseId);
+                            }
+                            if (!t.isExamPrep) return false;
+                            if (targetSubjId && t.subjectId && String(t.subjectId) !== String(targetSubjId)) return false;
+                            if (!cleanExamTitle) return false;
+                            const topic = (t.lessonTopic || '').trim();
+                            const title = (t.title || '').trim();
+                            return topic === `הכנה למבחן: ${cleanExamTitle}` || 
+                                   topic === cleanExamTitle || 
+                                   title === `ללמוד למבחן: ${cleanExamTitle}` || 
+                                   title.startsWith(`למידה ל${cleanExamTitle} ב`) ||
+                                   title.startsWith(`ללמוד ל${cleanExamTitle}`);
+                        };
+
                         // Count completed tasks for this exam to preserve streak/points/session numbering
                         completedTasksCount = (prev.tasks || []).filter(t => 
-                            (t.examId === reuseId || (t.isExamPrep && t.lessonTopic && t.lessonTopic.includes(examTitle))) && 
-                            (t.completed || t.completedAt)
+                            isTaskMatchingExam(t) && (t.completed || t.completedAt)
                         ).length;
 
                         // Remove old uncompleted tasks for this exam so old dates and times don't remain
                         remainingTasks = (prev.tasks || []).filter(t => 
-                            !( (t.examId === reuseId || (t.isExamPrep && t.lessonTopic && t.lessonTopic.includes(examTitle))) && 
-                               !t.completed && !t.completedAt )
+                            !( isTaskMatchingExam(t) && !t.completed && !t.completedAt )
                         );
                     }
 
@@ -3223,6 +3239,9 @@ function App() {
                         };
                     });
 
+                    const oldSubObj = (prev.subjects || []).find(s => s.id === oldSubjectId);
+                    const newSubObj = (prev.subjects || []).find(s => s.id === newSubjectId);
+
                     const syncResult = syncExamStudyTasks(
                         examId,
                         newDate,
@@ -3230,7 +3249,14 @@ function App() {
                         newSubjectId,
                         prev.tasks || [],
                         prev.scheduleSettings || [],
-                        { oldName: oldExamName, oldDate: oldExamDate, newTime: newTime }
+                        { 
+                            oldName: oldExamName, 
+                            oldDate: oldExamDate, 
+                            newTime: newTime,
+                            oldSubjectId: oldSubjectId,
+                            oldSubjectName: oldSubObj?.name,
+                            newSubjectName: newSubObj?.name
+                        }
                     );
                     updatedCount = syncResult.updatedCount;
 
@@ -3253,6 +3279,7 @@ function App() {
                 if (!exam) return;
                 let syncCount = 0;
                 updateUserData(prev => {
+                    const subObj = (prev.subjects || []).find(s => s.id === exam.subjectId);
                     const syncResult = syncExamStudyTasks(
                         exam.id,
                         exam.date,
@@ -3260,7 +3287,15 @@ function App() {
                         exam.subjectId,
                         prev.tasks || [],
                         prev.scheduleSettings || [],
-                        { oldName: exam.examName, oldDate: exam.date, newTime: exam.time, forceRecalculate: true }
+                        { 
+                            oldName: exam.examName, 
+                            oldDate: exam.date, 
+                            newTime: exam.time, 
+                            oldSubjectId: exam.subjectId,
+                            oldSubjectName: subObj?.name,
+                            newSubjectName: subObj?.name,
+                            forceRecalculate: true 
+                        }
                     );
                     syncCount = syncResult.updatedCount;
                     return {
@@ -9484,12 +9519,24 @@ function App() {
                                     </div>
 
                                     {(() => {
-                                        const openTasksCount = (activeUserData.tasks || []).filter(t => 
-                                            ((t.examId && String(t.examId) === String(editingExam.id)) || 
-                                             (t.isExamPrep && t.lessonTopic && (editingExam.originalExamName || editingExam.examName) && t.lessonTopic.includes(editingExam.originalExamName || editingExam.examName)) ||
-                                             (t.isExamPrep && t.title && (editingExam.originalExamName || editingExam.examName) && t.title.includes(editingExam.originalExamName || editingExam.examName))) &&
-                                            !t.completed && !t.completedAt
-                                        ).length;
+                                        const targetExamName = (editingExam.originalExamName || editingExam.examName || '').trim();
+                                        const targetSubjId = editingExam.originalSubjectId || editingExam.subjectId;
+                                        const openTasksCount = (activeUserData.tasks || []).filter(t => {
+                                            if (t.completed || t.completedAt) return false;
+                                            if (t.examId) {
+                                                return String(t.examId) === String(editingExam.id);
+                                            }
+                                            if (!t.isExamPrep) return false;
+                                            if (targetSubjId && t.subjectId && String(t.subjectId) !== String(targetSubjId)) return false;
+                                            if (!targetExamName) return false;
+                                            const topic = (t.lessonTopic || '').trim();
+                                            const title = (t.title || '').trim();
+                                            return topic === `הכנה למבחן: ${targetExamName}` || 
+                                                   topic === targetExamName || 
+                                                   title === `ללמוד למבחן: ${targetExamName}` || 
+                                                   title.startsWith(`למידה ל${targetExamName} ב`) ||
+                                                   title.startsWith(`ללמוד ל${targetExamName}`);
+                                        }).length;
 
                                         if (openTasksCount === 0) return null;
                                         return (
