@@ -3902,6 +3902,26 @@ function App() {
                     const getTaskDate = (t) => t.completedAt ? new Date(t.completedAt) : (t.dueDate ? new Date(t.dueDate) : (t.createdAt ? new Date(t.createdAt) : null));
                     const isTaskInFilter = (t) => {
                         if (analyticsTimeFilter === 'all') return true;
+                        if (analyticsTimeFilter === 'today') {
+                            const now = new Date();
+                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            if (t.completedAt) {
+                                const cd = new Date(t.completedAt);
+                                if (!isNaN(cd.getTime())) {
+                                    const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+                                    return cdStr === todayStr;
+                                }
+                            }
+                            if (t.dueDate) return t.dueDate === todayStr;
+                            if (t.createdAt) {
+                                const cd = new Date(t.createdAt);
+                                if (!isNaN(cd.getTime())) {
+                                    const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+                                    return cdStr === todayStr;
+                                }
+                            }
+                            return false;
+                        }
                         const taskDate = getTaskDate(t);
                         if (!taskDate || isNaN(taskDate.getTime())) return false;
                         if (analyticsTimeFilter === 'last7') {
@@ -3920,6 +3940,11 @@ function App() {
                     const isExamInFilter = (ex) => {
                         if (analyticsTimeFilter === 'all') return true;
                         if (!ex.date) return false;
+                        if (analyticsTimeFilter === 'today') {
+                            const now = new Date();
+                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                            return ex.date === todayStr;
+                        }
                         const exDate = new Date(ex.date);
                         if (!exDate || isNaN(exDate.getTime())) return false;
                         if (analyticsTimeFilter === 'last7') {
@@ -3940,11 +3965,13 @@ function App() {
                     const exams = rawExams.filter(isExamInFilter);
                     const printFilterLabel = analyticsTimeFilter === 'all' 
                         ? 'כל הזמנים' 
-                        : analyticsTimeFilter === 'last7'
-                            ? 'השבוע (7 ימים אחרונים)'
-                            : analyticsTimeFilter === 'last30' 
-                                ? '30 ימים אחרונים' 
-                                : formatMonthLabel(analyticsTimeFilter);
+                        : analyticsTimeFilter === 'today'
+                            ? 'היום (יום נוכחי) ☀️'
+                            : analyticsTimeFilter === 'last7'
+                                ? 'השבוע (7 ימים אחרונים)'
+                                : analyticsTimeFilter === 'last30' 
+                                    ? '30 ימים אחרונים' 
+                                    : formatMonthLabel(analyticsTimeFilter);
 
                     const printTasksWithHours = completedTasks.filter(t => t.studyDurationHours && !isNaN(Number(t.studyDurationHours)));
                     const printTotalStudyHoursNum = printTasksWithHours.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
@@ -4874,21 +4901,54 @@ function App() {
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
                                         <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{activeUserData.weeklyPoints}</div>
                                         {(() => {
-                                            const weekHours = (activeUserData.tasks || [])
-                                                .filter(t => {
-                                                    if (!t.completed || !t.studyDurationHours) return false;
-                                                    const d = t.completedAt ? new Date(t.completedAt) : (t.dueDate ? new Date(t.dueDate) : null);
-                                                    if (!d) return false;
-                                                    const sevenDaysAgo = new Date();
-                                                    sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                                                    return d >= sevenDaysAgo;
-                                                })
-                                                .reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
-                                            return weekHours > 0 ? (
-                                                <div className="text-[11px] font-bold text-indigo-600 mt-1.5 flex items-center gap-1">
-                                                    <span>⏳</span> {parseFloat(weekHours.toFixed(1))} שעות למידה
-                                                </div>
-                                            ) : null;
+                                            const now = new Date();
+                                            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                            const sevenDaysAgo = new Date();
+                                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                            
+                                            let weekHours = 0;
+                                            let todayHours = 0;
+                                            
+                                            (activeUserData.tasks || []).forEach(t => {
+                                                if (!t.completed || !t.studyDurationHours) return;
+                                                const hours = Number(t.studyDurationHours);
+                                                if (isNaN(hours) || hours <= 0) return;
+                                                
+                                                let isToday = false;
+                                                let isWeek = false;
+                                                
+                                                if (t.completedAt) {
+                                                    const cd = new Date(t.completedAt);
+                                                    if (!isNaN(cd.getTime())) {
+                                                        if (cd >= sevenDaysAgo) isWeek = true;
+                                                        const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+                                                        if (cdStr === todayStr) isToday = true;
+                                                    }
+                                                } else if (t.dueDate) {
+                                                    if (t.dueDate === todayStr) isToday = true;
+                                                    const dd = new Date(t.dueDate);
+                                                    if (!isNaN(dd.getTime()) && dd >= sevenDaysAgo) isWeek = true;
+                                                }
+                                                
+                                                if (isWeek) weekHours += hours;
+                                                if (isToday) todayHours += hours;
+                                            });
+                                            
+                                            if (weekHours > 0 || todayHours > 0) {
+                                                return (
+                                                    <div className="text-[11px] font-bold text-indigo-600 mt-1.5 flex flex-col gap-0.5">
+                                                        <div className="flex items-center gap-1">
+                                                            <span>⏳</span> {parseFloat(weekHours.toFixed(1))} שעות השבוע
+                                                        </div>
+                                                        {todayHours > 0 && (
+                                                            <div className="text-purple-600 font-extrabold flex items-center gap-1">
+                                                                <span>☀️</span> {parseFloat(todayHours.toFixed(1))} שע' היום!
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                );
+                                            }
+                                            return null;
                                         })()}
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
@@ -6238,6 +6298,26 @@ function App() {
 
                             const isTaskInFilter = (t) => {
                                 if (analyticsTimeFilter === 'all') return true;
+                                if (analyticsTimeFilter === 'today') {
+                                    const now = new Date();
+                                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                    if (t.completedAt) {
+                                        const cd = new Date(t.completedAt);
+                                        if (!isNaN(cd.getTime())) {
+                                            const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+                                            return cdStr === todayStr;
+                                        }
+                                    }
+                                    if (t.dueDate) return t.dueDate === todayStr;
+                                    if (t.createdAt) {
+                                        const cd = new Date(t.createdAt);
+                                        if (!isNaN(cd.getTime())) {
+                                            const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
+                                            return cdStr === todayStr;
+                                        }
+                                    }
+                                    return false;
+                                }
                                 const taskDate = getTaskDate(t);
                                 if (!taskDate || isNaN(taskDate.getTime())) return false;
                                 if (analyticsTimeFilter === 'last7') {
@@ -6257,6 +6337,11 @@ function App() {
                             const isExamInFilter = (ex) => {
                                 if (analyticsTimeFilter === 'all') return true;
                                 if (!ex.date) return false;
+                                if (analyticsTimeFilter === 'today') {
+                                    const now = new Date();
+                                    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                                    return ex.date === todayStr;
+                                }
                                 const exDate = new Date(ex.date);
                                 if (!exDate || isNaN(exDate.getTime())) return false;
                                 if (analyticsTimeFilter === 'last7') {
@@ -6340,11 +6425,13 @@ function App() {
 
                             const currentFilterLabel = analyticsTimeFilter === 'all' 
                                 ? 'כל הזמנים 🌟' 
-                                : analyticsTimeFilter === 'last7'
-                                    ? 'השבוע (7 ימים אחרונים) 🗓️'
-                                    : analyticsTimeFilter === 'last30' 
-                                        ? '30 ימים אחרונים ⏱️' 
-                                        : `חודש ${formatMonthLabel(analyticsTimeFilter)} 📅`;
+                                : analyticsTimeFilter === 'today'
+                                    ? 'היום (יום נוכחי) ☀️'
+                                    : analyticsTimeFilter === 'last7'
+                                        ? 'השבוע (7 ימים אחרונים) 🗓️'
+                                        : analyticsTimeFilter === 'last30' 
+                                            ? '30 ימים אחרונים ⏱️' 
+                                            : `חודש ${formatMonthLabel(analyticsTimeFilter)} 📅`;
 
                             return (
                                 <div className="space-y-6 max-w-5xl mx-auto animate-[fadeIn_0.3s_ease-out]">
@@ -6381,13 +6468,13 @@ function App() {
                                         <div className="flex items-center gap-2 flex-wrap">
                                             <span className="text-xs font-bold text-stone-500 ml-1">סינון לפי תקופה:</span>
                                             <button 
-                                                onClick={() => setAnalyticsTimeFilter('all')}
+                                                onClick={() => setAnalyticsTimeFilter('today')}
                                                 className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
-                                                    analyticsTimeFilter === 'all' 
+                                                    analyticsTimeFilter === 'today' 
                                                         ? 'bg-purple-600 text-white shadow-sm shadow-purple-200' 
                                                         : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
                                                 }`}>
-                                                הכל (כל הזמנים) 🌟
+                                                היום ☀️
                                             </button>
                                             <button 
                                                 onClick={() => setAnalyticsTimeFilter('last7')}
@@ -6406,6 +6493,15 @@ function App() {
                                                         : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
                                                 }`}>
                                                 חודש אחרון (30 ימים) ⏱️
+                                            </button>
+                                            <button 
+                                                onClick={() => setAnalyticsTimeFilter('all')}
+                                                className={`px-3.5 py-1.5 rounded-2xl text-xs md:text-sm font-bold transition-all active:scale-95 ${
+                                                    analyticsTimeFilter === 'all' 
+                                                        ? 'bg-purple-600 text-white shadow-sm shadow-purple-200' 
+                                                        : 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                                                }`}>
+                                                הכל (כל הזמנים) 🌟
                                             </button>
                                             <div className="relative inline-flex items-center">
                                                 <select 
