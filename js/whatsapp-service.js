@@ -141,7 +141,15 @@ const WhatsAppService = {
                `📅 שבוע: ${start} - ${end}\n\n` +
                `📊 סיכום ההישגים השבוע:\n` +
                `  ✅ משימות ושיעורי בית שהושלמו: ${completedHW.length}\n` +
-               (reportData?.totalStudyHours > 0 ? `  ⏳ סה"כ שעות למידה השבוע: ${reportData.totalStudyHours} שעות\n` : '') +
+               (() => {
+                   const h = reportData?.totalStudyHours > 0 ? reportData.totalStudyHours : 0;
+                   if (h > 0) {
+                       return `  ⏳ שעות למידה שתועדו השבוע: ${h} שעות מתועדות\n` +
+                              `     *(לתשומת לבכם: מדובר בשעות שסומנו במשימות; לא כל זמן הלמידה נמדד ונרשם בשעות)*\n`;
+                   } else {
+                       return `  ⏳ שעות למידה שתועדו השבוע: לא נרשמו שעות (שעות נרשמות כאשר בוחרים לתעד זמן במשימה)\n`;
+                   }
+               })() +
                (examPrep.length > 0 ? `  🎯 סשנים של הכנה למבחנים: ${examPrep.length}\n` : '') +
                `  ⭐ נקודות שנצברו השבוע: ${points} נק'\n` +
                `${streakLine}\n\n` +
@@ -204,15 +212,38 @@ const WhatsAppService = {
             });
         }
 
-        const taskLines = tasks.slice(0, 4).map((t, idx) => {
+        const todayStr = (() => {
+            const d = new Date();
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        })();
+        const tomorrowStr = (() => {
+            const d = new Date();
+            d.setDate(d.getDate() + 1);
+            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        })();
+
+        // מציגים לכל היותר 3 משימות הכי דחופות כדי לא להעמיס בבת אחת!
+        const displayTasks = tasks.slice(0, 3);
+        const taskLines = displayTasks.map((t, idx) => {
             const sub = subjects.find(s => s && s.id === t.subjectId);
             const sName = sub ? sub.name : (t.subject || 'כללי');
-            const timeInfo = t.dueDate ? ` (עד ${t.dueDate}${t.dueTime ? ' ' + t.dueTime : ''})` : '';
+            let whenStr = '';
+            if (t.dueDate) {
+                if (t.dueDate === todayStr) whenStr = `היום${t.dueTime ? ' עד ' + t.dueTime : ''}`;
+                else if (t.dueDate === tomorrowStr) whenStr = `מחר${t.dueTime ? ' עד ' + t.dueTime : ''}`;
+                else {
+                    try {
+                        const [y, m, d] = t.dueDate.split('-');
+                        whenStr = `${d}/${m}${t.dueTime ? ' ' + t.dueTime : ''}`;
+                    } catch(e) { whenStr = t.dueDate; }
+                }
+            }
+            const timeInfo = whenStr ? ` (📅 ${whenStr})` : '';
             return `  ${idx + 1}. ${t.title} [${sName}]${timeInfo}`;
         }).join('\n');
 
-        const moreCount = tasks.length - 4;
-        const moreLine = moreCount > 0 ? `\n  • ועוד ${moreCount} משימות נוספות שממתינות לך באפליקציה!` : '';
+        const moreCount = tasks.length - displayTasks.length;
+        const moreLine = moreCount > 0 ? `\n  • (ועוד ${moreCount} משימות נוספות שממתינות לך בהמשך באפליקציה)` : '';
 
         return `היי ${name}! 🌸 תזכורת חמה ומעודדת ללמידה מ-StudyStreak Pro ✨\n` +
                `יש לך ${tasks.length} משימות לביצוע:\n` +

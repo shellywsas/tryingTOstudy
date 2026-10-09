@@ -1091,6 +1091,76 @@ function App() {
                 }
             };
 
+            const handleSendWhatsAppStudyReminder = (manual = false) => {
+                if (!activeUserData?.phoneNumber) {
+                    if (manual) showToast('נא להזין תחילה מספר טלפון בהגדרות 📱', 'warning');
+                    return;
+                }
+
+                const now = new Date();
+                const nowTime = now.getTime();
+
+                // סינון משימות פתוחות: כל המשימות שאינן הושלמו/בוטלו, ושלא בוטלו מפורשות בוואטסאפ
+                const activeTasks = (activeUserData.tasks || [])
+                    .filter(t => !t.completed && !t.givenUp && !t.isLessonLog && t.whatsappRemindersEnabled !== false && t.dueDate)
+                    .sort((a, b) => {
+                        const timeA = `${a.dueDate}T${a.dueTime || '23:59'}`;
+                        const timeB = `${b.dueDate}T${b.dueTime || '23:59'}`;
+                        return new Date(timeA) - new Date(timeB);
+                    });
+
+                if (activeTasks.length === 0) {
+                    if (manual) showToast('אין משימות פתוחות הממתינות לתזכורת כרגע! 🎉', 'info');
+                    return;
+                }
+
+                // סינון דחיפות חכם: משימות שעברו את היעד, משימות להיום, מחר או ב-48 השעות הקרובות בלבד ("לא כל המשימות בבת אחת!")
+                const urgentTasks = activeTasks.filter(t => {
+                    const timeStr = `${t.dueDate}T${t.dueTime || '23:59'}`;
+                    const taskDate = new Date(timeStr);
+                    if (isNaN(taskDate.getTime())) return false;
+                    const diffHours = (taskDate.getTime() - nowTime) / (1000 * 60 * 60);
+                    return diffHours <= 48; // עבר הזמן או עד 48 שעות קדימה
+                });
+
+                // בוחרים לכל היותר 1 עד 3 משימות הכי דחופות בלבד
+                const selectedTasks = urgentTasks.length > 0 
+                    ? urgentTasks.slice(0, 3) 
+                    : activeTasks.slice(0, 1);
+
+                if (selectedTasks.length === 0) {
+                    if (manual) showToast('אין משימות קרובות הדורשות תזכורת כרגע.', 'info');
+                    return;
+                }
+
+                const reminderMsg = WhatsAppService.generateCombinedStudentReminderText(
+                    activeUserData.name || 'שלי',
+                    selectedTasks,
+                    activeUserData.subjects || []
+                );
+
+                WhatsAppService.sendMessage({
+                    to: activeUserData.phoneNumber,
+                    message: reminderMsg,
+                    gatewayConfig: activeUserData.whatsappGateway
+                }).then(res => {
+                    updateUserData(prev => ({
+                        ...prev,
+                        lastGlobalWhatsAppReminderSent: Date.now()
+                    }));
+                    if (manual) {
+                        if (res && res.status === 'sent_gateway') {
+                            showToast(`תזכורת ל-${selectedTasks.length} משימות קרובות נשלחה לוואטסאפ! 💬🚀`, 'success');
+                        } else {
+                            showToast(`נפתח וואטסאפ לשליחת תזכורת למידה 📲`, 'info');
+                        }
+                    }
+                }).catch(e => {
+                    console.error('WhatsApp study reminder error:', e);
+                    if (manual) showToast('שגיאה בשליחת תזכורת לוואטסאפ', 'error');
+                });
+            };
+
             // אוטומציה של וואטסאפ: שליחת דוח שבועי במוצאי שבת ותזכורות משימות מתוזמנות
             useEffect(() => {
                 if (!activeUserData || !activeUserData.whatsappGateway?.instanceId) return;
@@ -1114,21 +1184,20 @@ function App() {
                         }
                     }
 
-                    // 2. תזכורות משימות חכמות (רק עבור משימות שהופעלו עליהן תזכורות וואטסאפ)
+                    // 2. תזכורות משימות חכמות (לפי דחיפות הלו"ז - "לא כל המשימות בבת אחת!")
                     if (activeUserData.phoneNumber) {
-                        // חישוב חלון זמנים מותר: אם יש בית ספר היום - רק מחצי שעה לפני סיום הלימודים ועד 22:00
                         const todayPlan = (activeUserData.scheduleSettings || []).find(s => s.day === day);
                         const schoolEndTime = todayPlan?.schoolEndTime;
                         const currentMinutes = hour * 60 + now.getMinutes();
 
                         let canSendRemindersNow = false;
-                        if (schoolEndTime) {
+                        if (schoolEndTime && schoolEndTime.trim() !== '') {
                             const [endH, endM] = schoolEndTime.split(':').map(Number);
                             const schoolEndMinutes = endH * 60 + (endM || 0);
                             const reminderStartMinutes = Math.max(0, schoolEndMinutes - 30); // חצי שעה לפני סיום הלימודים
                             canSendRemindersNow = (currentMinutes >= reminderStartMinutes && currentMinutes <= 22 * 60);
                         } else {
-                            // יום חופשי / ללא בית ספר: מ-10:00 בבוקר עד 22:00
+                            // יום חופשי / שבת: מ-10:00 בבוקר עד 22:00
                             canSendRemindersNow = (hour >= 10 && hour <= 22);
                         }
 
@@ -1138,28 +1207,7 @@ function App() {
 
                             // מרווח גלובלי של 3.5 שעות לפחות בין תזכורות כדי למנוע ספאם!
                             if (hoursSinceGlobal >= 3.5) {
-                                const activeTasks = (activeUserData.tasks || []).filter(t => !t.completed && t.whatsappRemindersEnabled && t.dueDate);
-                                if (activeTasks.length > 0) {
-                                    // מייצרים הודעה אחת מרוכזת ומעודנת במקום להציף בהודעות נפרדות
-                                    const reminderMsg = WhatsAppService.generateCombinedStudentReminderText(
-                                        activeUserData.name || 'שלי',
-                                        activeTasks,
-                                        activeUserData.subjects || []
-                                    );
-
-                                    WhatsAppService.sendMessage({
-                                        to: activeUserData.phoneNumber,
-                                        message: reminderMsg,
-                                        gatewayConfig: activeUserData.whatsappGateway
-                                    }).then(res => {
-                                        if (res && res.status === 'sent_gateway') {
-                                            updateUserData(prev => ({
-                                                ...prev,
-                                                lastGlobalWhatsAppReminderSent: Date.now()
-                                            }));
-                                        }
-                                    }).catch(e => console.error('Automated WhatsApp reminder error:', e));
-                                }
+                                handleSendWhatsAppStudyReminder(false);
                             }
                         }
                     }
@@ -1943,6 +1991,7 @@ function App() {
                         completed: false,
                         givenDate: actualGivenDate,
                         autoPenaltyApplied: false,
+                        whatsappRemindersEnabled: taskData.whatsappRemindersEnabled !== false,
                         attachments: attachments
                     };
                     updateUserData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
@@ -3107,7 +3156,8 @@ function App() {
                             dueDate: ses.date,
                             startTime: ses.startTime,
                             dueTime: ses.endTime,
-                            autoPenaltyApplied: false
+                            autoPenaltyApplied: false,
+                            whatsappRemindersEnabled: true
                         };
                     });
 
@@ -5442,11 +5492,18 @@ function App() {
                                                         className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-semibold outline-none focus:border-emerald-500 focus:bg-white transition-all text-right"
                                                     />
                                                 </div>
-                                                <button 
-                                                    onClick={() => handleSendWhatsAppTest('student')}
-                                                    className="bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 px-4 py-3 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1 shrink-0 self-end sm:self-center">
-                                                    <span>⚡</span> שליחת בדיקה למספר שלי
-                                                </button>
+                                                <div className="flex items-center gap-2 flex-wrap shrink-0 self-end sm:self-center">
+                                                    <button 
+                                                        onClick={() => handleSendWhatsAppTest('student')}
+                                                        className="bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 px-3 py-3 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1">
+                                                        <span>⚡</span> בדיקת מספר
+                                                    </button>
+                                                    <button 
+                                                        onClick={() => handleSendWhatsAppStudyReminder(true)}
+                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-3 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center justify-center gap-1.5 shadow-sm">
+                                                        <span>🔔</span> שליחת תזכורת למידה עכשיו
+                                                    </button>
+                                                </div>
                                             </div>
                                         </div>
 
@@ -8380,7 +8437,24 @@ function App() {
                                                 <div className="text-3xl font-black text-purple-600 drop-shadow-sm" dir="ltr">{activeUserData.taskStreak}</div>
                                             </div>
                                             <div className="text-xs font-bold text-purple-600/70 mb-3 relative z-10" dir="ltr">
-                                                התחיל ב: {new Date(activeUserData.currentStreakStart).toLocaleDateString('he-IL')}
+                                                {(() => {
+                                                    const rawStart = activeUserData.currentStreakStart;
+                                                    let d = rawStart ? new Date(rawStart) : null;
+                                                    if (!d || isNaN(d.getTime()) || d.getFullYear() < 2020) {
+                                                        const completed = (activeUserData.tasks || [])
+                                                            .filter(t => t.completed && !t.givenUp && !t.isLessonLog)
+                                                            .sort((a,b) => new Date(a.completedAt || a.createdAt) - new Date(b.completedAt || b.createdAt));
+                                                        const targetIdx = Math.max(0, completed.length - (activeUserData.taskStreak || 1));
+                                                        if (completed[targetIdx]) {
+                                                            const fallbackDate = completed[targetIdx].completedAt || completed[targetIdx].createdAt;
+                                                            if (fallbackDate) d = new Date(fallbackDate);
+                                                        }
+                                                    }
+                                                    if (d && !isNaN(d.getTime()) && d.getFullYear() >= 2020) {
+                                                        return `התחיל ב: ${d.toLocaleDateString('he-IL')}`;
+                                                    }
+                                                    return null;
+                                                })()}
                                             </div>
                                             {activeUserData.currentStreakEmojis && activeUserData.currentStreakEmojis.length > 0 && (
                                                 <div className="bg-white/60 p-2 rounded-xl text-sm flex flex-wrap gap-1.5 border border-purple-100/50 relative z-10">
