@@ -112,10 +112,17 @@ function App() {
                 setSyncState('syncing');
                 try {
                     const pending = typeof getPendingSync === 'function' ? getPendingSync(targetUser) : null;
-                    const userToUpload = pending?.data || globalState.users[targetUser];
+                    let userToUpload = pending?.data || globalState.users[targetUser];
                     if (!userToUpload) {
                         setSyncState('synced');
                         return true;
+                    }
+                    if (Array.isArray(userToUpload.deletedTaskIds) && userToUpload.deletedTaskIds.length > 0 && Array.isArray(userToUpload.tasks)) {
+                        const delSet = new Set(userToUpload.deletedTaskIds);
+                        userToUpload = {
+                            ...userToUpload,
+                            tasks: userToUpload.tasks.filter(t => t && !delSet.has(t.id))
+                        };
                     }
                     const cleanData = sanitizeForFirestore(userToUpload);
                     await db.collection("users").doc(targetUser).set(cleanData, { merge: true });
@@ -1608,26 +1615,82 @@ function App() {
             const adminCancelPenalty = (user, penaltyLog) => {
                 if (!user || !penaltyLog) return;
                 const deducted = Math.abs(penaltyLog.points || 0);
-                // החזר כפול (פי 2): החזרת הנקודות שקוזזו בקנס + הענקת נקודות ההגשה שהיו מגיעות
-                const refund = deducted * 2;
+                const targetTask = (user.tasks || []).find(t => t.id === penaltyLog.taskId);
+                const expectedPoints = typeof calculateTaskExpectedPoints === 'function'
+                    ? calculateTaskExpectedPoints(targetTask)
+                    : (targetTask?.isExamPrep ? 2 : 1);
+                
+                const refund = deducted + expectedPoints;
+                
+                const logTime = penaltyLog.date ? new Date(penaltyLog.date).getTime() : Date.now();
+                const weekStart = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM() : 0;
+                const isThisWeek = logTime >= weekStart;
+
                 const newTotal = (user.totalPoints || 0) + refund;
-                const newWeekly = (user.weeklyPoints || 0) + refund;
+                const newWeekly = (user.weeklyPoints || 0) + (isThisWeek ? refund : 0);
+
                 const refundEntry = {
                     id: 'ph_admin_refund_' + Date.now(),
                     taskId: penaltyLog.taskId || '',
-                    taskTitle: penaltyLog.taskTitle || 'ביטול קנס והחזר כפול',
+                    taskTitle: targetTask?.title || penaltyLog.taskTitle || 'ביטול קנס',
                     points: refund,
                     date: new Date().toISOString(),
-                    details: `ביטול קנס (${deducted} נק') והחזרת נקודות הגשה שהיו מגיעות (${deducted} נק') - סה"כ פי 2 (+${refund} נק')`
+                    details: `ביטול קנס (+${deducted} נק') והענקת נקודות הגשה (+${expectedPoints} נק') - סה"כ +${refund} נק'`
                 };
+
                 const newHistory = (user.pointsHistory || []).map(h => h.id === penaltyLog.id ? { ...h, canceled: true } : h);
                 newHistory.unshift(refundEntry);
+
+                let newTasks = user.tasks || [];
+                if (targetTask) {
+                    newTasks = newTasks.map(t => {
+                        if (t.id === targetTask.id) {
+                            return {
+                                ...t,
+                                completed: true,
+                                completedAt: t.completedAt || new Date().toISOString(),
+                                autoPenaltyApplied: false,
+                                pointsEarned: expectedPoints,
+                                lateReason: ''
+                            };
+                        }
+                        return t;
+                    });
+                }
+
+                // Preserve and restore streak:
+                let newTaskStreak = user.taskStreak !== undefined ? user.taskStreak : 0;
+                let newLongestStreak = user.longestStreak || 0;
+                let newStreakHistory = [...(user.streakHistory || [])];
+
+                const brokenIdx = newStreakHistory.findIndex(s => 
+                    s && (s.brokenByTaskId === penaltyLog.taskId || 
+                          (targetTask && targetTask.dueDate && s.endDate && Math.abs(new Date(s.endDate).getTime() - new Date(targetTask.dueDate).getTime()) < 86400000))
+                );
+
+                if (brokenIdx !== -1) {
+                    const brokenRecord = newStreakHistory[brokenIdx];
+                    newStreakHistory.splice(brokenIdx, 1);
+                    if (newTaskStreak === 0) {
+                        newTaskStreak = (brokenRecord.length || 0) + 1;
+                    } else {
+                        newTaskStreak = Math.max(newTaskStreak, (brokenRecord.length || 0) + 1);
+                    }
+                } else if (targetTask && newTaskStreak === 0 && (targetTask.completed || targetTask.completedAt)) {
+                    newTaskStreak = 1;
+                }
+                newLongestStreak = Math.max(newLongestStreak, newTaskStreak);
+
                 saveAdminUserUpdate(user.username, {
                     totalPoints: newTotal,
                     weeklyPoints: newWeekly,
-                    pointsHistory: newHistory
+                    pointsHistory: newHistory,
+                    tasks: newTasks,
+                    taskStreak: newTaskStreak,
+                    longestStreak: newLongestStreak,
+                    streakHistory: newStreakHistory
                 });
-                showToast(`הקנס בוטל והוחזרו פי 2 נקודות (+${refund} נקודות) לחשבון! 💚`, 'success');
+                showToast(`הקנס בוטל והוענקו נקודות הגשה (+${refund} נק' סה"כ) לחשבון! 💚`, 'success');
             };
 
             const adminRestoreStreak = (user, streakItem) => {
@@ -1665,7 +1728,8 @@ function App() {
 
             const adminDeleteTask = (user, taskId) => {
                 const newTasks = (user.tasks || []).filter(t => t.id !== taskId);
-                saveAdminUserUpdate(user.username, { tasks: newTasks });
+                const deletedTaskIds = Array.from(new Set([...(user.deletedTaskIds || []), taskId]));
+                saveAdminUserUpdate(user.username, { tasks: newTasks, deletedTaskIds });
                 showToast('המשימה נמחקה בהצלחה', 'info');
             };
 
@@ -1687,38 +1751,84 @@ function App() {
 
             const adminResetTaskPenalty = (user, taskId) => {
                 const targetTask = (user.tasks || []).find(t => t.id === taskId);
-                const newTasks = (user.tasks || []).map(t => t.id === taskId ? { ...t, autoPenaltyApplied: false } : t);
-                
                 let newHistory = [...(user.pointsHistory || [])];
                 const matchingPenalty = newHistory.find(h => h.taskId === taskId && (h.points || 0) < 0 && !h.canceled);
                 const deducted = matchingPenalty ? Math.abs(matchingPenalty.points) : 2;
-                // החזר פי 2: החזרת הקנס שירד + נקודות ההגשה שמגיעות לה
-                const refund = deducted * 2;
                 
                 if (matchingPenalty) {
                     matchingPenalty.canceled = true;
                 }
-                
+
+                const expectedPoints = typeof calculateTaskExpectedPoints === 'function'
+                    ? calculateTaskExpectedPoints(targetTask)
+                    : (targetTask?.isExamPrep ? 2 : 1);
+
+                const refund = deducted + expectedPoints;
+
+                const logTime = matchingPenalty?.date ? new Date(matchingPenalty.date).getTime() : Date.now();
+                const weekStart = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM() : 0;
+                const isThisWeek = logTime >= weekStart;
+
                 const refundEntry = {
                     id: 'ph_admin_refund_' + Date.now(),
                     taskId: taskId,
                     taskTitle: targetTask?.title || matchingPenalty?.taskTitle || 'ביטול קנס משימה',
                     points: refund,
                     date: new Date().toISOString(),
-                    details: `ביטול קנס משימה והחזר נקודות הגשה כפולות (+${refund} נק') ע״י מנהל`
+                    details: `ביטול קנס משימה (+${deducted} נק') והענקת נקודות הגשה (+${expectedPoints} נק') ע״י מנהל`
                 };
                 newHistory.unshift(refundEntry);
 
+                const newTasks = (user.tasks || []).map(t => {
+                    if (t.id === taskId) {
+                        return {
+                            ...t,
+                            completed: true,
+                            completedAt: t.completedAt || new Date().toISOString(),
+                            autoPenaltyApplied: false,
+                            pointsEarned: expectedPoints,
+                            lateReason: ''
+                        };
+                    }
+                    return t;
+                });
+
+                // Streak protection:
+                let newTaskStreak = user.taskStreak !== undefined ? user.taskStreak : 0;
+                let newLongestStreak = user.longestStreak || 0;
+                let newStreakHistory = [...(user.streakHistory || [])];
+
+                const brokenIdx = newStreakHistory.findIndex(s => 
+                    s && (s.brokenByTaskId === taskId || 
+                          (targetTask && targetTask.dueDate && s.endDate && Math.abs(new Date(s.endDate).getTime() - new Date(targetTask.dueDate).getTime()) < 86400000))
+                );
+
+                if (brokenIdx !== -1) {
+                    const brokenRecord = newStreakHistory[brokenIdx];
+                    newStreakHistory.splice(brokenIdx, 1);
+                    if (newTaskStreak === 0) {
+                        newTaskStreak = (brokenRecord.length || 0) + 1;
+                    } else {
+                        newTaskStreak = Math.max(newTaskStreak, (brokenRecord.length || 0) + 1);
+                    }
+                } else if (newTaskStreak === 0) {
+                    newTaskStreak = 1;
+                }
+                newLongestStreak = Math.max(newLongestStreak, newTaskStreak);
+
                 const newTotal = (user.totalPoints || 0) + refund;
-                const newWeekly = (user.weeklyPoints || 0) + refund;
+                const newWeekly = (user.weeklyPoints || 0) + (isThisWeek ? refund : 0);
 
                 saveAdminUserUpdate(user.username, { 
                     tasks: newTasks,
                     totalPoints: newTotal,
                     weeklyPoints: newWeekly,
-                    pointsHistory: newHistory
+                    pointsHistory: newHistory,
+                    taskStreak: newTaskStreak,
+                    longestStreak: newLongestStreak,
+                    streakHistory: newStreakHistory
                 });
-                showToast(`בוטל קנס המשימה והוחזרו פי 2 נקודות (+${refund} נק') לחשבון! 💚`, 'success');
+                showToast(`בוטל קנס המשימה והוענקו נקודות הגשה (+${refund} נק' סה"כ) לחשבון! 💚`, 'success');
             };
 
             const showToast = (text, type = 'info') => {
@@ -2134,6 +2244,7 @@ function App() {
                 updateUserData(prev => {
                     const taskToDelete = (prev.tasks || []).find(t => t.id === taskId);
                     const remainingTasks = (prev.tasks || []).filter(t => t.id !== taskId);
+                    const deletedTaskIds = Array.from(new Set([...(prev.deletedTaskIds || []), taskId]));
                     let updatedExams = prev.exams;
                     if (taskToDelete && taskToDelete.examId) {
                         updatedExams = (prev.exams || []).map(ex => {
@@ -2149,7 +2260,7 @@ function App() {
                             return ex;
                         });
                     }
-                    return { ...prev, tasks: remainingTasks, exams: updatedExams };
+                    return { ...prev, tasks: remainingTasks, deletedTaskIds, exams: updatedExams };
                 });
                 showToast('משימה נמחקה', 'success');
             };
@@ -4305,12 +4416,19 @@ function App() {
                                                                             <div className="font-bold text-stone-800 text-xs">{pen.details || pen.taskTitle || 'קנס איחור'}</div>
                                                                             <div className="text-[10px] text-stone-400">{new Date(pen.date).toLocaleDateString('he-IL')} • קנס של {Math.abs(pen.points)} נקודות</div>
                                                                         </div>
-                                                                        <button 
-                                                                            onClick={() => adminCancelPenalty(selectedAdminUser, pen)}
-                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all shrink-0 shadow-xs"
-                                                                            title="ביטול קנס והחזרת נקודות הגשה (פי 2)">
-                                                                            בטל קנס והחזר פי 2 (+{Math.abs(pen.points) * 2} נק') 💚
-                                                                        </button>
+                                                                        {(() => {
+                                                                            const task = (selectedAdminUser.tasks || []).find(t => t.id === pen.taskId);
+                                                                            const expPts = typeof calculateTaskExpectedPoints === 'function' ? calculateTaskExpectedPoints(task) : 1;
+                                                                            const totalRef = Math.abs(pen.points) + expPts;
+                                                                            return (
+                                                                                <button 
+                                                                                    onClick={() => adminCancelPenalty(selectedAdminUser, pen)}
+                                                                                    className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-1.5 rounded-lg active:scale-95 transition-all shrink-0 shadow-xs"
+                                                                                    title={`ביטול קנס (+${Math.abs(pen.points)} נק') והענקת נקודות הגשה (+${expPts} נק')`}>
+                                                                                    בטל קנס (+{totalRef} נק') 💚
+                                                                                </button>
+                                                                            );
+                                                                        })()}
                                                                     </div>
                                                                 ))}
                                                             </div>
@@ -4398,14 +4516,21 @@ function App() {
                                                                     className="text-[11px] bg-white border border-stone-200 px-2 py-1 rounded-lg font-bold hover:bg-stone-100">
                                                                     {t.completed ? 'סמן כלא הושלם' : 'סמן כהושלם'}
                                                                 </button>
-                                                                {t.autoPenaltyApplied && (
-                                                                    <button 
-                                                                        onClick={() => adminResetTaskPenalty(selectedAdminUser, t.id)}
-                                                                        className="text-[11px] bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-1 rounded-lg font-bold hover:bg-emerald-100"
-                                                                        title="ביטול קנס והחזרת נקודות הגשה (פי 2)">
-                                                                        בטל קנס (פי 2 נק') 💚
-                                                                    </button>
-                                                                )}
+                                                                {t.autoPenaltyApplied && (() => {
+                                                                    const hist = selectedAdminUser.pointsHistory || [];
+                                                                    const penLog = hist.find(h => h.taskId === t.id && (h.points || 0) < 0 && !h.canceled);
+                                                                    const penPts = penLog ? Math.abs(penLog.points) : 2;
+                                                                    const expPts = typeof calculateTaskExpectedPoints === 'function' ? calculateTaskExpectedPoints(t) : 1;
+                                                                    const totalRef = penPts + expPts;
+                                                                    return (
+                                                                        <button 
+                                                                            onClick={() => adminResetTaskPenalty(selectedAdminUser, t.id)}
+                                                                            className="text-[11px] bg-emerald-50 border border-emerald-200 text-emerald-700 px-2 py-1 rounded-lg font-bold hover:bg-emerald-100"
+                                                                            title={`ביטול קנס (+${penPts} נק') והענקת נקודות הגשה (+${expPts} נק')`}>
+                                                                            בטל קנס (+{totalRef} נק') 💚
+                                                                        </button>
+                                                                    );
+                                                                })()}
                                                                 <button 
                                                                     onClick={() => adminDeleteTask(selectedAdminUser, t.id)}
                                                                     className="p-1.5 text-stone-400 hover:text-rose-600 rounded-lg"

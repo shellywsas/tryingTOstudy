@@ -76,9 +76,10 @@
         return Array.from(byId.values());
     }
 
-    function mergeTasks(localTasks, incomingTasks, pointsHistory) {
-        const local = Array.isArray(localTasks) ? localTasks : [];
-        const incoming = Array.isArray(incomingTasks) ? incomingTasks : [];
+    function mergeTasks(localTasks, incomingTasks, pointsHistory, deletedTaskIds = []) {
+        const deletedSet = new Set(Array.isArray(deletedTaskIds) ? deletedTaskIds : []);
+        const local = (Array.isArray(localTasks) ? localTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
+        const incoming = (Array.isArray(incomingTasks) ? incomingTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
         const byId = new Map();
         for (const t of local) {
             if (t && t.id) byId.set(t.id, t);
@@ -182,19 +183,48 @@
         const localSync = local.lastSync || 0;
         const mergedBadges = mergeBadges(local.badges, remote.badges);
         const mergedExams = mergeExams(local.exams || [], remote.exams || []);
+        const mergedDeletedTaskIds = Array.from(new Set([
+            ...(Array.isArray(local.deletedTaskIds) ? local.deletedTaskIds : []),
+            ...(Array.isArray(remote.deletedTaskIds) ? remote.deletedTaskIds : [])
+        ]));
 
         if (tabWrittenSync && remoteSync && remoteSync <= tabWrittenSync) {
-            return { ...local, badges: mergedBadges, exams: mergedExams };
+            return { 
+                ...local, 
+                badges: mergedBadges, 
+                exams: mergedExams,
+                deletedTaskIds: mergedDeletedTaskIds,
+                tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
+            };
         }
-        if (!remoteSync && localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
-        if (remoteSync && localSync && remoteSync < localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
-        if (remoteSync && localSync && remoteSync === localSync) return { ...local, badges: mergedBadges, exams: mergedExams };
+        if (!remoteSync && localSync) return { 
+            ...local, 
+            badges: mergedBadges, 
+            exams: mergedExams,
+            deletedTaskIds: mergedDeletedTaskIds,
+            tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
+        };
+        if (remoteSync && localSync && remoteSync < localSync) return { 
+            ...local, 
+            badges: mergedBadges, 
+            exams: mergedExams,
+            deletedTaskIds: mergedDeletedTaskIds,
+            tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
+        };
+        if (remoteSync && localSync && remoteSync === localSync) return { 
+            ...local, 
+            badges: mergedBadges, 
+            exams: mergedExams,
+            deletedTaskIds: mergedDeletedTaskIds,
+            tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
+        };
         const hist = local.pointsHistory || remote.pointsHistory || [];
         return {
             ...remote,
             badges: mergedBadges,
             exams: mergedExams,
-            tasks: mergeTasks(local.tasks || [], remote.tasks || [], hist),
+            deletedTaskIds: mergedDeletedTaskIds,
+            tasks: mergeTasks(local.tasks || [], remote.tasks || [], hist, mergedDeletedTaskIds),
         };
     }
 
@@ -209,7 +239,35 @@
         let newHist = [...hist];
         const weekStart = getLastSaturday22PM();
 
-        const tasks = user.tasks.map((t) => {
+        const deletedSet = new Set(Array.isArray(user.deletedTaskIds) ? user.deletedTaskIds : []);
+        const subMap = new Map((user.subjects || []).map(s => [s.id, s.name || '']));
+        const inputTasks = user.tasks.filter(t => {
+            if (!t || !t.id) return false;
+            if (deletedSet.has(t.id)) {
+                changed = true;
+                return false;
+            }
+            const subName = subMap.get(t.subjectId) || '';
+            const isPhysics = subName.includes('פיזיקה');
+            const isCivics = subName.includes('אזרחות');
+            const titleOrTopic = `${t.title || ''} ${t.lessonTopic || ''}`;
+            const mentionsCivics = titleOrTopic.includes('אזרחות') || titleOrTopic.includes('אופיה של מדינת ישראל') || titleOrTopic.includes('מגילת העצמאות');
+            const mentionsPhysics = titleOrTopic.includes('פיזיקה') || titleOrTopic.includes('קולון') || titleOrTopic.includes('דופלר') || titleOrTopic.includes('אנרגיה חשמלית');
+
+            if (isPhysics && mentionsCivics && !mentionsPhysics) {
+                deletedSet.add(t.id);
+                changed = true;
+                return false;
+            }
+            if (isCivics && mentionsPhysics && !mentionsCivics) {
+                deletedSet.add(t.id);
+                changed = true;
+                return false;
+            }
+            return true;
+        });
+
+        const tasks = inputTasks.map((t) => {
             if (!t) return t;
             const isDone = taskLooksCompleted(t, hist);
             const onTime = isTaskSubmittedOnTime(t);
@@ -320,7 +378,8 @@
             weeklyPoints,
             pointsHistory: newHist,
             taskStreak: taskStreak !== undefined ? taskStreak : (user.taskStreak || 0),
-            streakHistory
+            streakHistory,
+            deletedTaskIds: Array.from(deletedSet)
         };
     }
 

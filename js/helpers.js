@@ -632,6 +632,41 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return { updatedTasks, updatedCount };
         };
 
+        const calculateTaskExpectedPoints = (task) => {
+            if (!task) return 1;
+            if (typeof task.rewardPoints === 'number' && task.rewardPoints > 0) {
+                return task.rewardPoints;
+            }
+            if (task.isFlexibleExamSession) {
+                return 3;
+            }
+
+            const createdAt = task.createdAt ? new Date(task.createdAt) : null;
+            let dueDate = null;
+            if (task.dueDate && task.dueTime) {
+                dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
+            } else if (task.dueDate) {
+                dueDate = new Date(`${task.dueDate}T23:59:59`);
+            }
+
+            let isEarly = false;
+            const completionTime = task.completedAt ? new Date(task.completedAt) : null;
+            if (dueDate && createdAt && !isNaN(dueDate.getTime()) && !isNaN(createdAt.getTime()) && completionTime && !isNaN(completionTime.getTime())) {
+                const totalDurationMs = dueDate.getTime() - createdAt.getTime();
+                const usedDurationMs = completionTime.getTime() - createdAt.getTime();
+                // Early if completed in first half of available duration or >= 24h before due
+                if (usedDurationMs <= Math.max(totalDurationMs / 2, 86400000) && completionTime.getTime() <= (dueDate.getTime() + 5 * 60 * 1000)) {
+                    isEarly = true;
+                }
+            }
+
+            let points = isEarly ? 2 : 1;
+            if (task.isExamPrep) {
+                points += 1;
+            }
+            return points;
+        };
+
         const formatPastExamDate = (examDateStr) => {
             if (!examDateStr) return '';
             try {
@@ -651,3 +686,11 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 return examDateStr;
             }
         };
+
+        if (typeof module !== 'undefined' && module.exports) {
+            module.exports = {
+                calculateTaskExpectedPoints,
+                formatPastExamDate,
+                syncExamStudyTasks
+            };
+        }
