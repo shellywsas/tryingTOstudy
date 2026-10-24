@@ -353,21 +353,7 @@
             return updated;
         });
 
-        // Self-healing: if user has weeklyPoints > 0 but has not completed tasks or earned positive points this week, heal to 0!
-        const hasPositiveActivityThisWeek = tasks.some(t => {
-            if (!t || !t.completed || !t.completedAt) return false;
-            const tTime = new Date(t.completedAt).getTime();
-            return !isNaN(tTime) && tTime >= weekStart;
-        }) || newHist.some(h => {
-            if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
-            const hTime = new Date(h.date).getTime();
-            return !isNaN(hTime) && hTime >= weekStart;
-        });
-
-        if (!hasPositiveActivityThisWeek && weeklyPoints > 0) {
-            weeklyPoints = 0;
-            changed = true;
-        }
+        // Preserve weeklyPoints - weekly crowning and points reset are handled safely in weekly reset cycle
 
         if (!changed) return user;
 

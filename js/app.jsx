@@ -424,21 +424,92 @@ function App() {
             ]);
 
 
+            // Helper: calculate total positive points earned by a user within a time window [startTime, endTime]
+            const calculatePointsInWindow = (uData, startTime, endTime) => {
+                if (!uData) return 0;
+                const hist = uData.pointsHistory || [];
+                const histSum = hist.filter(h => {
+                    if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
+                    const t = new Date(h.date).getTime();
+                    return !isNaN(t) && t >= startTime && t <= endTime;
+                }).reduce((sum, h) => sum + (h.points || 0), 0);
+
+                const tasks = uData.tasks || [];
+                const taskSum = tasks.filter(t => {
+                    if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
+                    const tTime = new Date(t.completedAt).getTime();
+                    return !isNaN(tTime) && tTime >= startTime && tTime <= endTime;
+                }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
+
+                return Math.max(histSum, taskSum);
+            };
+
+            // Helper: evaluate historical weekly wins across all past completed weeks
+            const evaluateHistoricalWeeklyWins = (userData, friendsMap) => {
+                if (!userData) return 0;
+                const now = Date.now();
+                const tasks = userData.tasks || [];
+                const hist = userData.pointsHistory || [];
+                const allTimestamps = [
+                    ...tasks.map(t => t.completedAt ? new Date(t.completedAt).getTime() : 0),
+                    ...hist.map(h => h.date ? new Date(h.date).getTime() : 0)
+                ].filter(t => t > 0 && !isNaN(t));
+
+                if (allTimestamps.length === 0) return 0;
+                const earliestTime = Math.min(...allTimestamps);
+                const friendsArr = Object.values(friendsMap || {});
+
+                let winsCount = 0;
+                let satTime = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : now;
+                const oneWeekMs = 7 * 86400000;
+                let currentWeekEnd = satTime;
+
+                while (currentWeekEnd >= earliestTime) {
+                    const currentWeekStart = currentWeekEnd - oneWeekMs;
+                    const userPtsInWeek = calculatePointsInWindow(userData, currentWeekStart, currentWeekEnd);
+
+                    if (userPtsInWeek > 0) {
+                        let isTopInWeek = true;
+                        for (const f of friendsArr) {
+                            const fPtsInWeek = calculatePointsInWindow(f, currentWeekStart, currentWeekEnd);
+                            if (fPtsInWeek > userPtsInWeek) {
+                                isTopInWeek = false;
+                                break;
+                            }
+                        }
+                        if (isTopInWeek) {
+                            winsCount++;
+                        }
+                    }
+                    currentWeekEnd -= oneWeekMs;
+                }
+
+                return winsCount;
+            };
+
             useEffect(() => {
                 if (!activeUserData || !globalState.activeUser) return;
                 const now = new Date().getTime();
-                const weekStart = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : (now - (7 * 86400000));
+                const currentWeekStart = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : (now - (7 * 86400000));
                 
-                // 1. Regular weekly reset on Saturday 22:00
+                // 1. Regular weekly reset on Saturday 22:00 (or on first load after Saturday 22:00)
                 if (now > (activeUserData.nextWeeklyReset || 0)) {
-                    const userWeeklyPts = activeUserData.weeklyPoints || 0;
+                    const completedWeekEnd = activeUserData.nextWeeklyReset && activeUserData.nextWeeklyReset > 0 
+                        ? activeUserData.nextWeeklyReset 
+                        : currentWeekStart;
+                    const completedWeekStart = completedWeekEnd - (7 * 86400000);
+
+                    const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
+                    const userWeeklyPts = Math.max(activeUserData.weeklyPoints || 0, activeUserData.lastWeekPoints || 0, userHistoricalPts);
+
                     const friendsArr = Object.values(liveFriends || {});
-                    let isTop = true;
+                    let isTop = userWeeklyPts > 0;
                     let topFriendName = '';
                     let topFriendPts = 0;
 
                     friendsArr.forEach(f => {
-                        const fPts = f.weeklyPoints || 0;
+                        const fHistPts = calculatePointsInWindow(f, completedWeekStart, completedWeekEnd);
+                        const fPts = Math.max(f.weeklyPoints || 0, f.lastWeekPoints || 0, fHistPts);
                         if (fPts > userWeeklyPts) {
                             isTop = false;
                             if (fPts > topFriendPts) {
@@ -448,63 +519,88 @@ function App() {
                         }
                     });
 
-                    let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : b));
+                    let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
                     let wonCrown = false;
+                    let newChampCount = 1;
 
                     if (isTop && userWeeklyPts > 0) {
                         wonCrown = true;
                         const champBadgeIdx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
                         if (champBadgeIdx !== -1) {
+                            newChampCount = (updatedBadges[champBadgeIdx].count || 1) + 1;
                             updatedBadges[champBadgeIdx] = {
                                 ...updatedBadges[champBadgeIdx],
-                                count: (updatedBadges[champBadgeIdx].count || 1) + 1,
+                                count: newChampCount,
                                 lastWonAt: new Date().toISOString()
                             };
                         } else {
+                            newChampCount = 1;
                             updatedBadges.push({
                                 id: 'b_weekly_champ',
                                 count: 1,
                                 earnedAt: new Date().toISOString()
                             });
                         }
-                        showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! זכית בתג אלופת השבוע! 👑`, 'success');
+                        showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! זכית בכתר שבועי נוסף! 👑`, 'success');
+                        setCrowningCelebrationModal({
+                            winnerName: activeUserData.name || 'אלופה',
+                            points: userWeeklyPts,
+                            crownCount: newChampCount,
+                            isNewWin: true
+                        });
                     } else if (topFriendName && topFriendPts > 0) {
                         showToast(`סיום שבוע! אלופת השבוע החולף היא ${topFriendName} עם ${topFriendPts} נק' 👑`, 'info');
                     }
 
+                    // Calculate points earned *after* the reset timestamp for the new week
+                    const newWeekPoints = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
+
                     updateUserData(prev => ({
                         ...prev,
-                        highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints || 0),
-                        lastWeekPoints: prev.weeklyPoints || 0,
-                        weeklyPoints: 0,
+                        highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, userWeeklyPts),
+                        lastWeekPoints: userWeeklyPts,
+                        weeklyPoints: newWeekPoints,
                         nextWeeklyReset: getNextSaturday22PM(),
                         badges: wonCrown ? updatedBadges : (prev.badges || [])
                     }));
                     return;
                 }
 
-                // 2. Self-healing check: if weeklyPoints > 0 but user has not done any tasks or earned points since the start of this week, heal to 0
-                if ((activeUserData.weeklyPoints || 0) > 0) {
-                    const tasks = activeUserData.tasks || [];
-                    const hist = activeUserData.pointsHistory || [];
-                    const hasPositiveActivityThisWeek = tasks.some(t => {
-                        if (!t || !t.completed || !t.completedAt) return false;
-                        const tTime = new Date(t.completedAt).getTime();
-                        return !isNaN(tTime) && tTime >= weekStart;
-                    }) || hist.some(h => {
-                        if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
-                        const hTime = new Date(h.date).getTime();
-                        return !isNaN(hTime) && hTime >= weekStart;
-                    });
+                // 2. Retroactive healing of missing crowns:
+                // If user had weeks where they were weekly champion in the past, ensure crown count reflects all won weeks!
+                const totalPastWins = evaluateHistoricalWeeklyWins(activeUserData, liveFriends);
+                const currentBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
+                const champBadgeIdx = currentBadges.findIndex(b => b.id === 'b_weekly_champ');
+                const currentChampCount = champBadgeIdx !== -1 ? (currentBadges[champBadgeIdx].count || 1) : 0;
 
-                    if (!hasPositiveActivityThisWeek) {
-                        updateUserData(prev => ({
-                            ...prev,
-                            weeklyPoints: 0
-                        }));
+                if (totalPastWins > currentChampCount) {
+                    let healedBadges = [...currentBadges];
+                    if (champBadgeIdx !== -1) {
+                        healedBadges[champBadgeIdx] = {
+                            ...healedBadges[champBadgeIdx],
+                            count: totalPastWins,
+                            lastWonAt: new Date().toISOString()
+                        };
+                    } else {
+                        healedBadges.push({
+                            id: 'b_weekly_champ',
+                            count: totalPastWins,
+                            earnedAt: new Date().toISOString()
+                        });
                     }
+                    updateUserData(prev => ({
+                        ...prev,
+                        badges: healedBadges
+                    }));
+                    showToast(`👑 עודכנו הכתרים שלך! יש לך כעת ${totalPastWins} כתרים של אלופת השבוע! 👑`, 'success');
+                    setCrowningCelebrationModal({
+                        winnerName: activeUserData.name || 'אלופה',
+                        points: activeUserData.highestWeeklyPoints || activeUserData.weeklyPoints || 0,
+                        crownCount: totalPastWins,
+                        isNewWin: false
+                    });
                 }
-            }, [globalState.activeUser, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, Object.keys(liveFriends || {}).length]);
 
 
             useEffect(() => {
@@ -1314,6 +1410,7 @@ function App() {
             const [viewingNotesExam, setViewingNotesExam] = useState(null);
             const [isEditingNotesModal, setIsEditingNotesModal] = useState(false);
             const [notesModalDraft, setNotesModalDraft] = useState('');
+            const [crowningCelebrationModal, setCrowningCelebrationModal] = useState(null);
 
             useEffect(() => {
                 if (editingTask) {
@@ -1385,7 +1482,7 @@ function App() {
                 if (!task) return;
                 setViewingNotesTask(task);
                 setNotesModalDraft(task.notes || '');
-                setIsEditingNotesModal(false);
+                setIsEditingNotesModal(!task.notes);
             };
 
             const handleSaveTaskNotes = (taskId, newNotes) => {
@@ -1403,7 +1500,7 @@ function App() {
                 if (!exam) return;
                 setViewingNotesExam(exam);
                 setNotesModalDraft(exam.notes || '');
-                setIsEditingNotesModal(false);
+                setIsEditingNotesModal(!exam.notes);
             };
 
             const handleSaveExamNotes = (examId, newNotes) => {
@@ -4904,6 +5001,16 @@ function App() {
                                     <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
                                     <div className="flex items-center gap-1.5 mt-0.5">
                                         <span className="text-xs text-stone-500 font-medium">היי, {activeUserData.name}</span>
+                                        {(() => {
+                                            const champBadge = (activeUserData.badges || []).find(b => (typeof b === 'string' ? b === 'b_weekly_champ' : b?.id === 'b_weekly_champ'));
+                                            const champCount = champBadge?.count || (champBadge ? 1 : 0);
+                                            if (champCount <= 0) return null;
+                                            return (
+                                                <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-black flex items-center gap-1 shadow-2xs" title={`אלופת השבוע ${champCount} פעמים`}>
+                                                    👑 {champCount > 1 ? `x${champCount}` : ''}
+                                                </span>
+                                            );
+                                        })()}
                                         <button 
                                             onClick={() => setIsSyncDiagnosticsOpen(true)}
                                             className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all flex items-center gap-1 cursor-pointer ${
@@ -4976,6 +5083,16 @@ function App() {
                                        syncState === 'syncing' ? 'מסנכרן...' :
                                        syncState === 'offline' ? 'מקומי' : 'שגיאה'}</span>
                             </button>
+                            {(() => {
+                                const champBadge = (activeUserData.badges || []).find(b => (typeof b === 'string' ? b === 'b_weekly_champ' : b?.id === 'b_weekly_champ'));
+                                const champCount = champBadge?.count || (champBadge ? 1 : 0);
+                                if (champCount <= 0) return null;
+                                return (
+                                    <button onClick={() => setActiveTab('friends')} className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shadow-2xs active:scale-95" title={`אלופת השבוע ${champCount} פעמים - לחצי לצפייה בטבלה`}>
+                                        <span>👑</span> {champCount > 1 ? `x${champCount}` : ''}
+                                    </button>
+                                );
+                            })()}
                             <button onClick={()=>toggleModal('streakHistory', true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95">
                                 <span>🔥</span> {activeUserData.taskStreak}
                             </button>
@@ -5117,14 +5234,18 @@ function App() {
                                                                         <span>📎</span> {task.attachments.length} קבצים
                                                                     </button>
                                                                 )}
-                                                                {Boolean(task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
+                                                                {Boolean(task.notes || task.isExamPrep || task.examId || task.isFlexibleExamSession || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
                                                                     <button 
                                                                         type="button"
                                                                         onClick={(e) => { e.stopPropagation(); handleOpenNotesTask(task); }}
-                                                                        className="text-[10px] font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300/70 flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95"
-                                                                        title="צפייה בתכנון ובהערות הלמידה"
+                                                                        className={`text-[10px] px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95 ${
+                                                                            task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)
+                                                                                ? 'font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 border-amber-300/70'
+                                                                                : 'font-semibold text-stone-600 bg-stone-100/90 hover:bg-amber-50 hover:text-amber-800 border-dashed border-stone-300 hover:border-amber-300'
+                                                                        }`}
+                                                                        title={task.notes ? 'צפייה ועריכת תכנון והערות למידה' : 'הוספת תכנון והערות למפגש למידה זה'}
                                                                     >
-                                                                        <span>📝</span> הערות ותכנון
+                                                                        <span>📝</span> {task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes) ? 'הערות ותכנון' : '+ תכנון למידה'}
                                                                     </button>
                                                                 )}
                                                             </div>
@@ -5297,14 +5418,18 @@ function App() {
                                                                     <span>📎</span> {task.attachments.length} קבצים
                                                                 </button>
                                                             )}
-                                                            {Boolean(task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
+                                                            {Boolean(task.notes || task.isExamPrep || task.examId || task.isFlexibleExamSession || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
                                                                 <button 
                                                                     type="button"
                                                                     onClick={(e) => { e.stopPropagation(); handleOpenNotesTask(task); }} 
-                                                                    className="text-xs font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2.5 py-1 rounded-lg border border-amber-300/70 flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95"
-                                                                    title="צפייה בתכנון ובהערות הלמידה"
+                                                                    className={`text-xs px-2.5 py-1 rounded-lg border flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95 ${
+                                                                        task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)
+                                                                            ? 'font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 border-amber-300/70'
+                                                                            : 'font-semibold text-stone-600 bg-stone-100/90 hover:bg-amber-50 hover:text-amber-800 border-dashed border-stone-300 hover:border-amber-300'
+                                                                    }`}
+                                                                    title={task.notes ? 'צפייה ועריכת תכנון והערות למידה' : 'הוספת תכנון והערות למפגש למידה זה'}
                                                                 >
-                                                                    <span>📝</span> הערות ותכנון
+                                                                    <span>📝</span> {task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes) ? 'הערות ותכנון' : '+ תכנון למידה'}
                                                                 </button>
                                                             )}
                                                         </div>
@@ -7138,7 +7263,14 @@ function App() {
                                                 return (
                                                     <div key={badge.id} className={`p-4 rounded-2xl border text-center transition-all ${earned ? 'bg-gradient-to-b from-amber-50 to-orange-50 border-amber-200 shadow-sm' : 'bg-stone-50 border-stone-200 opacity-60 grayscale'}`}>
                                                         <div className="text-3xl mb-2 drop-shadow-sm">{badge.icon}</div>
-                                                        <div className={`text-sm font-bold ${earned ? 'text-amber-800' : 'text-stone-500'}`}>{badge.title}</div>
+                                                        <div className={`text-sm font-bold flex items-center justify-center gap-1.5 flex-wrap ${earned ? 'text-amber-800' : 'text-stone-500'}`}>
+                                                            <span>{badge.title}</span>
+                                                            {earned && earned.count > 1 && (
+                                                                <span className="text-[10px] bg-amber-200 text-amber-950 px-1.5 py-0.5 rounded-full font-black border border-amber-300">
+                                                                    x{earned.count}
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                         <div className="text-[10px] mt-1 text-stone-500 leading-tight">{badge.description}</div>
                                                     </div>
                                                 );
@@ -9713,6 +9845,50 @@ function App() {
                             </div>
                         );
                     })()}
+
+                    {crowningCelebrationModal && (
+                        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.2s_ease-out]" dir="rtl">
+                            <div className="bg-gradient-to-b from-amber-50 via-white to-orange-50/50 rounded-3xl p-6 sm:p-8 w-full max-w-md shadow-2xl border-2 border-amber-300 text-center relative overflow-hidden animate-[scaleUp_0.25s_ease-out]">
+                                <div className="absolute top-0 left-0 right-0 h-2 bg-gradient-to-r from-amber-300 via-yellow-400 to-amber-300"></div>
+                                
+                                <div className="text-6xl mb-3 drop-shadow-md animate-bounce">
+                                    👑
+                                </div>
+                                
+                                <span className="text-xs font-black uppercase tracking-wider bg-amber-200 text-amber-900 px-3.5 py-1 rounded-full border border-amber-300 inline-block mb-3 shadow-2xs">
+                                    {crowningCelebrationModal.isNewWin ? 'הכתרת אלופת השבוע! 👑' : 'עדכון כתרי אלופת השבוע! 👑'}
+                                </span>
+                                
+                                <h2 className="text-2xl font-black text-stone-900 mb-2">
+                                    כל הכבוד, {crowningCelebrationModal.winnerName}! 🎉
+                                </h2>
+                                
+                                <p className="text-sm text-stone-600 leading-relaxed mb-6">
+                                    {crowningCelebrationModal.isNewWin ? (
+                                        <>הובלת את טבלת הלמידה השבועית עם <strong className="text-amber-800">{crowningCelebrationModal.points} נקודות</strong> וזכית בכתר אלופת השבוע!</>
+                                    ) : (
+                                        <>הכתרים שלך חושבו מחדש לפי כל השבועות בהם ניצחת במקום הראשון! כל שבוע של השקעה והתמדה נספר במלואו.</>
+                                    )}
+                                </p>
+                                
+                                <div className="bg-white/95 border border-amber-200 rounded-2xl p-4 mb-6 shadow-sm flex items-center justify-center gap-3.5">
+                                    <span className="text-4xl">👑</span>
+                                    <div className="text-right">
+                                        <div className="text-xs text-stone-500 font-medium">סך כל הכתרים שלך:</div>
+                                        <div className="text-xl font-black text-amber-900">{crowningCelebrationModal.crownCount} כתרים של אלופת השבוע</div>
+                                    </div>
+                                </div>
+                                
+                                <button
+                                    type="button"
+                                    onClick={() => setCrowningCelebrationModal(null)}
+                                    className="w-full py-3.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-black text-base shadow-lg shadow-amber-500/25 active:scale-95 transition-all cursor-pointer"
+                                >
+                                    יאללה להמשיך להפציץ! 🚀
+                                </button>
+                            </div>
+                        </div>
+                    )}
 
                     {viewingNotesTask && (() => {
                         const task = viewingNotesTask;
