@@ -1307,8 +1307,13 @@ function App() {
                 examId: '',
                 customExamName: '',
                 customSubjectId: '',
-                title: ''
+                title: '',
+                notes: ''
             });
+            const [viewingNotesTask, setViewingNotesTask] = useState(null);
+            const [viewingNotesExam, setViewingNotesExam] = useState(null);
+            const [isEditingNotesModal, setIsEditingNotesModal] = useState(false);
+            const [notesModalDraft, setNotesModalDraft] = useState('');
 
             useEffect(() => {
                 if (editingTask) {
@@ -1374,6 +1379,42 @@ function App() {
 
             const handleQuickAddAttachmentToTask = (task, file, category) => {
                 return handleQuickAddAttachmentsToTask(task, file ? [file] : [], category);
+            };
+
+            const handleOpenNotesTask = (task) => {
+                if (!task) return;
+                setViewingNotesTask(task);
+                setNotesModalDraft(task.notes || '');
+                setIsEditingNotesModal(false);
+            };
+
+            const handleSaveTaskNotes = (taskId, newNotes) => {
+                const trimmed = (newNotes || '').trim();
+                updateUserData(prev => ({
+                    ...prev,
+                    tasks: (prev.tasks || []).map(t => t.id === taskId ? { ...t, notes: trimmed } : t)
+                }));
+                setViewingNotesTask(prev => prev && prev.id === taskId ? { ...prev, notes: trimmed } : prev);
+                setIsEditingNotesModal(false);
+                showToast('התכנון וההערות נשמרו בהצלחה! ✨', 'success');
+            };
+
+            const handleOpenNotesExam = (exam) => {
+                if (!exam) return;
+                setViewingNotesExam(exam);
+                setNotesModalDraft(exam.notes || '');
+                setIsEditingNotesModal(false);
+            };
+
+            const handleSaveExamNotes = (examId, newNotes) => {
+                const trimmed = (newNotes || '').trim();
+                updateUserData(prev => ({
+                    ...prev,
+                    exams: (prev.exams || []).map(e => e.id === examId ? { ...e, notes: trimmed, updatedAt: Date.now() } : e)
+                }));
+                setViewingNotesExam(prev => prev && prev.id === examId ? { ...prev, notes: trimmed } : prev);
+                setIsEditingNotesModal(false);
+                showToast('חומר המבחן עודכן בהצלחה! ✨', 'success');
             };
 
             const openAttachmentViewer = async (task, initialIndex = 0, filterCategory = null) => {
@@ -1471,7 +1512,7 @@ function App() {
             }, [activeUserData?.tasks, taskFormSubject]);
             
             const [examPlannerData, setExamPlannerData] = useState({ 
-                step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' 
+                step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '', notes: '' 
             });
 
 
@@ -2343,6 +2384,7 @@ function App() {
                                 subjectId: subId,
                                 title: title,
                                 lessonTopic: topic,
+                                notes: form.elements['notes'] ? form.elements['notes'].value.trim() : (t.notes || ''),
                                 givenDate: givenDate,
                                 dueDate: newDueDate || t.dueDate || '',
                                 dueTime: newDueTime || t.dueTime || '',
@@ -3172,6 +3214,7 @@ function App() {
                                 subjectId: examPlannerData.subjectId,
                                 date: examPlannerData.date,
                                 time: examPlannerData.time || ex.time || '',
+                                notes: examPlannerData.notes !== undefined ? examPlannerData.notes : (ex.notes || ''),
                                 sessionsCount: completedTasksCount + newTasks.length,
                                 completedSessionsCount: completedTasksCount,
                                 targetHours: examPlannerData.hours,
@@ -3188,6 +3231,7 @@ function App() {
                             subjectId: examPlannerData.subjectId, 
                             date: examPlannerData.date, 
                             time: examPlannerData.time || '',
+                            notes: examPlannerData.notes || '',
                             targetHours: examPlannerData.hours, 
                             sessionsCount: examPlannerData.sessions.length, 
                             completedSessionsCount: 0,
@@ -3198,7 +3242,7 @@ function App() {
 
                 toggleModal('examPlanner', false);
                 showToast(`שובצו ${examPlannerData.sessions.length} מפגשי למידה בהצלחה! תוכלי לראות אותם במשימות. 🧠`, 'success');
-                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '' });
+                setExamPlannerData({ step: 1, subjectId: '', examName: '', date: '', time: '', hours: 5, targetSessions: 3, sessions: [], remainingMinutes: 0, existingExamId: '', notes: '' });
             };
 
 
@@ -3208,6 +3252,7 @@ function App() {
                 const examName = e.target.examName.value;
                 const date = e.target.date.value;
                 const time = e.target.time?.value || '';
+                const notes = e.target.notes?.value?.trim() || '';
                 
                 const newExam = {
                     id: 'ex_' + Date.now(),
@@ -3215,6 +3260,7 @@ function App() {
                     examName,
                     date,
                     time,
+                    notes,
                     targetHours: 0,
                     sessionsCount: 0,
                     completedSessionsCount: 0,
@@ -3267,7 +3313,8 @@ function App() {
                     examId: targetExam ? targetExam.id : '',
                     customExamName: '',
                     customSubjectId: targetExam ? targetExam.subjectId : (activeUserData.subjects?.[0]?.id || ''),
-                    title: defaultTitle
+                    title: defaultTitle,
+                    notes: ''
                 });
                 toggleModal('singleExamSession', true);
             };
@@ -3275,7 +3322,7 @@ function App() {
             const handleCreateSingleExamSession = (e) => {
                 e.preventDefault();
                 const todayStr = new Date().toISOString().split('T')[0];
-                const { examId, customExamName, customSubjectId, title } = singleExamSessionData;
+                const { examId, customExamName, customSubjectId, title, notes } = singleExamSessionData;
                 
                 const selectedExam = (activeUserData.exams || []).find(ex => ex.id === examId);
                 const examTitle = selectedExam ? (selectedExam.examName || 'מבחן') : (customExamName.trim() || 'מבחן');
@@ -3313,6 +3360,7 @@ function App() {
                     subjectId: subjectId,
                     title: sessionTitle,
                     lessonTopic: `הכנה למבחן: ${examTitle}`,
+                    notes: (notes || '').trim(),
                     createdAt: new Date().toISOString(),
                     completed: false,
                     isLessonLog: false,
@@ -3346,6 +3394,13 @@ function App() {
                     };
                 });
 
+                setSingleExamSessionData({
+                    examId: '',
+                    customExamName: '',
+                    customSubjectId: '',
+                    title: '',
+                    notes: ''
+                });
                 toggleModal('singleExamSession', false);
                 showToast(`סשן ${nextNum} נוצר בהצלחה! 3 נקודות יוענקו בסיומו 🎯`, 'success');
             };
@@ -5062,6 +5117,16 @@ function App() {
                                                                         <span>📎</span> {task.attachments.length} קבצים
                                                                     </button>
                                                                 )}
+                                                                {Boolean(task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
+                                                                    <button 
+                                                                        type="button"
+                                                                        onClick={(e) => { e.stopPropagation(); handleOpenNotesTask(task); }}
+                                                                        className="text-[10px] font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2 py-0.5 rounded-lg border border-amber-300/70 flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95"
+                                                                        title="צפייה בתכנון ובהערות הלמידה"
+                                                                    >
+                                                                        <span>📝</span> הערות ותכנון
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                             <div className="flex items-center gap-1.5 flex-wrap">
                                                                 {countdown && (
@@ -5230,6 +5295,16 @@ function App() {
                                                                     title="צפייה בצילומי לוח ודפי עבודה"
                                                                 >
                                                                     <span>📎</span> {task.attachments.length} קבצים
+                                                                </button>
+                                                            )}
+                                                            {Boolean(task.notes || (task.examId && (activeUserData.exams || []).find(e => e.id === task.examId)?.notes)) && (
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={(e) => { e.stopPropagation(); handleOpenNotesTask(task); }} 
+                                                                    className="text-xs font-bold text-amber-800 bg-amber-100/90 hover:bg-amber-200 px-2.5 py-1 rounded-lg border border-amber-300/70 flex items-center gap-1 shadow-2xs transition-colors cursor-pointer active:scale-95"
+                                                                    title="צפייה בתכנון ובהערות הלמידה"
+                                                                >
+                                                                    <span>📝</span> הערות ותכנון
                                                                 </button>
                                                             )}
                                                         </div>
@@ -6762,6 +6837,18 @@ function App() {
                                                                                     {examCountdown.text}
                                                                                 </span>
                                                                             )}
+                                                                            <button 
+                                                                                type="button"
+                                                                                onClick={(e) => { e.stopPropagation(); handleOpenNotesExam(ex); }}
+                                                                                className={`text-[10px] font-bold px-2 py-0.5 rounded-lg border flex items-center gap-1 shadow-2xs transition-all cursor-pointer active:scale-95 ${
+                                                                                    ex.notes 
+                                                                                        ? 'text-indigo-800 bg-indigo-50 hover:bg-indigo-100 border-indigo-200' 
+                                                                                        : 'text-stone-500 bg-stone-100/70 hover:bg-stone-200/70 border-stone-200'
+                                                                                }`}
+                                                                                title={ex.notes ? "צפייה בחומר למבחן ומיקוד" : "הוספת חומר למבחן ומיקוד"}
+                                                                            >
+                                                                                <span>📖</span> {ex.notes ? 'חומר למבחן' : '+ חומר למבחן'}
+                                                                            </button>
                                                                         </div>
                                                                         <div className="text-xs text-stone-400 mt-0.5" dir="ltr">
                                                                             {new Date(ex.date).toLocaleDateString('he-IL')}
@@ -7404,6 +7491,19 @@ function App() {
                                         <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">מה צריך לעשות?</label>
                                         <input name="title" defaultValue={editingTask.title || ''} required className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm" />
                                     </div>
+                                    <div>
+                                        <label className="text-xs font-bold text-stone-500 block mb-1 uppercase flex items-center justify-between">
+                                            <span>הערות ותכנון למידה</span>
+                                            <span className="text-[10px] text-stone-400 font-normal">צפייה בלחיצה על כפתור</span>
+                                        </label>
+                                        <textarea 
+                                            name="notes" 
+                                            rows="2" 
+                                            defaultValue={editingTask.notes || ''} 
+                                            placeholder="הערות אישיות, תכנון למידה, עמודים בספר..." 
+                                            className="w-full p-3 bg-white border border-stone-200 rounded-xl text-sm outline-none focus:ring-2 focus:ring-amber-400 resize-none font-medium"
+                                        />
+                                    </div>
                                     <div className="grid grid-cols-2 gap-3">
                                         <div>
                                             <label className="text-xs font-bold text-stone-500 block mb-1 uppercase">תאריך הגשה</label>
@@ -7924,6 +8024,15 @@ function App() {
                                             <input type="time" name="time" className="w-full p-4 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-bold" />
                                         </div>
                                     </div>
+                                    <div>
+                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase">חומר למבחן / מיקוד והערות (אופציונלי)</label>
+                                        <textarea 
+                                            name="notes" 
+                                            rows="2"
+                                            placeholder="למשל: פרקים 1-4, דגש על שאלות חזרה ומושגי יסוד..." 
+                                            className="w-full p-3 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-indigo-400 font-medium resize-none transition-all"
+                                        />
+                                    </div>
                                     <button type="submit" className="w-full bg-indigo-600 text-white py-4 mt-2 rounded-xl text-sm font-bold shadow-md hover:bg-indigo-700 transition-all active:scale-95">שמירת המבחן</button>
                                 </form>
                             </div>
@@ -8068,6 +8177,43 @@ function App() {
                                         </div>
                                     </div>
 
+                                    {(() => {
+                                        const selectedEx = (activeUserData.exams || []).find(x => x.id === singleExamSessionData.examId);
+                                        if (!selectedEx || !selectedEx.notes) return null;
+                                        return (
+                                            <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-100 text-xs">
+                                                <div className="flex items-center justify-between font-bold text-indigo-900 mb-1">
+                                                    <span className="flex items-center gap-1"><span>🎯</span> חומר המבחן שהוגדר:</span>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => setSingleExamSessionData(prev => ({ 
+                                                            ...prev, 
+                                                            notes: prev.notes ? `${prev.notes}\n${selectedEx.notes}` : selectedEx.notes 
+                                                        }))}
+                                                        className="text-[11px] text-indigo-700 hover:text-indigo-900 underline font-semibold cursor-pointer active:scale-95"
+                                                    >
+                                                        + העתק לתכנון הסשן
+                                                    </button>
+                                                </div>
+                                                <p className="text-stone-700 whitespace-pre-wrap line-clamp-3">{selectedEx.notes}</p>
+                                            </div>
+                                        );
+                                    })()}
+
+                                    <div>
+                                        <label className="text-xs font-bold mb-1.5 block text-stone-500 uppercase flex items-center justify-between">
+                                            <span>תכנון למידה והערות לסשן (אופציונלי)</span>
+                                            <span className="text-[10px] text-stone-400 font-normal">צפייה בלחיצה על כפתור</span>
+                                        </label>
+                                        <textarea 
+                                            rows="2"
+                                            value={singleExamSessionData.notes || ''}
+                                            onChange={(e) => setSingleExamSessionData(prev => ({ ...prev, notes: e.target.value }))}
+                                            placeholder="מה התכנון למפגש הזה? למשל: עמודים 30-45, מעבר על סיכום פרק 2, לפתור שאלות מבגרות..." 
+                                            className="w-full p-3 border border-stone-200 rounded-xl text-sm outline-none bg-stone-50 focus:bg-white focus:border-amber-400 font-medium transition-all resize-none"
+                                        />
+                                    </div>
+
                                     {/* Flexible Time Info Notice */}
                                     <div className="p-3.5 bg-stone-50 rounded-2xl border border-stone-200/80 flex items-center gap-3">
                                         <div className="w-9 h-9 rounded-xl bg-white border border-stone-200 flex items-center justify-center text-base shrink-0 shadow-2xs">
@@ -8139,7 +8285,8 @@ function App() {
                                                         subjectId: exam.subjectId,
                                                         examName: exam.examName || '',
                                                         date: exam.date,
-                                                        time: exam.time || ''
+                                                        time: exam.time || '',
+                                                        notes: exam.notes || ''
                                                     });
                                                 }}
                                                 className="w-full p-4 bg-white border border-indigo-200 rounded-2xl text-sm outline-none font-bold focus:border-indigo-400 transition-all cursor-pointer"
@@ -8205,6 +8352,17 @@ function App() {
                                                     className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
                                                 />
                                             </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-xs font-bold text-stone-500 block mb-1.5 uppercase tracking-wide">חומר למבחן / מיקוד והערות (אופציונלי)</label>
+                                            <textarea 
+                                                rows="2"
+                                                value={examPlannerData.notes || ''} 
+                                                onChange={e => setExamPlannerData({...examPlannerData, notes: e.target.value})} 
+                                                placeholder="למשל: פרקים 1-4, דגש על שאלות חזרה ומושגי יסוד..."
+                                                className="w-full p-3.5 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm resize-none" 
+                                            />
                                         </div>
 
 
@@ -8922,6 +9080,21 @@ function App() {
                                         )}
                                         <button 
                                             onClick={() => {
+                                                handleOpenNotesTask(task);
+                                                setTaskActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-amber-50/70 hover:bg-amber-100 text-amber-900 border border-amber-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">📝</span>
+                                                <span>{task.notes ? 'צפייה ועריכת תכנון והערות' : 'הוספת תכנון והערות לסשן'}</span>
+                                            </div>
+                                            <span className="text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-md text-[11px] font-bold">
+                                                {task.notes ? 'הערות קיימות' : '+ הוספה'}
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
                                                 setEditingTask(task);
                                                 toggleModal('edit', true);
                                                 setTaskActionsMenu(null);
@@ -9131,6 +9304,21 @@ function App() {
                                             </div>
                                             <span className="text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
                                                 {exam.grade ? `נוכחי: ${exam.grade}` : 'תיעוד הישג'}
+                                            </span>
+                                        </button>
+
+                                        <button 
+                                            onClick={() => {
+                                                handleOpenNotesExam(exam);
+                                                setExamActionsMenu(null);
+                                            }}
+                                            className="w-full flex items-center justify-between p-3.5 rounded-2xl bg-indigo-50/70 hover:bg-indigo-100 text-indigo-900 border border-indigo-200 transition-all font-bold text-sm active:scale-98">
+                                            <div className="flex items-center gap-3">
+                                                <span className="text-xl">📖</span>
+                                                <span>{exam.notes ? 'צפייה ועריכת חומר למבחן' : 'הגדרת חומר ומיקוד למבחן'}</span>
+                                            </div>
+                                            <span className="text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-md text-[11px] font-bold">
+                                                {exam.notes ? 'חומר שמור' : '+ הגדרה'}
                                             </span>
                                         </button>
 
@@ -9526,6 +9714,369 @@ function App() {
                         );
                     })()}
 
+                    {viewingNotesTask && (() => {
+                        const task = viewingNotesTask;
+                        const sub = (activeUserData.subjects || []).find(s => s.id === task.subjectId);
+                        const parentExam = task.examId ? (activeUserData.exams || []).find(e => e.id === task.examId) : null;
+                        const hasExamMaterial = Boolean(parentExam?.notes);
+
+                        return (
+                            <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]" dir="rtl">
+                                <div className="bg-white rounded-3xl p-5 sm:p-6 w-full max-w-lg shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+                                    {/* Modal Header */}
+                                    <div className="flex justify-between items-start mb-4 pb-3 border-b border-stone-100">
+                                        <div className="flex-1 pr-1">
+                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-amber-50 text-amber-800 border border-amber-200/60 flex items-center gap-1">
+                                                    <span>📝</span> תכנון והערות למידה
+                                                </span>
+                                                {sub && (
+                                                    <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-stone-100 text-stone-700">
+                                                        {sub.emoji} {sub.name}
+                                                    </span>
+                                                )}
+                                                {task.sessionNumber && (
+                                                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-lg bg-indigo-50 text-indigo-700">
+                                                        סשן {task.sessionNumber}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h3 className="font-bold text-lg text-stone-800 leading-snug">
+                                                {task.title}
+                                            </h3>
+                                        </div>
+                                        <button 
+                                            onClick={() => setViewingNotesTask(null)} 
+                                            className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
+                                            <IconX className="w-4 h-4"/>
+                                        </button>
+                                    </div>
+
+                                    {/* Exam Material Context Box */}
+                                    {parentExam && (
+                                        <div className="mb-4 bg-indigo-50/70 border border-indigo-100 rounded-2xl p-4">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <div className="flex items-center gap-1.5 font-bold text-xs text-indigo-950">
+                                                    <span>🎯</span>
+                                                    <span>חומר ומיקוד למבחן: {parentExam.examName || 'מבחן'}</span>
+                                                </div>
+                                                {hasExamMaterial && isEditingNotesModal && (
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => setNotesModalDraft(prev => prev ? `${prev}\n${parentExam.notes}` : parentExam.notes)}
+                                                        className="text-[11px] font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-100/80 px-2 py-0.5 rounded-md transition-colors active:scale-95"
+                                                    >
+                                                        + העתק לתכנון הסשן
+                                                    </button>
+                                                )}
+                                            </div>
+                                            {hasExamMaterial ? (
+                                                <div className="text-xs sm:text-sm text-stone-700 font-medium whitespace-pre-wrap leading-relaxed max-h-40 overflow-y-auto custom-scrollbar bg-white/70 p-3 rounded-xl border border-indigo-100/60">
+                                                    {parentExam.notes}
+                                                </div>
+                                            ) : (
+                                                <div className="text-xs text-stone-500 flex items-center justify-between">
+                                                    <span>לא הוגדר עדיין חומר כללי למבחן זה.</span>
+                                                    <button 
+                                                        type="button" 
+                                                        onClick={() => {
+                                                            setViewingNotesTask(null);
+                                                            handleOpenNotesExam(parentExam);
+                                                        }}
+                                                        className="text-xs font-bold text-indigo-600 hover:underline"
+                                                    >
+                                                        הגדרת חומר למבחן ←
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
+
+                                    {/* Session-specific notes section */}
+                                    <div className="space-y-2 mb-4">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-stone-600 uppercase tracking-wide flex items-center gap-1.5">
+                                                <span>📌</span>
+                                                תכנון והערות לסשן זה
+                                            </label>
+                                            {!isEditingNotesModal && (
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNotesModalDraft(task.notes || '');
+                                                        setIsEditingNotesModal(true);
+                                                    }}
+                                                    className="text-xs font-bold text-amber-800 hover:text-amber-950 bg-amber-100/80 hover:bg-amber-200/80 px-2.5 py-1 rounded-xl transition-all active:scale-95"
+                                                >
+                                                    ✏️ עריכה
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {isEditingNotesModal ? (
+                                            <div className="space-y-2">
+                                                <textarea 
+                                                    autoFocus
+                                                    rows="4"
+                                                    value={notesModalDraft}
+                                                    onChange={(e) => setNotesModalDraft(e.target.value)}
+                                                    placeholder="מה התכנון למפגש הזה? (למשל: תרגול עמודים 40-45, מעבר על סיכום פרק 2...)"
+                                                    className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-medium outline-none focus:bg-white focus:border-amber-400 focus:ring-2 focus:ring-amber-200 transition-all resize-none leading-relaxed"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleSaveTaskNotes(task.id, notesModalDraft)}
+                                                        className="flex-1 py-2.5 bg-amber-500 hover:bg-amber-600 text-white rounded-xl font-bold text-xs shadow-xs transition-colors active:scale-95"
+                                                    >
+                                                        💾 שמירת שינויים
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setIsEditingNotesModal(false)}
+                                                        className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl font-bold text-xs transition-colors active:scale-95"
+                                                    >
+                                                        ביטול
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {task.notes ? (
+                                                    <div className="p-4 bg-amber-50/50 border border-amber-200/60 rounded-2xl text-xs sm:text-sm text-stone-800 font-medium whitespace-pre-wrap leading-relaxed shadow-2xs">
+                                                        {task.notes}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-6 px-4 bg-stone-50 rounded-2xl border border-dashed border-stone-200 text-stone-400 text-xs">
+                                                        <div className="text-2xl mb-1">📝</div>
+                                                        <p className="font-semibold text-stone-600 mb-2">עדיין לא נרשם תכנון ספציפי לסשן זה</p>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setNotesModalDraft('');
+                                                                setIsEditingNotesModal(true);
+                                                            }}
+                                                            className="text-xs font-bold text-amber-800 bg-amber-100 hover:bg-amber-200 px-3 py-1.5 rounded-xl transition-all active:scale-95"
+                                                        >
+                                                            + הוספת תכנון לסשן
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Task attachments preview if present */}
+                                    {task.attachments && task.attachments.length > 0 && (
+                                        <div className="mb-4 pt-3 border-t border-stone-100">
+                                            <div className="flex items-center justify-between mb-2">
+                                                <span className="text-xs font-bold text-stone-500 flex items-center gap-1.5">
+                                                    <span>📎</span> קבצים מצורפים ({task.attachments.length})
+                                                </span>
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setViewingNotesTask(null);
+                                                        openAttachmentViewer(task);
+                                                    }}
+                                                    className="text-xs font-bold text-purple-700 hover:underline"
+                                                >
+                                                    צפייה בקבצים ←
+                                                </button>
+                                            </div>
+                                            <div className="flex flex-wrap gap-1.5">
+                                                {task.attachments.map((att, idx) => (
+                                                    <span key={idx} className="text-[11px] font-medium bg-purple-50 text-purple-800 border border-purple-200 px-2 py-0.5 rounded-lg truncate max-w-[200px]">
+                                                        {att.name || `קובץ ${idx + 1}`}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Close button */}
+                                    <div className="pt-2">
+                                        <button 
+                                            type="button"
+                                            onClick={() => setViewingNotesTask(null)}
+                                            className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-sm transition-colors active:scale-95"
+                                        >
+                                            סגירה
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {viewingNotesExam && (() => {
+                        const exam = viewingNotesExam;
+                        const sub = (activeUserData.subjects || []).find(s => s.id === exam.subjectId);
+                        const examTasks = (activeUserData.tasks || []).filter(t => t.examId === exam.id && !t.givenUp);
+                        const completedSessions = examTasks.filter(t => t.completed || t.completedAt).length;
+
+                        return (
+                            <div className="fixed inset-0 z-[75] flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]" dir="rtl">
+                                <div className="bg-white rounded-3xl p-5 sm:p-6 w-full max-w-lg shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
+                                    {/* Header */}
+                                    <div className="flex justify-between items-start mb-4 pb-3 border-b border-stone-100">
+                                        <div className="flex-1 pr-1">
+                                            <div className="flex items-center gap-2 mb-1.5 flex-wrap">
+                                                <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg bg-indigo-50 text-indigo-700 border border-indigo-200/60 flex items-center gap-1">
+                                                    <span>📖</span> חומר ומיקוד למבחן
+                                                </span>
+                                                {sub && (
+                                                    <span className="text-xs font-bold px-2 py-0.5 rounded-lg bg-stone-100 text-stone-700">
+                                                        {sub.emoji} {sub.name}
+                                                    </span>
+                                                )}
+                                                {exam.date && (
+                                                    <span className="text-xs text-stone-500 font-semibold" dir="ltr">
+                                                        📅 {new Date(exam.date).toLocaleDateString('he-IL')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <h3 className="font-bold text-lg text-stone-800 leading-snug">
+                                                {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
+                                            </h3>
+                                        </div>
+                                        <button 
+                                            onClick={() => setViewingNotesExam(null)} 
+                                            className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
+                                            <IconX className="w-4 h-4"/>
+                                        </button>
+                                    </div>
+
+                                    {/* Exam Material Section */}
+                                    <div className="space-y-2 mb-5">
+                                        <div className="flex items-center justify-between">
+                                            <label className="text-xs font-bold text-stone-600 uppercase tracking-wide flex items-center gap-1.5">
+                                                <span>🎯</span>
+                                                חומר הבחינה, סילבוס והערות
+                                            </label>
+                                            {!isEditingNotesModal && (
+                                                <button 
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setNotesModalDraft(exam.notes || '');
+                                                        setIsEditingNotesModal(true);
+                                                    }}
+                                                    className="text-xs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-xl transition-all active:scale-95"
+                                                >
+                                                    ✏️ עריכה
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {isEditingNotesModal ? (
+                                            <div className="space-y-2">
+                                                <textarea 
+                                                    autoFocus
+                                                    rows="5"
+                                                    value={notesModalDraft}
+                                                    onChange={(e) => setNotesModalDraft(e.target.value)}
+                                                    placeholder="רשמי כאן את כל חומר המבחן, עמודים בספר, פרקים, שאלות לדוגמה, דגשים מיוחדים..."
+                                                    className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-medium outline-none focus:bg-white focus:border-indigo-400 focus:ring-2 focus:ring-indigo-200 transition-all resize-none leading-relaxed"
+                                                />
+                                                <div className="flex gap-2">
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => handleSaveExamNotes(exam.id, notesModalDraft)}
+                                                        className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-bold text-xs shadow-xs transition-colors active:scale-95"
+                                                    >
+                                                        💾 שמירת חומר הבחינה
+                                                    </button>
+                                                    <button 
+                                                        type="button"
+                                                        onClick={() => setIsEditingNotesModal(false)}
+                                                        className="px-4 py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl font-bold text-xs transition-colors active:scale-95"
+                                                    >
+                                                        ביטול
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            <div>
+                                                {exam.notes ? (
+                                                    <div className="p-4 bg-indigo-50/50 border border-indigo-200/60 rounded-2xl text-xs sm:text-sm text-stone-800 font-medium whitespace-pre-wrap leading-relaxed shadow-2xs">
+                                                        {exam.notes}
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-center py-6 px-4 bg-stone-50 rounded-2xl border border-dashed border-stone-200 text-stone-400 text-xs">
+                                                        <div className="text-2xl mb-1">📖</div>
+                                                        <p className="font-semibold text-stone-600 mb-2">עדיין לא הוגדר חומר או מיקוד למבחן זה</p>
+                                                        <button 
+                                                            type="button"
+                                                            onClick={() => {
+                                                                setNotesModalDraft('');
+                                                                setIsEditingNotesModal(true);
+                                                            }}
+                                                            className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition-all active:scale-95 border border-indigo-200"
+                                                        >
+                                                            + הגדרת חומר למבחן
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Associated Study Sessions summary */}
+                                    <div className="pt-3 border-t border-stone-100 mb-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <span className="text-xs font-bold text-stone-600 flex items-center gap-1.5">
+                                                <span>⚡</span> מפגשי למידה למבחן ({completedSessions}/{examTasks.length})
+                                            </span>
+                                            <button 
+                                                type="button"
+                                                onClick={() => {
+                                                    setViewingNotesExam(null);
+                                                    handleOpenSingleSessionModal(exam);
+                                                }}
+                                                className="text-xs font-bold text-amber-800 bg-amber-50 hover:bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200 active:scale-95 transition-colors"
+                                            >
+                                                + סשן למידה נוסף
+                                            </button>
+                                        </div>
+                                        {examTasks.length > 0 ? (
+                                            <div className="space-y-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                                                {examTasks.map(t => (
+                                                    <div key={t.id} className="p-2.5 bg-stone-50 rounded-xl border border-stone-100 flex items-center justify-between text-xs">
+                                                        <div className="flex items-center gap-2 truncate">
+                                                            <span className={t.completed ? 'text-emerald-600' : 'text-stone-400'}>
+                                                                {t.completed ? '✅' : '⏳'}
+                                                            </span>
+                                                            <span className={`font-semibold truncate ${t.completed ? 'line-through text-stone-400' : 'text-stone-700'}`}>
+                                                                {t.title}
+                                                            </span>
+                                                            {t.notes && <span title="יש הערות ספציפיות לסשן">📝</span>}
+                                                        </div>
+                                                        <span className="text-[11px] text-stone-400 shrink-0" dir="ltr">
+                                                            {t.dueDate ? new Date(t.dueDate).toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit' }) : ''}
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-stone-400 italic">טרם נוצרו מפגשי למידה למבחן זה.</p>
+                                        )}
+                                    </div>
+
+                                    {/* Close button */}
+                                    <div className="pt-2">
+                                        <button 
+                                            type="button"
+                                            onClick={() => setViewingNotesExam(null)}
+                                            className="w-full py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-sm transition-colors active:scale-95"
+                                        >
+                                            סגירה
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {examPrintModal && (
                         <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-[fadeIn_0.2s_ease-out]"
                              onClick={() => !isPreparingPrint && setExamPrintModal(null)}>
@@ -9811,6 +10362,17 @@ function App() {
                                                 className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all"
                                             />
                                         </div>
+                                    </div>
+
+                                    <div>
+                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">חומר למבחן / מיקוד והערות</label>
+                                        <textarea
+                                            rows="3"
+                                            value={editingExam.notes || ''}
+                                            onChange={(e) => setEditingExam({ ...editingExam, notes: e.target.value })}
+                                            placeholder="פירוט נושאי הבחינה, עמודים בספר, דגשים מיוחדים..."
+                                            className="w-full bg-stone-50 border border-stone-200 rounded-xl px-3.5 py-2.5 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white outline-none transition-all resize-none"
+                                        />
                                     </div>
 
                                     {(() => {
