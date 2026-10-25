@@ -112,3 +112,10 @@ self.addEventListener('message', (event) => {
         }
     }
 });
+
+// Required by Google Chrome Android for WebAPK installation
+self.addEventListener('fetch', (event) => {
+    event.respondWith(
+        fetch(event.request).catch(() => caches.match(event.request))
+    );
+});

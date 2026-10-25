@@ -1,7 +1,9 @@
 {
+  "id": "studystreak-app-new",
   "name": "StudyStreak Pro",
   "short_name": "StudyStreak",
-  "start_url": "./index.html",
+  "start_url": "https://shellywsas.github.io/tryingTOstudy/index.html?pwa=1",
+  "scope": "https://shellywsas.github.io/tryingTOstudy/",
   "display": "standalone",
   "background_color": "#fafaf9",
   "theme_color": "#fafaf9",
