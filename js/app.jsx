@@ -124,6 +124,13 @@ function App() {
                             tasks: userToUpload.tasks.filter(t => t && !delSet.has(t.id))
                         };
                     }
+                    if (Array.isArray(userToUpload.deletedExamIds) && userToUpload.deletedExamIds.length > 0 && Array.isArray(userToUpload.exams)) {
+                        const delExamSet = new Set(userToUpload.deletedExamIds);
+                        userToUpload = {
+                            ...userToUpload,
+                            exams: userToUpload.exams.filter(e => e && !delExamSet.has(e.id))
+                        };
+                    }
                     const cleanData = sanitizeForFirestore(userToUpload);
                     await db.collection("users").doc(targetUser).set(cleanData, { merge: true });
                     if (typeof clearPendingSync === 'function') {
@@ -3509,11 +3516,13 @@ function App() {
                 updateUserData(prev => {
                     const examTaskIds = (prev.tasks || []).filter(t => t.examId === examId).map(t => t.id);
                     const deletedTaskIds = Array.from(new Set([...(prev.deletedTaskIds || []), ...examTaskIds]));
+                    const deletedExamIds = Array.from(new Set([...(prev.deletedExamIds || []), examId]));
                     return {
                         ...prev,
                         exams: (prev.exams || []).filter(e => e.id !== examId),
                         tasks: (prev.tasks || []).filter(t => t.examId !== examId),
-                        deletedTaskIds
+                        deletedTaskIds,
+                        deletedExamIds
                     };
                 });
                 showToast('המבחן נמחק בהצלחה', 'info');

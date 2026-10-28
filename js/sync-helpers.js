@@ -55,23 +55,23 @@
         return { ...localT, ...incomingT };
     }
 
-    function mergeExams(localExams, remoteExams) {
-        const local = Array.isArray(localExams) ? localExams : [];
-        const remote = Array.isArray(remoteExams) ? remoteExams : [];
+    function mergeExams(localExams, remoteExams, deletedExamIds = []) {
+        const deletedSet = new Set(Array.isArray(deletedExamIds) ? deletedExamIds : []);
+        const local = (Array.isArray(localExams) ? localExams : []).filter(e => e && e.id && !deletedSet.has(e.id));
+        const remote = (Array.isArray(remoteExams) ? remoteExams : []).filter(e => e && e.id && !deletedSet.has(e.id));
         const byId = new Map();
         for (const e of remote) {
             if (e && e.id) byId.set(e.id, e);
         }
         for (const e of local) {
             if (!e || !e.id) continue;
-            if (!byId.has(e.id)) {
-                byId.set(e.id, e);
-            } else {
+            if (byId.has(e.id)) {
                 const r = byId.get(e.id);
                 const localUpdated = e.updatedAt || e.lastModified || 0;
                 const remoteUpdated = r.updatedAt || r.lastModified || 0;
                 byId.set(e.id, localUpdated >= remoteUpdated ? { ...r, ...e } : { ...e, ...r });
             }
+            // If local has an exam that remote does NOT have, DO NOT resurrect it! It was deleted on the other device.
         }
         return Array.from(byId.values());
     }
@@ -182,11 +182,15 @@
         const remoteSync = remote.lastSync || 0;
         const localSync = local.lastSync || 0;
         const mergedBadges = mergeBadges(local.badges, remote.badges);
-        const mergedExams = mergeExams(local.exams || [], remote.exams || []);
         const mergedDeletedTaskIds = Array.from(new Set([
             ...(Array.isArray(local.deletedTaskIds) ? local.deletedTaskIds : []),
             ...(Array.isArray(remote.deletedTaskIds) ? remote.deletedTaskIds : [])
         ]));
+        const mergedDeletedExamIds = Array.from(new Set([
+            ...(Array.isArray(local.deletedExamIds) ? local.deletedExamIds : []),
+            ...(Array.isArray(remote.deletedExamIds) ? remote.deletedExamIds : [])
+        ]));
+        const mergedExams = mergeExams(local.exams || [], remote.exams || [], mergedDeletedExamIds);
 
         if (tabWrittenSync && remoteSync && remoteSync <= tabWrittenSync) {
             return { 
@@ -194,6 +198,7 @@
                 badges: mergedBadges, 
                 exams: mergedExams,
                 deletedTaskIds: mergedDeletedTaskIds,
+                deletedExamIds: mergedDeletedExamIds,
                 tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
             };
         }
@@ -202,6 +207,7 @@
             badges: mergedBadges, 
             exams: mergedExams,
             deletedTaskIds: mergedDeletedTaskIds,
+                deletedExamIds: mergedDeletedExamIds,
             tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
         };
         if (remoteSync && localSync && remoteSync < localSync) return { 
@@ -209,6 +215,7 @@
             badges: mergedBadges, 
             exams: mergedExams,
             deletedTaskIds: mergedDeletedTaskIds,
+                deletedExamIds: mergedDeletedExamIds,
             tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
         };
         if (remoteSync && localSync && remoteSync === localSync) return { 
@@ -216,6 +223,7 @@
             badges: mergedBadges, 
             exams: mergedExams,
             deletedTaskIds: mergedDeletedTaskIds,
+                deletedExamIds: mergedDeletedExamIds,
             tasks: (local.tasks || []).filter(t => t && !mergedDeletedTaskIds.includes(t.id))
         };
         const hist = local.pointsHistory || remote.pointsHistory || [];
@@ -224,6 +232,7 @@
             badges: mergedBadges,
             exams: mergedExams,
             deletedTaskIds: mergedDeletedTaskIds,
+                deletedExamIds: mergedDeletedExamIds,
             tasks: mergeTasks(local.tasks || [], remote.tasks || [], hist, mergedDeletedTaskIds),
         };
     }
