@@ -3506,11 +3506,16 @@ function App() {
                 if (!window.confirm('האם את בטוחה שברצונך למחוק את המבחן? פעולה זו תסיר גם את מפגשי הלמידה שתוכננו עבורו בלוח המשימות.')) {
                     return;
                 }
-                updateUserData(prev => ({
-                    ...prev,
-                    exams: (prev.exams || []).filter(e => e.id !== examId),
-                    tasks: (prev.tasks || []).filter(t => t.examId !== examId)
-                }));
+                updateUserData(prev => {
+                    const examTaskIds = (prev.tasks || []).filter(t => t.examId === examId).map(t => t.id);
+                    const deletedTaskIds = Array.from(new Set([...(prev.deletedTaskIds || []), ...examTaskIds]));
+                    return {
+                        ...prev,
+                        exams: (prev.exams || []).filter(e => e.id !== examId),
+                        tasks: (prev.tasks || []).filter(t => t.examId !== examId),
+                        deletedTaskIds
+                    };
+                });
                 showToast('המבחן נמחק בהצלחה', 'info');
             };
 

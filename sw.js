@@ -1,7 +1,7 @@
 /**
  * StudyStreak Pro - Service Worker for Background Notifications & PWA
  */
-const CACHE_NAME = 'studystreak-v20261024_2';
+const CACHE_NAME = 'studystreak-v20261028_1';
  
 self.addEventListener('install', (event) => {
     self.skipWaiting();

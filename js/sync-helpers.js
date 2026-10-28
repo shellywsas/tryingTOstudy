@@ -81,17 +81,17 @@
         const local = (Array.isArray(localTasks) ? localTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
         const incoming = (Array.isArray(incomingTasks) ? incomingTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
         const byId = new Map();
-        for (const t of local) {
+        for (const t of incoming) {
             if (t && t.id) byId.set(t.id, t);
         }
-        for (const t of incoming) {
-            if (!t || !t.id) continue;
-            byId.set(t.id, mergeTaskPair(byId.get(t.id), t, pointsHistory));
-        }
         for (const t of local) {
             if (!t || !t.id) continue;
-            if (!byId.has(t.id)) {
-                byId.set(t.id, t);
+            if (byId.has(t.id)) {
+                byId.set(t.id, mergeTaskPair(t, byId.get(t.id), pointsHistory));
+            } else {
+                if (taskLooksCompleted(t, pointsHistory)) {
+                    byId.set(t.id, t);
+                }
             }
         }
         return Array.from(byId.values());
