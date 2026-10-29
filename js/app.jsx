@@ -1863,6 +1863,7 @@ function App() {
 
             // Admin Panel State & Helpers
             const [isAdminLoggedIn, setIsAdminLoggedIn] = useState(false);
+            const [isShellyAdmin, setIsShellyAdmin] = useState(false);
             const [adminUsersList, setAdminUsersList] = useState([]);
             const [adminLoading, setAdminLoading] = useState(false);
             const [selectedAdminUser, setSelectedAdminUser] = useState(null);
@@ -2396,13 +2397,15 @@ function App() {
                 const pass = (e.target.password.value || '').trim();
                 if(!user) return;
 
-                // Admin check - only accessible with credentials: 'admin' or 'אדמין'
+                // Admin check - regular 'אדמין' (no doc links) vs 'אדמיןשלי' (with external doc links)
                 const cleanUser = user.toLowerCase();
                 const cleanPass = pass.toLowerCase();
-                const isAdmin = (cleanUser === 'admin' || cleanUser === 'אדמין') && 
-                                (cleanPass === 'admin' || cleanPass === 'אדמין');
-                if (isAdmin) {
+                const validAdminPass = (cleanPass === 'admin' || cleanPass === 'אדמין');
+                const isRegularAdmin = (cleanUser === 'admin' || cleanUser === 'אדמין') && validAdminPass;
+                const isOwnerShellyAdmin = (cleanUser === 'אדמיןשלי' || cleanUser === 'אדמין שלי' || cleanUser === 'adminshelly') && validAdminPass;
+                if (isRegularAdmin || isOwnerShellyAdmin) {
                     setIsAdminLoggedIn(true);
+                    setIsShellyAdmin(Boolean(isOwnerShellyAdmin));
                     loadAdminUsers();
                     showToast('ברוך הבא למצב ניהול מערכת (God Mode) 🛡️', 'success');
                     return;
@@ -4949,29 +4952,33 @@ function App() {
                                             </div>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2.5 flex-wrap relative z-10">
-                                        <a 
-                                            href="./feedback-doc.html"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
-                                            <span>💬</span> מסמך תקלות ובקשות ↗️
-                                        </a>
-                                        <a 
-                                            href="./admin-log-doc.html"
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
-                                            <span>📋</span> מסמך שינויי אדמין ↗️
-                                        </a>
+                                    <div className="flex items-center gap-2.5 flex-wrap relative z-10 w-full md:w-auto">
+                                        {isShellyAdmin && (
+                                            <>
+                                                <a 
+                                                    href="./feedback-doc.html"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-1 md:flex-initial justify-center bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
+                                                    <span>💬</span> מסמך תקלות ובקשות ↗️
+                                                </a>
+                                                <a 
+                                                    href="./admin-log-doc.html"
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="flex-1 md:flex-initial justify-center bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
+                                                    <span>📋</span> מסמך שינויי אדמין ↗️
+                                                </a>
+                                            </>
+                                        )}
                                         <button 
                                             onClick={loadAdminUsers}
-                                            className="bg-stone-800 hover:bg-stone-700 text-stone-200 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all">
+                                            className="flex-1 md:flex-initial justify-center bg-stone-800 hover:bg-stone-700 text-stone-200 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all">
                                             <span>🔄</span> רענן משתמשים
                                         </button>
                                         <button 
-                                            onClick={() => { setIsAdminLoggedIn(false); setSelectedAdminUser(null); }}
-                                            className="bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-md">
+                                            onClick={() => { setIsAdminLoggedIn(false); setIsShellyAdmin(false); setSelectedAdminUser(null); }}
+                                            className="flex-1 md:flex-initial justify-center bg-rose-600 hover:bg-rose-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-md">
                                             <span>🚪</span> יציאה ממצב מנהל
                                         </button>
                                     </div>

@@ -2,14 +2,14 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>מסמך תקלות, הערות ובקשות - StudyStreak Pro</title>
     <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
 
     <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=20261030_2"></script>
+    <script src="js/firebase-config.js?v=20261030_3"></script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,19 +20,27 @@
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
     <style>
-        body {
+        html, body {
             font-family: 'Heebo', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #f3f4f6;
+            background-color: #f5f5f4;
+            overflow-x: hidden;
+            max-width: 100vw;
         }
         .doc-paper {
             background: #ffffff;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
         }
         .msg-wrap {
             white-space: pre-wrap;
             word-break: break-word;
             overflow-wrap: anywhere;
-            line-height: 1.65;
+            line-height: 1.6;
+        }
+        /* Prevent iOS Safari zoom on input focus */
+        @media screen and (max-width: 768px) {
+            input, select, textarea {
+                font-size: 16px !important;
+            }
         }
         @media print {
             .no-print { display: none !important; }
@@ -41,103 +49,104 @@
         }
     </style>
 </head>
-<body class="text-stone-800 min-h-screen pb-16">
+<body class="text-stone-800 min-h-screen pb-14">
 
-    <!-- Top Docs/Sheets Toolbar -->
-    <header class="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-xs no-print">
-        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white flex items-center justify-center text-xl shadow-sm">
-                    📝
-                </div>
-                <div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h1 class="font-black text-lg md:text-xl text-stone-900">מסמך תקלות, הערות ובקשות</h1>
-                        <span id="sync-badge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            מחובר בלייב לענן
-                        </span>
+    <!-- Mobile-First Compact Toolbar -->
+    <header class="bg-white/95 backdrop-blur-md border-b border-stone-200 sticky top-0 z-30 shadow-2xs no-print">
+        <div class="max-w-5xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-purple-600 to-indigo-600 text-white flex items-center justify-center text-lg shadow-xs shrink-0">
+                        📝
                     </div>
-                    <p class="text-xs text-stone-500">StudyStreak Pro • קובץ מעקב חיצוני שמתעדכן אוטומטית מכל המכשירים</p>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <h1 class="font-black text-sm sm:text-lg text-stone-900 truncate">מסמך תקלות ובקשות</h1>
+                            <span id="sync-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.6)]" title="מחובר בלייב לענן"></span>
+                        </div>
+                        <p class="text-[11px] text-stone-400 truncate">StudyStreak Pro • מסמך מתעדכן בזמן אמת</p>
+                    </div>
                 </div>
+
+                <a href="./index.html" class="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold shrink-0 active:scale-95 transition-all">
+                    לאפליקציה ←
+                </a>
             </div>
 
-            <div class="flex items-center gap-2 flex-wrap">
-                <a href="./admin-log-doc.html" class="px-3 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>🛡️</span> מעבר למסמך שינויי אדמין ↗️
+            <!-- Action Buttons Row (Fits Phone Screen Cleanly) -->
+            <div class="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:gap-2 pt-1 border-t border-stone-100">
+                <a href="./admin-log-doc.html" class="col-span-3 sm:col-span-1 justify-center px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>🛡️</span> מעבר ליומן שינויי אדמין ↗️
                 </a>
-                <button onclick="exportToWordDoc()" class="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>📄</span> הורדה כקובץ Docs/Word
+                <button onclick="exportToWordDoc()" class="justify-center px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>📄</span> קובץ Docs
                 </button>
-                <button onclick="exportToCSV()" class="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>📊</span> הורדה לאקסל / Sheets
+                <button onclick="exportToCSV()" class="justify-center px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>📊</span> קובץ אקסל
                 </button>
-                <button onclick="window.print()" class="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>🖨️</span> הדפסה / PDF
+                <button onclick="window.print()" class="justify-center px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>🖨️</span> PDF
                 </button>
             </div>
         </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-3 sm:px-6 pt-6 space-y-5">
+    <main class="max-w-5xl mx-auto px-3 sm:px-5 pt-4 space-y-3.5">
 
-        <!-- Summary Cards -->
-        <section class="grid grid-cols-2 sm:grid-cols-4 gap-3 no-print">
-            <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs">
-                <div class="text-xs text-stone-400 font-bold">סה"כ פניות במסמך</div>
-                <div id="stat-total" class="text-2xl font-black text-stone-800 mt-1">0</div>
+        <!-- Compact 4-Stat Grid (Fits Phone Without Overflow) -->
+        <section class="grid grid-cols-4 gap-2 sm:gap-3 no-print">
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-stone-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-stone-400 font-bold truncate">סה"כ</div>
+                <div id="stat-total" class="text-lg sm:text-2xl font-black text-stone-800 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
-                <div class="text-xs text-rose-500 font-bold">ממתינות לטיפול 🔴</div>
-                <div id="stat-open" class="text-2xl font-black text-rose-600 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-rose-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-rose-500 font-bold truncate">לטיפול 🔴</div>
+                <div id="stat-open" class="text-lg sm:text-2xl font-black text-rose-600 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-amber-200 shadow-2xs">
-                <div class="text-xs text-amber-600 font-bold">תקלות ובעיות 🐞</div>
-                <div id="stat-bugs" class="text-2xl font-black text-amber-600 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-amber-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-amber-600 font-bold truncate">תקלות 🐞</div>
+                <div id="stat-bugs" class="text-lg sm:text-2xl font-black text-amber-600 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
-                <div class="text-xs text-emerald-600 font-bold">סומנו כטופלו ✅</div>
-                <div id="stat-resolved" class="text-2xl font-black text-emerald-600 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-emerald-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-emerald-600 font-bold truncate">טופלו ✅</div>
+                <div id="stat-resolved" class="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5">0</div>
             </div>
         </section>
 
-        <!-- Controls & Quick Add Note Bar -->
-        <section class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs space-y-3 no-print">
-            <div class="flex flex-wrap items-center justify-between gap-3">
-                <div class="flex items-center gap-2 flex-wrap flex-1 min-w-[240px]">
-                    <div class="relative flex-1 min-w-[200px]">
-                        <input
-                            id="search-input"
-                            type="text"
-                            oninput="renderAll()"
-                            placeholder="חיפוש לפי שם משתמשת, מילה בהודעה או הערה..."
-                            class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-purple-400"
-                        />
-                        <span class="absolute right-3 top-2 text-stone-400 text-sm">🔍</span>
-                    </div>
+        <!-- Search, Filters & View Switcher -->
+        <section class="bg-white p-3 sm:p-4 rounded-2xl border border-stone-200 shadow-2xs space-y-2.5 no-print">
+            <div class="relative">
+                <input
+                    id="search-input"
+                    type="text"
+                    oninput="renderAll()"
+                    placeholder="חיפוש לפי שם משתמשת או תוכן הודעה..."
+                    class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-purple-400"
+                />
+                <span class="absolute right-3 top-2.5 text-stone-400 text-sm">🔍</span>
+            </div>
 
-                    <select id="filter-status" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
-                        <option value="all">כל הסטטוסים</option>
-                        <option value="open">פתוח לטיפול 🔴</option>
-                        <option value="in_progress">בבדיקה / בטיפול ⏳</option>
-                        <option value="resolved">טופל ✅</option>
-                    </select>
+            <div class="grid grid-cols-2 sm:flex sm:items-center justify-between gap-2">
+                <select id="filter-status" onchange="renderAll()" class="px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+                    <option value="all">כל הסטטוסים</option>
+                    <option value="open">פתוח לטיפול 🔴</option>
+                    <option value="in_progress">בטיפול ⏳</option>
+                    <option value="resolved">טופל ✅</option>
+                </select>
 
-                    <select id="filter-type" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
-                        <option value="all">כל הסוגים</option>
-                        <option value="bug">🐞 תקלות ובאגים</option>
-                        <option value="request">💡 בקשות ורעיונות</option>
-                        <option value="comment">💬 הערות כלליות</option>
-                    </select>
-                </div>
+                <select id="filter-type" onchange="renderAll()" class="px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+                    <option value="all">כל הסוגים</option>
+                    <option value="bug">🐞 תקלות</option>
+                    <option value="request">💡 בקשות</option>
+                    <option value="comment">💬 הערות</option>
+                </select>
 
-                <!-- View Switcher: Docs vs Sheets -->
-                <div class="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
-                    <button id="btn-view-docs" onclick="setViewMode('docs')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs">
-                        📄 תצוגת דוקס (מסמך)
+                <div class="col-span-2 sm:col-span-1 flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 sm:mr-auto">
+                    <button id="btn-view-docs" onclick="setViewMode('docs')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs">
+                        📄 תצוגת דוקס
                     </button>
-                    <button id="btn-view-sheets" onclick="setViewMode('sheets')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600">
-                        📊 תצוגת שיטס (טבלה)
+                    <button id="btn-view-sheets" onclick="setViewMode('sheets')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600">
+                        📊 תצוגת שיטס
                     </button>
                 </div>
             </div>
@@ -147,53 +156,41 @@
                 <summary class="cursor-pointer text-xs font-bold text-purple-700 hover:text-purple-800 flex items-center gap-1.5 select-none">
                     <span>➕</span> הוספת הערה / משימה חדשה למסמך (כתיבה ישירה שלך)
                 </summary>
-                <form onsubmit="handleManualAdd(event)" class="mt-3 grid grid-cols-1 md:grid-cols-4 gap-2.5 bg-purple-50/50 p-3 rounded-xl border border-purple-100">
-                    <div>
-                        <label class="block text-[11px] font-bold text-stone-600 mb-1">סוג רישום</label>
-                        <select id="manual-type" class="w-full p-2 bg-white border border-stone-200 rounded-lg text-xs font-bold">
-                            <option value="bug">🐞 תקלה לבדיקה</option>
-                            <option value="request">💡 רעיון / שדרוג</option>
-                            <option value="comment">💬 הערה אישית</option>
-                        </select>
-                    </div>
-                    <div class="md:col-span-2">
-                        <label class="block text-[11px] font-bold text-stone-600 mb-1">תוכן ההערה (אפשר גם כמה שורות)</label>
-                        <textarea id="manual-msg" rows="2" required placeholder="כתבי כאן הערה או דבר שתרצי לזכור לטפל בו..." class="w-full p-2 bg-white border border-stone-200 rounded-lg text-xs font-medium"></textarea>
-                    </div>
-                    <div class="flex items-end">
-                        <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-lg text-xs shadow-xs transition-all">
-                            הוסף למסמך 💾
-                        </button>
-                    </div>
+                <form onsubmit="handleManualAdd(event)" class="mt-2.5 space-y-2.5 bg-purple-50/50 p-3 rounded-xl border border-purple-100">
+                    <select id="manual-type" class="w-full p-2 bg-white border border-stone-200 rounded-xl text-xs font-bold">
+                        <option value="bug">🐞 תקלה לבדיקה</option>
+                        <option value="request">💡 רעיון / שדרוג</option>
+                        <option value="comment">💬 הערה אישית</option>
+                    </select>
+                    <textarea id="manual-msg" rows="2" required placeholder="כתבי כאן הערה או דבר שתרצי לזכור לטפל בו..." class="w-full p-2.5 bg-white border border-stone-200 rounded-xl text-xs font-medium"></textarea>
+                    <button type="submit" class="w-full py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-xl text-xs shadow-xs transition-all active:scale-95">
+                        הוספה למסמך 💾
+                    </button>
                 </form>
             </details>
         </section>
 
         <!-- Document Paper Container -->
-        <section class="doc-paper rounded-3xl border border-stone-200 p-5 md:p-8 min-h-[480px]">
-            <div class="flex items-center justify-between pb-4 mb-6 border-b-2 border-stone-100">
+        <section class="doc-paper rounded-2xl sm:rounded-3xl border border-stone-200 p-3.5 sm:p-6 min-h-[400px]">
+            <div class="flex items-center justify-between pb-3 mb-4 border-b border-stone-100">
                 <div>
-                    <h2 class="text-lg font-black text-stone-800">פירוט כל הדיווחים, הבקשות וההערות</h2>
-                    <p id="last-updated-text" class="text-xs text-stone-400 mt-0.5">טוען נתונים...</p>
+                    <h2 class="text-sm sm:text-base font-black text-stone-800">פירוט כל הדיווחים והבקשות</h2>
+                    <p id="last-updated-text" class="text-[11px] text-stone-400">טוען נתונים...</p>
                 </div>
-                <span id="visible-count-badge" class="text-xs font-bold bg-stone-100 text-stone-600 px-3 py-1 rounded-full">0 רשומות</span>
+                <span id="visible-count-badge" class="text-[11px] font-bold bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full shrink-0">0 רשומות</span>
             </div>
 
-            <!-- DOCS VIEW -->
-            <div id="docs-container" class="space-y-4"></div>
+            <!-- DOCS VIEW (Mobile & Desktop Friendly Cards) -->
+            <div id="docs-container" class="space-y-3"></div>
 
-            <!-- SHEETS VIEW -->
-            <div id="sheets-container" class="hidden overflow-x-auto">
+            <!-- SHEETS VIEW (Responsive Table) -->
+            <div id="sheets-container" class="hidden overflow-x-auto -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
                 <table class="w-full border-collapse text-right text-xs">
                     <thead>
                         <tr class="bg-stone-100 text-stone-700 border-y border-stone-300 font-black">
-                            <th class="p-3 border-l border-stone-200 w-36">תאריך ושעה</th>
-                            <th class="p-3 border-l border-stone-200 w-36">משתמשת</th>
-                            <th class="p-3 border-l border-stone-200 w-28">סוג פנייה</th>
-                            <th class="p-3 border-l border-stone-200 min-w-[280px]">תוכן ההודעה המלא (גלישת טקסט אוטומטית)</th>
-                            <th class="p-3 border-l border-stone-200 w-56">הערת מעקב שלי</th>
-                            <th class="p-3 border-l border-stone-200 w-32">סטטוס</th>
-                            <th class="p-3 w-16 text-center no-print">מחיקה</th>
+                            <th class="p-2.5 border-l border-stone-200 whitespace-nowrap">משתמשת ותאריך</th>
+                            <th class="p-2.5 border-l border-stone-200">תוכן ההודעה והערת מעקב</th>
+                            <th class="p-2.5 w-24 text-center">סטטוס</th>
                         </tr>
                     </thead>
                     <tbody id="sheets-tbody" class="divide-y divide-stone-200 align-top"></tbody>
@@ -204,29 +201,29 @@
 
     <script>
         let allItems = [];
-        let currentViewMode = 'docs'; // 'docs' | 'sheets'
+        let currentViewMode = 'docs';
 
         function formatDateTime(iso) {
             if (!iso) return '';
             const d = new Date(iso);
             if (isNaN(d.getTime())) return iso;
             return d.toLocaleDateString('he-IL', {
-                day: '2-digit', month: '2-digit', year: 'numeric'
-            }) + ' בשעה ' + d.toLocaleTimeString('he-IL', {
+                day: '2-digit', month: '2-digit', year: '2-digit'
+            }) + ' ' + d.toLocaleTimeString('he-IL', {
                 hour: '2-digit', minute: '2-digit'
             });
         }
 
         function getTypeBadge(type) {
-            if (type === 'bug') return { label: '🐞 תקלה / באג', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-            if (type === 'request') return { label: '💡 בקשה / רעיון', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
-            return { label: '💬 הערה כללית', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
+            if (type === 'bug') return { label: '🐞 תקלה', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+            if (type === 'request') return { label: '💡 בקשה', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+            return { label: '💬 הערה', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
         }
 
         function getStatusBadge(status) {
             if (status === 'resolved') return { label: 'טופל ✅', cls: 'bg-emerald-50 text-emerald-700 border-emerald-300' };
             if (status === 'in_progress') return { label: 'בטיפול ⏳', cls: 'bg-amber-50 text-amber-800 border-amber-300' };
-            return { label: 'פתוח לטיפול 🔴', cls: 'bg-rose-50 text-rose-700 border-rose-300' };
+            return { label: 'פתוח 🔴', cls: 'bg-rose-50 text-rose-700 border-rose-300' };
         }
 
         function setViewMode(mode) {
@@ -237,13 +234,13 @@
             const sheetsCont = document.getElementById('sheets-container');
 
             if (mode === 'docs') {
-                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs';
-                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+                docsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs';
+                sheetsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
                 docsCont.classList.remove('hidden');
                 sheetsCont.classList.add('hidden');
             } else {
-                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs';
-                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+                sheetsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-purple-700 shadow-2xs';
+                docsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
                 sheetsCont.classList.remove('hidden');
                 docsCont.classList.add('hidden');
             }
@@ -306,7 +303,7 @@
                 timestamp: new Date().toISOString(),
                 type,
                 message,
-                senderName: 'מנהלת האפליקציה (רישום עצמי)',
+                senderName: 'רישום עצמי (מנהלת)',
                 senderUsername: 'admin',
                 status: 'open',
                 adminNote: ''
@@ -335,115 +332,109 @@
         }
 
         function renderAll() {
-            // Update stats
             document.getElementById('stat-total').textContent = allItems.length;
             document.getElementById('stat-open').textContent = allItems.filter(i => (i.status || 'open') !== 'resolved').length;
             document.getElementById('stat-bugs').textContent = allItems.filter(i => (i.type || 'bug') === 'bug').length;
             document.getElementById('stat-resolved').textContent = allItems.filter(i => i.status === 'resolved').length;
 
             const filtered = getFilteredItems();
-            document.getElementById('visible-count-badge').textContent = `${filtered.length} רשומות מוצגות`;
-            document.getElementById('last-updated-text').textContent = `עודכן לאחרונה: ${new Date().toLocaleTimeString('he-IL')}`;
+            document.getElementById('visible-count-badge').textContent = `${filtered.length} רשומות`;
+            document.getElementById('last-updated-text').textContent = `עודכן: ${new Date().toLocaleTimeString('he-IL')}`;
 
             const docsCont = document.getElementById('docs-container');
             const sheetsBody = document.getElementById('sheets-tbody');
 
             if (filtered.length === 0) {
                 const emptyHtml = `
-                    <div class="text-center py-16 text-stone-400">
-                        <div class="text-4xl mb-3">✨</div>
-                        <div class="font-bold text-base text-stone-600">אין פניות או דיווחים להצגה כרגע</div>
-                        <div class="text-xs mt-1">כל הערה, תקלה או בקשה שמשתמשת תכתוב באפליקציה תופיע כאן אוטומטית ובזמן אמת.</div>
+                    <div class="text-center py-12 text-stone-400">
+                        <div class="text-4xl mb-2">✨</div>
+                        <div class="font-bold text-sm text-stone-600">אין פניות או דיווחים להצגה כרגע</div>
+                        <div class="text-xs mt-1">כל הערה, תקלה או בקשה שמשתמשת תכתוב באפליקציה תופיע כאן אוטומטית.</div>
                     </div>
                 `;
                 docsCont.innerHTML = emptyHtml;
-                sheetsBody.innerHTML = `<tr><td colspan="7">${emptyHtml}</td></tr>`;
+                sheetsBody.innerHTML = `<tr><td colspan="3">${emptyHtml}</td></tr>`;
                 return;
             }
 
-            // Render Docs View
+            // Docs View
             docsCont.innerHTML = filtered.map((item, idx) => {
                 const tBadge = getTypeBadge(item.type);
                 const sBadge = getStatusBadge(item.status || 'open');
                 const isResolved = item.status === 'resolved';
 
                 return `
-                    <article class="p-5 rounded-2xl border transition-all ${isResolved ? 'bg-stone-50/70 border-stone-200 opacity-85' : 'bg-white border-stone-200/90 shadow-xs hover:border-purple-300'}">
-                        <div class="flex flex-wrap items-center justify-between gap-2 pb-3 mb-3 border-b border-stone-100">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="text-xs font-black text-stone-400">#${filtered.length - idx}</span>
-                                <span class="text-xs font-bold px-2.5 py-1 rounded-lg border ${tBadge.cls}">${tBadge.label}</span>
-                                <span class="font-bold text-sm text-stone-900">${escapeHtml(item.senderName || 'משתמשת')}</span>
-                                ${item.senderUsername ? `<span class="text-xs text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.senderUsername)}</span>` : ''}
-                                <span class="text-xs text-stone-400">• ${formatDateTime(item.timestamp)}</span>
+                    <article class="p-3.5 sm:p-5 rounded-2xl border transition-all ${isResolved ? 'bg-stone-50/70 border-stone-200 opacity-85' : 'bg-white border-stone-200 shadow-2xs'}">
+                        <div class="flex items-start justify-between gap-2 pb-2.5 mb-2.5 border-b border-stone-100">
+                            <div class="min-w-0 flex-1">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                    <span class="text-[11px] font-black text-stone-400">#${filtered.length - idx}</span>
+                                    <span class="text-[11px] font-bold px-2 py-0.5 rounded-lg border ${tBadge.cls}">${tBadge.label}</span>
+                                    <span class="font-bold text-xs sm:text-sm text-stone-900">${escapeHtml(item.senderName || 'משתמשת')}</span>
+                                    ${item.senderUsername ? `<span class="text-[11px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.senderUsername)}</span>` : ''}
+                                </div>
+                                <div class="text-[11px] text-stone-400 mt-0.5">${formatDateTime(item.timestamp)}</div>
                             </div>
 
-                            <div class="flex items-center gap-2 no-print">
+                            <div class="flex items-center gap-1 shrink-0 no-print">
                                 <select
                                     onchange="updateItemStatus('${item.id}', this.value)"
-                                    class="text-xs font-bold px-2.5 py-1 rounded-lg border outline-none cursor-pointer ${sBadge.cls}">
-                                    <option value="open" ${(item.status || 'open') === 'open' ? 'selected' : ''}>🔴 פתוח לטיפול</option>
+                                    class="text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${sBadge.cls}">
+                                    <option value="open" ${(item.status || 'open') === 'open' ? 'selected' : ''}>🔴 פתוח</option>
                                     <option value="in_progress" ${item.status === 'in_progress' ? 'selected' : ''}>⏳ בטיפול</option>
                                     <option value="resolved" ${item.status === 'resolved' ? 'selected' : ''}>✅ טופל</option>
                                 </select>
-                                <button onclick="deleteItem('${item.id}')" class="text-stone-400 hover:text-rose-600 p-1.5 rounded-lg hover:bg-rose-50 transition-colors" title="מחק פנייה">
-                                    🗑️
-                                </button>
+                                <button onclick="deleteItem('${item.id}')" class="text-stone-400 hover:text-rose-600 p-1 rounded-lg" title="מחק">🗑️</button>
                             </div>
                         </div>
 
-                        <div class="msg-wrap text-sm text-stone-800 bg-stone-50/80 p-4 rounded-xl border border-stone-100 font-medium">${escapeHtml(item.message)}</div>
+                        <div class="msg-wrap text-xs sm:text-sm text-stone-800 bg-stone-50 p-3 sm:p-4 rounded-xl border border-stone-100 font-medium">${escapeHtml(item.message)}</div>
 
-                        <div class="mt-3 flex flex-col sm:flex-row sm:items-center gap-2">
-                            <span class="text-xs font-bold text-stone-500 shrink-0">📌 הערת מעקב שלי:</span>
+                        <div class="mt-2.5 flex items-center gap-2">
+                            <span class="text-[11px] font-bold text-stone-500 shrink-0">📌 הערה:</span>
                             <input
                                 type="text"
                                 value="${escapeHtml(item.adminNote || '')}"
-                                placeholder="כתבי כאן הערה לעצמך (נשמר אוטומטית כשיוצאים מהשדה)..."
+                                placeholder="הערת מעקב שלי..."
                                 onblur="updateAdminNote('${item.id}', this.value)"
                                 onkeydown="if(event.key==='Enter'){this.blur();}"
-                                class="flex-1 bg-transparent border-b border-dashed border-stone-300 focus:border-purple-500 px-2 py-1 text-xs font-medium text-stone-700 outline-none"
+                                class="flex-1 min-w-0 bg-transparent border-b border-dashed border-stone-300 focus:border-purple-500 px-1.5 py-1 text-xs font-medium text-stone-700 outline-none"
                             />
                         </div>
                     </article>
                 `;
             }).join('');
 
-            // Render Sheets View (with full text wrapping for long multi-sentence messages)
+            // Sheets View (Fits Mobile & Desktop)
             sheetsBody.innerHTML = filtered.map(item => {
                 const tBadge = getTypeBadge(item.type);
                 const sBadge = getStatusBadge(item.status || 'open');
                 return `
-                    <tr class="hover:bg-purple-50/20 transition-colors ${item.status === 'resolved' ? 'bg-stone-50/60 text-stone-500' : 'bg-white'}">
-                        <td class="p-3 border-l border-stone-200 font-medium text-stone-500 whitespace-nowrap">${formatDateTime(item.timestamp)}</td>
-                        <td class="p-3 border-l border-stone-200">
-                            <div class="font-bold text-stone-800">${escapeHtml(item.senderName || 'משתמשת')}</div>
-                            ${item.senderUsername ? `<div class="text-[11px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.senderUsername)}</div>` : ''}
+                    <tr class="${item.status === 'resolved' ? 'bg-stone-50/60 text-stone-500' : 'bg-white'}">
+                        <td class="p-2.5 border-l border-stone-200 w-28 sm:w-40">
+                            <span class="inline-block text-[10px] font-bold px-1.5 py-0.5 rounded border mb-1 ${tBadge.cls}">${tBadge.label}</span>
+                            <div class="font-bold text-stone-800 text-xs">${escapeHtml(item.senderName || 'משתמשת')}</div>
+                            <div class="text-[10px] text-stone-400 mt-0.5">${formatDateTime(item.timestamp)}</div>
                         </td>
-                        <td class="p-3 border-l border-stone-200">
-                            <span class="inline-block text-[11px] font-bold px-2 py-0.5 rounded-md border ${tBadge.cls}">${tBadge.label}</span>
-                        </td>
-                        <td class="p-3 border-l border-stone-200">
-                            <div class="msg-wrap text-xs text-stone-800 font-medium">${escapeHtml(item.message)}</div>
-                        </td>
-                        <td class="p-3 border-l border-stone-200">
-                            <textarea
-                                rows="2"
-                                placeholder="הערה..."
+                        <td class="p-2.5 border-l border-stone-200">
+                            <div class="msg-wrap text-xs text-stone-800 font-medium mb-2">${escapeHtml(item.message)}</div>
+                            <input
+                                type="text"
+                                placeholder="📌 הערת מעקב..."
+                                value="${escapeHtml(item.adminNote || '')}"
                                 onblur="updateAdminNote('${item.id}', this.value)"
-                                class="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs outline-none focus:bg-white focus:border-purple-400 resize-y">${escapeHtml(item.adminNote || '')}</textarea>
+                                class="w-full p-1.5 bg-stone-50 border border-stone-200 rounded-lg text-xs outline-none focus:bg-white focus:border-purple-400"
+                            />
                         </td>
-                        <td class="p-3 border-l border-stone-200">
+                        <td class="p-2 text-center">
                             <select
                                 onchange="updateItemStatus('${item.id}', this.value)"
-                                class="w-full text-[11px] font-bold px-2 py-1 rounded-lg border outline-none cursor-pointer ${sBadge.cls}">
+                                class="w-full text-[11px] font-bold px-1.5 py-1 rounded-lg border outline-none ${sBadge.cls}">
                                 <option value="open" ${(item.status || 'open') === 'open' ? 'selected' : ''}>🔴 פתוח</option>
                                 <option value="in_progress" ${item.status === 'in_progress' ? 'selected' : ''}>⏳ בטיפול</option>
                                 <option value="resolved" ${item.status === 'resolved' ? 'selected' : ''}>✅ טופל</option>
                             </select>
-                        </td>
-                        <td class="p-3 text-center no-print">
-                            <button onclick="deleteItem('${item.id}')" class="text-stone-400 hover:text-rose-600 p-1">🗑️</button>
+                            <button onclick="deleteItem('${item.id}')" class="mt-2 text-[11px] text-stone-400 hover:text-rose-600 no-print">🗑️ מחק</button>
                         </td>
                     </tr>
                 `;
@@ -507,7 +498,6 @@
             URL.revokeObjectURL(url);
         }
 
-        // Load initial local & subscribe to real-time Firestore updates
         function initFeedbackDoc() {
             try {
                 const localRaw = localStorage.getItem('studyStreak_system_feedback');
@@ -519,6 +509,8 @@
 
             if (db) {
                 db.collection('task_attachments').doc('system_feedback_doc').onSnapshot(doc => {
+                    const dot = document.getElementById('sync-dot');
+                    if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.6)]';
                     if (doc.exists && Array.isArray(doc.data()?.items)) {
                         const remoteItems = doc.data().items;
                         const byId = new Map();
@@ -535,11 +527,8 @@
                     renderAll();
                 }, err => {
                     console.warn('Firestore listener warning:', err);
-                    const badge = document.getElementById('sync-badge');
-                    if (badge) {
-                        badge.className = 'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200';
-                        badge.textContent = 'מצב מקומי';
-                    }
+                    const dot = document.getElementById('sync-dot');
+                    if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0';
                     renderAll();
                 });
             } else {

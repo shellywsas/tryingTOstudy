@@ -2,14 +2,14 @@
 <html lang="he" dir="rtl">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>מסמך מעקב שינויי אדמין - StudyStreak Pro</title>
     <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
 
     <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=20261030_2"></script>
+    <script src="js/firebase-config.js?v=20261030_3"></script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -20,19 +20,26 @@
     <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
 
     <style>
-        body {
+        html, body {
             font-family: 'Heebo', -apple-system, BlinkMacSystemFont, sans-serif;
-            background-color: #f3f4f6;
+            background-color: #f5f5f4;
+            overflow-x: hidden;
+            max-width: 100vw;
         }
         .doc-paper {
             background: #ffffff;
-            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
         }
         .msg-wrap {
             white-space: pre-wrap;
             word-break: break-word;
             overflow-wrap: anywhere;
-            line-height: 1.65;
+            line-height: 1.6;
+        }
+        @media screen and (max-width: 768px) {
+            input, select, textarea {
+                font-size: 16px !important;
+            }
         }
         @media print {
             .no-print { display: none !important; }
@@ -41,150 +48,151 @@
         }
     </style>
 </head>
-<body class="text-stone-800 min-h-screen pb-16">
+<body class="text-stone-800 min-h-screen pb-14">
 
-    <!-- Top Docs/Sheets Toolbar -->
-    <header class="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-xs no-print">
-        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-800 text-white flex items-center justify-center text-xl shadow-sm">
-                    🛡️
-                </div>
-                <div>
-                    <div class="flex items-center gap-2 flex-wrap">
-                        <h1 class="font-black text-lg md:text-xl text-stone-900">מסמך מעקב שינויי אדמין (Audit Log)</h1>
-                        <span id="sync-badge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
-                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                            מחובר בלייב לענן
-                        </span>
+    <!-- Mobile-First Compact Toolbar -->
+    <header class="bg-white/95 backdrop-blur-md border-b border-stone-200 sticky top-0 z-30 shadow-2xs no-print">
+        <div class="max-w-5xl mx-auto px-3 sm:px-5 py-2.5 sm:py-3 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5 min-w-0">
+                    <div class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-800 text-white flex items-center justify-center text-lg shadow-xs shrink-0">
+                        🛡️
                     </div>
-                    <p class="text-xs text-stone-500">StudyStreak Pro • תיעוד אוטומטי של כל הפעולות והשינויים שבוצעו במצב מנהל</p>
+                    <div class="min-w-0">
+                        <div class="flex items-center gap-1.5">
+                            <h1 class="font-black text-sm sm:text-lg text-stone-900 truncate">יומן מעקב שינויי אדמין</h1>
+                            <span id="sync-dot" class="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.6)]" title="מחובר בלייב לענן"></span>
+                        </div>
+                        <p class="text-[11px] text-stone-400 truncate">StudyStreak Pro • תיעוד פעולות אדמין בזמן אמת</p>
+                    </div>
                 </div>
+
+                <a href="./index.html" class="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold shrink-0 active:scale-95 transition-all">
+                    לאפליקציה ←
+                </a>
             </div>
 
-            <div class="flex items-center gap-2 flex-wrap">
-                <a href="./feedback-doc.html" class="px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all">
+            <!-- Action Buttons Row -->
+            <div class="grid grid-cols-3 sm:flex sm:items-center gap-1.5 sm:gap-2 pt-1 border-t border-stone-100">
+                <a href="./feedback-doc.html" class="col-span-3 sm:col-span-1 justify-center px-3 py-1.5 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
                     <span>💬</span> מעבר למסמך תקלות ובקשות ↗️
                 </a>
-                <button onclick="exportToWordDoc()" class="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>📄</span> הורדה כקובץ Docs/Word
+                <button onclick="exportToWordDoc()" class="justify-center px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>📄</span> קובץ Docs
                 </button>
-                <button onclick="exportToCSV()" class="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>📊</span> הורדה לאקסל / Sheets
+                <button onclick="exportToCSV()" class="justify-center px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>📊</span> קובץ אקסל
                 </button>
-                <button onclick="window.print()" class="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold flex items-center gap-1.5 transition-all">
-                    <span>🖨️</span> הדפסה / PDF
+                <button onclick="window.print()" class="justify-center px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] sm:text-xs font-bold flex items-center gap-1 transition-all active:scale-95">
+                    <span>🖨️</span> PDF
                 </button>
             </div>
         </div>
     </header>
 
-    <main class="max-w-6xl mx-auto px-3 sm:px-6 pt-6 space-y-5">
+    <main class="max-w-5xl mx-auto px-3 sm:px-5 pt-4 space-y-3.5">
 
-        <!-- Summary Cards -->
-        <section class="grid grid-cols-2 sm:grid-cols-4 gap-3 no-print">
-            <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs">
-                <div class="text-xs text-stone-400 font-bold">סה"כ שינויי אדמין מתועדים</div>
-                <div id="stat-total" class="text-2xl font-black text-stone-800 mt-1">0</div>
+        <!-- Compact 4-Stat Grid -->
+        <section class="grid grid-cols-4 gap-2 sm:gap-3 no-print">
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-stone-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-stone-400 font-bold truncate">סה"כ שינויים</div>
+                <div id="stat-total" class="text-lg sm:text-2xl font-black text-stone-800 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
-                <div class="text-xs text-emerald-600 font-bold">ביטולי קנסות ועדכוני נקודות 💰</div>
-                <div id="stat-points" class="text-2xl font-black text-emerald-600 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-emerald-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-emerald-600 font-bold truncate">נקודות/קנס 💰</div>
+                <div id="stat-points" class="text-lg sm:text-2xl font-black text-emerald-600 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
-                <div class="text-xs text-rose-500 font-bold">שינויים ושחזורי רצף 🔥</div>
-                <div id="stat-streaks" class="text-2xl font-black text-rose-500 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-rose-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-rose-500 font-bold truncate">רצפים 🔥</div>
+                <div id="stat-streaks" class="text-lg sm:text-2xl font-black text-rose-500 mt-0.5">0</div>
             </div>
-            <div class="bg-white p-4 rounded-2xl border border-indigo-200 shadow-2xs">
-                <div class="text-xs text-indigo-600 font-bold">משימות, תגים ופרופיל 📋</div>
-                <div id="stat-other" class="text-2xl font-black text-indigo-600 mt-1">0</div>
+            <div class="bg-white p-2.5 sm:p-4 rounded-2xl border border-indigo-200 text-center shadow-2xs">
+                <div class="text-[10px] sm:text-xs text-indigo-600 font-bold truncate">משימות/תגים 📋</div>
+                <div id="stat-other" class="text-lg sm:text-2xl font-black text-indigo-600 mt-0.5">0</div>
             </div>
         </section>
 
         <!-- Filters & View Switcher -->
-        <section class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 no-print">
-            <div class="flex items-center gap-2 flex-wrap flex-1 min-w-[240px]">
-                <div class="relative flex-1 min-w-[200px]">
-                    <input
-                        id="search-input"
-                        type="text"
-                        oninput="renderAll()"
-                        placeholder="חיפוש לפי שם משתמשת, פעולה או פירוט השינוי..."
-                        class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-indigo-400"
-                    />
-                    <span class="absolute right-3 top-2 text-stone-400 text-sm">🔍</span>
-                </div>
+        <section class="bg-white p-3 sm:p-4 rounded-2xl border border-stone-200 shadow-2xs space-y-2.5 no-print">
+            <div class="relative">
+                <input
+                    id="search-input"
+                    type="text"
+                    oninput="renderAll()"
+                    placeholder="חיפוש לפי שם משתמשת, פעולה או פירוט..."
+                    class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-indigo-400"
+                />
+                <span class="absolute right-3 top-2.5 text-stone-400 text-sm">🔍</span>
+            </div>
 
-                <select id="filter-category" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+            <div class="grid grid-cols-2 sm:flex sm:items-center justify-between gap-2">
+                <select id="filter-category" onchange="renderAll()" class="px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
                     <option value="all">כל סוגי השינויים</option>
                     <option value="penalty">💚 ביטול קנסות</option>
-                    <option value="points">💰 עדכון נקודות ידני</option>
-                    <option value="streak">🔥 רצפים ושחזור סטריק</option>
-                    <option value="task">📋 שינוי / מחיקת משימות</option>
-                    <option value="badge">🏅 תגים והישגים</option>
-                    <option value="profile">👤 פרטים אישיים וסיסמה</option>
+                    <option value="points">💰 עדכון נקודות</option>
+                    <option value="streak">🔥 רצפים וסטריק</option>
+                    <option value="task">📋 משימות</option>
+                    <option value="badge">🏅 תגים</option>
+                    <option value="profile">👤 פרטים וסיסמה</option>
                     <option value="delete_user">🗑️ מחיקת חשבון</option>
                 </select>
 
-                <select id="filter-user" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+                <select id="filter-user" onchange="renderAll()" class="px-2.5 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
                     <option value="all">כל המשתמשות</option>
                 </select>
-            </div>
 
-            <!-- View Switcher: Sheets vs Docs -->
-            <div class="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
-                <button id="btn-view-sheets" onclick="setViewMode('sheets')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs">
-                    📊 תצוגת שיטס (טבלה)
-                </button>
-                <button id="btn-view-docs" onclick="setViewMode('docs')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600">
-                    📄 תצוגת דוקס (מסמך)
-                </button>
+                <div class="col-span-2 sm:col-span-1 flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200 sm:mr-auto">
+                    <button id="btn-view-docs" onclick="setViewMode('docs')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs">
+                        📄 תצוגת דוקס
+                    </button>
+                    <button id="btn-view-sheets" onclick="setViewMode('sheets')" class="flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600">
+                        📊 תצוגת שיטס
+                    </button>
+                </div>
             </div>
         </section>
 
         <!-- Document Paper Container -->
-        <section class="doc-paper rounded-3xl border border-stone-200 p-5 md:p-8 min-h-[480px]">
-            <div class="flex items-center justify-between pb-4 mb-6 border-b-2 border-stone-100">
+        <section class="doc-paper rounded-2xl sm:rounded-3xl border border-stone-200 p-3.5 sm:p-6 min-h-[400px]">
+            <div class="flex items-center justify-between pb-3 mb-4 border-b border-stone-100">
                 <div>
-                    <h2 class="text-lg font-black text-stone-800">יומן פעולות ושינויי אדמין מלא</h2>
-                    <p id="last-updated-text" class="text-xs text-stone-400 mt-0.5">טוען נתונים...</p>
+                    <h2 class="text-sm sm:text-base font-black text-stone-800">פירוט שינויי אדמין</h2>
+                    <p id="last-updated-text" class="text-[11px] text-stone-400">טוען נתונים...</p>
                 </div>
-                <span id="visible-count-badge" class="text-xs font-bold bg-stone-100 text-stone-600 px-3 py-1 rounded-full">0 פעולות</span>
+                <span id="visible-count-badge" class="text-[11px] font-bold bg-stone-100 text-stone-600 px-2.5 py-1 rounded-full shrink-0">0 פעולות</span>
             </div>
 
-            <!-- SHEETS VIEW (Default for Audit Log) -->
-            <div id="sheets-container" class="overflow-x-auto">
+            <!-- DOCS VIEW (Default — Fits Phone Screen 100%) -->
+            <div id="docs-container" class="space-y-2.5"></div>
+
+            <!-- SHEETS VIEW (Responsive Table) -->
+            <div id="sheets-container" class="hidden overflow-x-auto -mx-3.5 px-3.5 sm:mx-0 sm:px-0">
                 <table class="w-full border-collapse text-right text-xs">
                     <thead>
                         <tr class="bg-stone-100 text-stone-700 border-y border-stone-300 font-black">
-                            <th class="p-3 border-l border-stone-200 w-14 text-center">#</th>
-                            <th class="p-3 border-l border-stone-200 w-40">תאריך ושעה</th>
-                            <th class="p-3 border-l border-stone-200 w-40">משתמשת מושפעת</th>
-                            <th class="p-3 border-l border-stone-200 w-44">סוג הפעולה</th>
-                            <th class="p-3 min-w-[300px]">פירוט השינוי שבוצע (לפני ← אחרי)</th>
+                            <th class="p-2.5 border-l border-stone-200 w-32 sm:w-44">משתמשת וזמן</th>
+                            <th class="p-2.5 border-l border-stone-200 w-28 sm:w-40">פעולה</th>
+                            <th class="p-2.5">פירוט השינוי (לפני ← אחרי)</th>
                         </tr>
                     </thead>
                     <tbody id="sheets-tbody" class="divide-y divide-stone-200 align-top"></tbody>
                 </table>
             </div>
-
-            <!-- DOCS VIEW -->
-            <div id="docs-container" class="hidden space-y-3"></div>
         </section>
     </main>
 
     <script>
         let allLogs = [];
-        let currentViewMode = 'sheets'; // 'sheets' | 'docs'
+        let currentViewMode = 'docs';
 
         function formatDateTime(iso) {
             if (!iso) return '';
             const d = new Date(iso);
             if (isNaN(d.getTime())) return iso;
             return d.toLocaleDateString('he-IL', {
-                day: '2-digit', month: '2-digit', year: 'numeric'
-            }) + ' • ' + d.toLocaleTimeString('he-IL', {
-                hour: '2-digit', minute: '2-digit', second: '2-digit'
+                day: '2-digit', month: '2-digit', year: '2-digit'
+            }) + ' ' + d.toLocaleTimeString('he-IL', {
+                hour: '2-digit', minute: '2-digit'
             });
         }
 
@@ -192,9 +200,9 @@
             switch (cat) {
                 case 'penalty': return { icon: '💚', label: 'ביטול קנס', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
                 case 'points': return { icon: '💰', label: 'עדכון נקודות', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
-                case 'streak': return { icon: '🔥', label: 'עדכון/שחזור רצף', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
-                case 'task': return { icon: '📋', label: 'ניהול משימות', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
-                case 'badge': return { icon: '🏅', label: 'תגים והישגים', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+                case 'streak': return { icon: '🔥', label: 'רצף משימות', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+                case 'task': return { icon: '📋', label: 'משימות', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
+                case 'badge': return { icon: '🏅', label: 'תגים', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
                 case 'profile': return { icon: '👤', label: 'פרטים אישיים', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
                 case 'delete_user': return { icon: '🗑️', label: 'מחיקת חשבון', cls: 'bg-red-100 text-red-800 border-red-300' };
                 default: return { icon: '🛡️', label: 'פעולת אדמין', cls: 'bg-stone-100 text-stone-700 border-stone-200' };
@@ -216,16 +224,16 @@
             const docsCont = document.getElementById('docs-container');
             const sheetsCont = document.getElementById('sheets-container');
 
-            if (mode === 'sheets') {
-                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
-                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
-                sheetsCont.classList.remove('hidden');
-                docsCont.classList.add('hidden');
-            } else {
-                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
-                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+            if (mode === 'docs') {
+                docsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
+                sheetsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
                 docsCont.classList.remove('hidden');
                 sheetsCont.classList.add('hidden');
+            } else {
+                sheetsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
+                docsBtn.className = 'flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+                sheetsCont.classList.remove('hidden');
+                docsCont.classList.add('hidden');
             }
             renderAll();
         }
@@ -274,64 +282,61 @@
             document.getElementById('stat-other').textContent = allLogs.filter(i => !['points', 'penalty', 'streak'].includes(i.category)).length;
 
             const filtered = getFilteredLogs();
-            document.getElementById('visible-count-badge').textContent = `${filtered.length} פעולות מוצגות`;
-            document.getElementById('last-updated-text').textContent = `עודכן לאחרונה: ${new Date().toLocaleTimeString('he-IL')}`;
+            document.getElementById('visible-count-badge').textContent = `${filtered.length} פעולות`;
+            document.getElementById('last-updated-text').textContent = `עודכן: ${new Date().toLocaleTimeString('he-IL')}`;
 
             const sheetsBody = document.getElementById('sheets-tbody');
             const docsCont = document.getElementById('docs-container');
 
             if (filtered.length === 0) {
                 const emptyHtml = `
-                    <div class="text-center py-16 text-stone-400">
-                        <div class="text-4xl mb-3">🛡️</div>
-                        <div class="font-bold text-base text-stone-600">אין פעולות אדמין להצגה כרגע</div>
-                        <div class="text-xs mt-1">כל שינוי שיבוצע דרך מסך הניהול (God Mode) באפליקציה יתועד כאן אוטומטית ובזמן אמת.</div>
+                    <div class="text-center py-12 text-stone-400">
+                        <div class="text-4xl mb-2">🛡️</div>
+                        <div class="font-bold text-sm text-stone-600">אין פעולות אדמין להצגה כרגע</div>
+                        <div class="text-xs mt-1">כל שינוי שיבוצע דרך מסך הניהול באפליקציה יתועד כאן אוטומטית ובזמן אמת.</div>
                     </div>
                 `;
-                sheetsBody.innerHTML = `<tr><td colspan="5">${emptyHtml}</td></tr>`;
+                sheetsBody.innerHTML = `<tr><td colspan="3">${emptyHtml}</td></tr>`;
                 docsCont.innerHTML = emptyHtml;
                 return;
             }
 
-            sheetsBody.innerHTML = filtered.map((item, idx) => {
-                const meta = getCategoryMeta(item.category);
-                return `
-                    <tr class="hover:bg-indigo-50/20 transition-colors bg-white">
-                        <td class="p-3 border-l border-stone-200 text-center font-black text-stone-400">${filtered.length - idx}</td>
-                        <td class="p-3 border-l border-stone-200 font-medium text-stone-500 whitespace-nowrap">${formatDateTime(item.timestamp)}</td>
-                        <td class="p-3 border-l border-stone-200">
-                            <div class="font-bold text-stone-900">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</div>
-                            ${item.targetUsername ? `<div class="text-[11px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.targetUsername)}</div>` : ''}
-                        </td>
-                        <td class="p-3 border-l border-stone-200">
-                            <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${meta.cls}">
-                                <span>${meta.icon}</span>
-                                <span>${escapeHtml(item.actionTitle || meta.label)}</span>
-                            </span>
-                        </td>
-                        <td class="p-3">
-                            <div class="msg-wrap text-xs text-stone-800 font-medium">${escapeHtml(item.details || '')}</div>
-                        </td>
-                    </tr>
-                `;
-            }).join('');
-
             docsCont.innerHTML = filtered.map((item, idx) => {
                 const meta = getCategoryMeta(item.category);
                 return `
-                    <article class="p-4 rounded-2xl border border-stone-200 bg-white shadow-2xs hover:border-indigo-300 transition-all">
-                        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-stone-100">
-                            <div class="flex items-center gap-2 flex-wrap">
-                                <span class="text-xs font-black text-stone-400">#${filtered.length - idx}</span>
-                                <span class="text-xs font-bold px-2.5 py-1 rounded-lg border ${meta.cls}">${meta.icon} ${escapeHtml(item.actionTitle || meta.label)}</span>
-                                <span class="text-xs text-stone-500 font-bold">עבור:</span>
-                                <span class="font-black text-sm text-stone-900">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</span>
-                                ${item.targetUsername ? `<span class="text-xs text-stone-400 font-mono" dir="ltr">(@${escapeHtml(item.targetUsername)})</span>` : ''}
+                    <article class="p-3.5 sm:p-4 rounded-2xl border border-stone-200 bg-white shadow-2xs">
+                        <div class="flex items-start justify-between gap-2 pb-2 mb-2 border-b border-stone-100">
+                            <div class="flex items-center gap-1.5 flex-wrap min-w-0">
+                                <span class="text-[11px] font-black text-stone-400">#${filtered.length - idx}</span>
+                                <span class="text-[11px] font-bold px-2 py-0.5 rounded-lg border ${meta.cls}">${meta.icon} ${escapeHtml(item.actionTitle || meta.label)}</span>
+                                <span class="font-black text-xs sm:text-sm text-stone-900">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</span>
+                                ${item.targetUsername ? `<span class="text-[11px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.targetUsername)}</span>` : ''}
                             </div>
-                            <span class="text-xs text-stone-400 font-medium">${formatDateTime(item.timestamp)}</span>
+                            <span class="text-[11px] text-stone-400 font-medium shrink-0">${formatDateTime(item.timestamp)}</span>
                         </div>
-                        <div class="msg-wrap text-sm text-stone-800 bg-stone-50/80 p-3.5 rounded-xl border border-stone-100 font-medium">${escapeHtml(item.details || '')}</div>
+                        <div class="msg-wrap text-xs sm:text-sm text-stone-800 bg-stone-50 p-3 rounded-xl border border-stone-100 font-medium">${escapeHtml(item.details || '')}</div>
                     </article>
+                `;
+            }).join('');
+
+            sheetsBody.innerHTML = filtered.map(item => {
+                const meta = getCategoryMeta(item.category);
+                return `
+                    <tr class="bg-white">
+                        <td class="p-2.5 border-l border-stone-200">
+                            <div class="font-bold text-stone-900 text-xs">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</div>
+                            ${item.targetUsername ? `<div class="text-[10px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.targetUsername)}</div>` : ''}
+                            <div class="text-[10px] text-stone-400 mt-0.5">${formatDateTime(item.timestamp)}</div>
+                        </td>
+                        <td class="p-2.5 border-l border-stone-200">
+                            <span class="inline-block text-[10px] font-bold px-2 py-0.5 rounded-lg border ${meta.cls}">
+                                ${meta.icon} ${escapeHtml(item.actionTitle || meta.label)}
+                            </span>
+                        </td>
+                        <td class="p-2.5">
+                            <div class="msg-wrap text-xs text-stone-800 font-medium">${escapeHtml(item.details || '')}</div>
+                        </td>
+                    </tr>
                 `;
             }).join('');
         }
@@ -399,6 +404,8 @@
 
             if (db) {
                 db.collection('task_attachments').doc('system_admin_logs_doc').onSnapshot(doc => {
+                    const dot = document.getElementById('sync-dot');
+                    if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 shadow-[0_0_6px_rgba(16,185,129,0.6)]';
                     if (doc.exists && Array.isArray(doc.data()?.items)) {
                         const remoteItems = doc.data().items;
                         const byId = new Map();
@@ -416,11 +423,8 @@
                     renderAll();
                 }, err => {
                     console.warn('Firestore listener warning:', err);
-                    const badge = document.getElementById('sync-badge');
-                    if (badge) {
-                        badge.className = 'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200';
-                        badge.textContent = 'מצב מקומי';
-                    }
+                    const dot = document.getElementById('sync-dot');
+                    if (dot) dot.className = 'w-2.5 h-2.5 rounded-full bg-rose-500 shrink-0';
                     renderAll();
                 });
             } else {
