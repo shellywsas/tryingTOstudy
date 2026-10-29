@@ -20,8 +20,8 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 .toLowerCase();
         };
 
-        const getNextSaturday22PM = () => {
-            const now = new Date();
+        const getNextSaturday22PM = (nowInput) => {
+            const now = nowInput instanceof Date ? nowInput : new Date(nowInput || Date.now());
             const d = now.getDay(); // 0 = Sun, ..., 6 = Sat
             const target = new Date(now);
             if (d === 6) {
@@ -57,7 +57,28 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             return target.getTime();
         };
 
-        const getNextSaturdayNight = getNextSaturday22PM;
+        const getNextSaturdayMidnight = (nowInput) => {
+            const now = nowInput instanceof Date ? nowInput : new Date(nowInput || Date.now());
+            const d = now.getDay(); // 0 = Sun, ..., 6 = Sat
+            const target = new Date(now);
+            // Midnight at the end of Saturday is Sunday 00:00:00
+            const daysUntilSunday = d === 0 ? 7 : (7 - d);
+            target.setDate(now.getDate() + daysUntilSunday);
+            target.setHours(0, 0, 0, 0);
+            return target.getTime();
+        };
+
+        const getLastSaturdayMidnight = (nowInput) => {
+            const now = nowInput instanceof Date ? nowInput : new Date(nowInput || Date.now());
+            const d = now.getDay();
+            const target = new Date(now);
+            // Most recent Sunday 00:00:00
+            target.setDate(now.getDate() - d);
+            target.setHours(0, 0, 0, 0);
+            return target.getTime();
+        };
+
+        const getNextSaturdayNight = getNextSaturdayMidnight;
         const getLastSaturdayNight = getLastSaturday22PM;
 
 
@@ -234,7 +255,8 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             totalPoints: 0,
             weeklyPoints: 0,
             highestWeeklyPoints: 0, 
-            nextWeeklyReset: getNextSaturdayNight(),
+            nextWeeklyCrowning: getNextSaturday22PM(),
+            nextWeeklyReset: getNextSaturdayMidnight(),
             subjects: [],
             tasks: [],
             scheduleSettings: [
