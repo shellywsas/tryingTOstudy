@@ -1874,6 +1874,123 @@ function App() {
             const [adminPointsInput, setAdminPointsInput] = useState('');
             const [adminWeeklyPointsInput, setAdminWeeklyPointsInput] = useState('');
 
+            // User Feedback / Bug Report Box State
+            const [isFeedbackModalOpen, setIsFeedbackModalOpen] = useState(false);
+            const [feedbackType, setFeedbackType] = useState('bug'); // 'bug' | 'request' | 'comment'
+            const [feedbackMessage, setFeedbackMessage] = useState('');
+            const [feedbackGuestName, setFeedbackGuestName] = useState('');
+            const [isSubmittingFeedback, setIsSubmittingFeedback] = useState(false);
+
+            const recordAdminAuditLog = async (actionTitle, category, targetUser, detailsText, extraMeta = {}) => {
+                try {
+                    const entry = {
+                        id: 'alog_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                        timestamp: new Date().toISOString(),
+                        actionTitle: actionTitle || 'פעולת אדמין',
+                        category: category || 'general',
+                        targetUsername: typeof targetUser === 'string' ? targetUser : (targetUser?.username || ''),
+                        targetDisplayName: typeof targetUser === 'string' ? targetUser : (targetUser?.name || targetUser?.username || ''),
+                        details: detailsText || '',
+                        adminActor: 'אדמין ראשי',
+                        ...extraMeta
+                    };
+
+                    let localLogs = [];
+                    try {
+                        const raw = localStorage.getItem('studyStreak_system_admin_logs');
+                        if (raw) localLogs = JSON.parse(raw) || [];
+                    } catch (e) {}
+                    const nextLocal = [entry, ...localLogs.filter(x => x && x.id !== entry.id)].slice(0, 500);
+                    try {
+                        localStorage.setItem('studyStreak_system_admin_logs', JSON.stringify(nextLocal));
+                    } catch (e) {}
+
+                    if (db) {
+                        const docRef = db.collection('task_attachments').doc('__system_admin_logs__');
+                        const snap = await docRef.get();
+                        const remoteItems = (snap.exists && Array.isArray(snap.data()?.items)) ? snap.data().items : [];
+                        const byId = new Map();
+                        [...remoteItems, ...nextLocal].forEach(item => {
+                            if (item && item.id) byId.set(item.id, item);
+                        });
+                        const merged = Array.from(byId.values())
+                            .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+                            .slice(0, 500);
+                        await docRef.set({
+                            items: merged,
+                            updatedAt: Date.now(),
+                            docType: 'system_admin_logs'
+                        }, { merge: true });
+                    }
+                } catch (err) {
+                    console.warn('Could not record admin audit log:', err);
+                }
+            };
+
+            const handleSendUserFeedback = async (e) => {
+                if (e && e.preventDefault) e.preventDefault();
+                const cleanMsg = (feedbackMessage || '').trim();
+                if (!cleanMsg) {
+                    showToast('נא לכתוב את תוכן ההודעה לפני השליחה ✍️', 'warning');
+                    return;
+                }
+                setIsSubmittingFeedback(true);
+                try {
+                    const senderUsername = globalState?.activeUser || '';
+                    const senderName = activeUserData?.name || (feedbackGuestName || '').trim() || senderUsername || 'משתמשת';
+                    const newReport = {
+                        id: 'fb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                        timestamp: new Date().toISOString(),
+                        type: feedbackType || 'bug',
+                        message: cleanMsg,
+                        senderName,
+                        senderUsername,
+                        status: 'open',
+                        adminNote: ''
+                    };
+
+                    let localReports = [];
+                    try {
+                        const raw = localStorage.getItem('studyStreak_system_feedback');
+                        if (raw) localReports = JSON.parse(raw) || [];
+                    } catch (err) {}
+                    const nextLocal = [newReport, ...localReports.filter(x => x && x.id !== newReport.id)].slice(0, 500);
+                    try {
+                        localStorage.setItem('studyStreak_system_feedback', JSON.stringify(nextLocal));
+                    } catch (err) {}
+
+                    if (db) {
+                        const docRef = db.collection('task_attachments').doc('__system_feedback__');
+                        const snap = await docRef.get();
+                        const remoteItems = (snap.exists && Array.isArray(snap.data()?.items)) ? snap.data().items : [];
+                        const byId = new Map();
+                        [...remoteItems, ...nextLocal].forEach(item => {
+                            if (item && item.id) byId.set(item.id, item);
+                        });
+                        const merged = Array.from(byId.values())
+                            .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
+                            .slice(0, 500);
+                        await docRef.set({
+                            items: merged,
+                            updatedAt: Date.now(),
+                            docType: 'system_feedback'
+                        }, { merge: true });
+                    }
+
+                    setFeedbackMessage('');
+                    setFeedbackGuestName('');
+                    setIsFeedbackModalOpen(false);
+                    showToast('הפנייה שלך נשלחה ונשמרה במסמך הדיווחים! תודה רבה 💜', 'success');
+                } catch (err) {
+                    console.error('Error submitting feedback:', err);
+                    setFeedbackMessage('');
+                    setIsFeedbackModalOpen(false);
+                    showToast('ההודעה נשמרה במכשיר ותסונכרן אוטומטית! 💜', 'info');
+                } finally {
+                    setIsSubmittingFeedback(false);
+                }
+            };
+
             const loadAdminUsers = async () => {
                 setAdminLoading(true);
                 try {
@@ -1953,13 +2070,17 @@ function App() {
                 if (!user || !badgeId) return;
                 let currentBadges = Array.isArray(user.badges) ? [...user.badges] : [];
                 const idx = currentBadges.findIndex(b => (typeof b === 'string' ? b === badgeId : b?.id === badgeId));
+                const badgeObj = (typeof ALL_BADGES !== 'undefined' ? ALL_BADGES : []).find(b => b.id === badgeId);
+                const badgeLabel = badgeObj ? `${badgeObj.icon || '🏅'} ${badgeObj.title}` : badgeId;
                 let newBadges;
                 if (idx !== -1) {
                     newBadges = currentBadges.filter((_, i) => i !== idx);
                     showToast(`התג הוסר מחשבונה של @${user.username}`, 'info');
+                    recordAdminAuditLog('הסרת תג הישג', 'badge', user, `הוסר התג "${badgeLabel}" מחשבונה של ${user.name} (@${user.username}).`);
                 } else {
                     newBadges = [...currentBadges, { id: badgeId, earnedAt: new Date().toISOString() }];
                     showToast(`התג הוענק בהצלחה ל-@${user.username}! 🏅`, 'success');
+                    recordAdminAuditLog('הענקת תג הישג', 'badge', user, `הוענק התג "${badgeLabel}" לחשבונה של ${user.name} (@${user.username}).`);
                 }
                 saveAdminUserUpdate(user.username, { badges: newBadges });
             };
@@ -1967,6 +2088,7 @@ function App() {
             const adminDeleteUser = async (username) => {
                 if (!username) return;
                 try {
+                    const deletedUserObj = adminUsersList.find(u => u.username === username) || deleteConfirmUser || { username, name: username };
                     if (db) {
                         await db.collection("users").doc(username).delete();
                     }
@@ -1983,6 +2105,12 @@ function App() {
                     setDeleteConfirmUser(null);
                     setDeleteConfirmStep(0);
                     if (selectedAdminUser?.username === username) setSelectedAdminUser(null);
+                    recordAdminAuditLog(
+                        'מחיקת חשבון לצמיתות',
+                        'delete_user',
+                        deletedUserObj,
+                        `החשבון של ${deletedUserObj.name || username} (@${username}) נמחק לצמיתות ממסד הנתונים (סה"כ נקודות שהיו: ${deletedUserObj.totalPoints || 0}, רצף: ${deletedUserObj.taskStreak || 0} 🔥).`
+                    );
                     showToast(`החשבון של @${username} נמחק בהצלחה לצמיתות 🗑️`, 'info');
                 } catch(err) {
                     console.error("Error deleting user:", err);
@@ -2068,11 +2196,18 @@ function App() {
                     longestStreak: newLongestStreak,
                     streakHistory: newStreakHistory
                 });
+                recordAdminAuditLog(
+                    'ביטול קנס והחזרת נקודות',
+                    'penalty',
+                    user,
+                    `בוטל קנס עבור "${targetTask?.title || penaltyLog.taskTitle || penaltyLog.details || 'משימה'}" והוענקו +${refund} נק' (סה"כ נקודות: ${user.totalPoints || 0} ← ${newTotal} | נקודות השבוע: ${user.weeklyPoints || 0} ← ${newWeekly} | רצף: ${user.taskStreak || 0} ← ${newTaskStreak} 🔥)`
+                );
                 showToast(`הקנס בוטל והוענקו נקודות הגשה (+${refund} נק' סה"כ) לחשבון! 💚`, 'success');
             };
 
             const adminRestoreStreak = (user, streakItem) => {
                 if (!user || !streakItem) return;
+                const oldStreak = user.taskStreak || 0;
                 const restoredLen = streakItem.length || 1;
                 const newStreakHistory = (user.streakHistory || []).filter(s => s.id !== streakItem.id);
                 saveAdminUserUpdate(user.username, {
@@ -2080,6 +2215,12 @@ function App() {
                     longestStreak: Math.max(user.longestStreak || 0, restoredLen),
                     streakHistory: newStreakHistory
                 });
+                recordAdminAuditLog(
+                    'שחזור רצף שנשבר',
+                    'streak',
+                    user,
+                    `שוחזר רצף היסטורי של ${restoredLen} משימות 🔥 (רצף קודם: ${oldStreak} ← רצף חדש: ${restoredLen})`
+                );
                 showToast(`הרצף שוחזר בהצלחה ל-${restoredLen} 🔥`, 'success');
             };
 
@@ -2089,32 +2230,57 @@ function App() {
                     showToast('נא להזין מספר רצף תקין', 'warning');
                     return;
                 }
+                const oldStreak = user.taskStreak || 0;
                 saveAdminUserUpdate(user.username, {
                     taskStreak: val,
                     longestStreak: Math.max(user.longestStreak || 0, val)
                 });
+                recordAdminAuditLog(
+                    'עדכון רצף (סטריק) ידני',
+                    'streak',
+                    user,
+                    `רצף המשימות שונה ידנית מ-${oldStreak} 🔥 ל-${val} 🔥`
+                );
             };
 
             const adminSetCustomPoints = (user, totalPts, weeklyPts) => {
                 const t = parseInt(totalPts, 10);
                 const w = parseInt(weeklyPts, 10);
+                const oldTotal = user.totalPoints || 0;
+                const oldWeekly = user.weeklyPoints || 0;
+                const newTotal = isNaN(t) ? oldTotal : t;
+                const newWeekly = isNaN(w) ? oldWeekly : w;
                 saveAdminUserUpdate(user.username, {
-                    totalPoints: isNaN(t) ? (user.totalPoints || 0) : t,
-                    weeklyPoints: isNaN(w) ? (user.weeklyPoints || 0) : w
+                    totalPoints: newTotal,
+                    weeklyPoints: newWeekly
                 });
+                recordAdminAuditLog(
+                    'עדכון נקודות ידני',
+                    'points',
+                    user,
+                    `עדכון נקודות ידני: סה"כ נקודות שונה מ-${oldTotal} ל-${newTotal} | נקודות השבוע שונה מ-${oldWeekly} ל-${newWeekly}`
+                );
             };
 
             const adminDeleteTask = (user, taskId) => {
+                const targetTask = (user.tasks || []).find(t => t.id === taskId);
                 const newTasks = (user.tasks || []).filter(t => t.id !== taskId);
                 const deletedTaskIds = Array.from(new Set([...(user.deletedTaskIds || []), taskId]));
                 saveAdminUserUpdate(user.username, { tasks: newTasks, deletedTaskIds });
+                recordAdminAuditLog(
+                    'מחיקת משימה',
+                    'task',
+                    user,
+                    `נמחקה המשימה "${targetTask?.title || taskId}"${targetTask?.dueDate ? ` (תאריך הגשה: ${targetTask.dueDate})` : ''}`
+                );
                 showToast('המשימה נמחקה בהצלחה', 'info');
             };
 
             const adminToggleTask = (user, taskId) => {
+                const targetTask = (user.tasks || []).find(t => t.id === taskId);
+                const nowDone = !(targetTask?.completed);
                 const newTasks = (user.tasks || []).map(t => {
                     if (t.id === taskId) {
-                        const nowDone = !t.completed;
                         return {
                             ...t,
                             completed: nowDone,
@@ -2125,6 +2291,12 @@ function App() {
                     return t;
                 });
                 saveAdminUserUpdate(user.username, { tasks: newTasks });
+                recordAdminAuditLog(
+                    'שינוי סטטוס משימה',
+                    'task',
+                    user,
+                    `המשימה "${targetTask?.title || taskId}" סומנה ידנית כ-${nowDone ? 'הושלמה ✅' : 'לא הושלמה ⏳'}`
+                );
             };
 
             const adminResetTaskPenalty = (user, taskId) => {
@@ -2206,6 +2378,12 @@ function App() {
                     longestStreak: newLongestStreak,
                     streakHistory: newStreakHistory
                 });
+                recordAdminAuditLog(
+                    'ביטול קנס משימה',
+                    'penalty',
+                    user,
+                    `בוטל קנס המשימה "${targetTask?.title || taskId}" והוענקו +${refund} נק' (סה"כ נקודות: ${user.totalPoints || 0} ← ${newTotal} | רצף: ${user.taskStreak || 0} ← ${newTaskStreak} 🔥)`
+                );
                 showToast(`בוטל קנס המשימה והוענקו נקודות הגשה (+${refund} נק' סה"כ) לחשבון! 💚`, 'success');
             };
 
@@ -4644,6 +4822,114 @@ function App() {
             }
 
 
+            const renderFeedbackModal = () => {
+                if (!isFeedbackModalOpen) return null;
+                return (
+                    <div className="fixed inset-0 bg-stone-900/60 backdrop-blur-xs z-[10005] flex items-center justify-center p-4 animate-[fadeIn_0.15s_ease-out]"
+                         dir="rtl"
+                         onClick={() => setIsFeedbackModalOpen(false)}>
+                        <div className="bg-white rounded-3xl w-full max-w-md p-6 md:p-7 shadow-2xl border border-stone-200 relative animate-[scaleUp_0.15s_ease-out]"
+                             onClick={e => e.stopPropagation()}>
+                            <div className="flex items-start justify-between gap-3 mb-4 pb-3 border-b border-stone-100">
+                                <div className="flex items-center gap-3">
+                                    <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-purple-100 to-indigo-100 text-purple-700 flex items-center justify-center text-2xl shadow-xs">
+                                        💬
+                                    </div>
+                                    <div>
+                                        <h3 className="font-black text-lg text-stone-800">תיבת הערות, תקלות ובקשות</h3>
+                                        <p className="text-xs text-stone-500 font-medium mt-0.5">נתקלת בבעיה או שיש לך רעיון לאפליקציה? כתבי כאן!</p>
+                                    </div>
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsFeedbackModalOpen(false)}
+                                    className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full transition-colors active:scale-95">
+                                    <IconX className="w-4 h-4"/>
+                                </button>
+                            </div>
+
+                            <form onSubmit={handleSendUserFeedback} className="space-y-4">
+                                <div>
+                                    <label className="block text-xs font-bold text-stone-600 mb-2">סוג הפנייה:</label>
+                                    <div className="grid grid-cols-3 gap-2">
+                                        {[
+                                            { id: 'bug', label: 'תקלה / באג', icon: '🐞', activeCls: 'bg-rose-50 border-rose-400 text-rose-700 ring-2 ring-rose-100' },
+                                            { id: 'request', label: 'בקשה / רעיון', icon: '💡', activeCls: 'bg-amber-50 border-amber-400 text-amber-800 ring-2 ring-amber-100' },
+                                            { id: 'comment', label: 'הערה כללית', icon: '💬', activeCls: 'bg-purple-50 border-purple-400 text-purple-700 ring-2 ring-purple-100' }
+                                        ].map(opt => (
+                                            <button
+                                                key={opt.id}
+                                                type="button"
+                                                onClick={() => setFeedbackType(opt.id)}
+                                                className={`p-2.5 rounded-2xl border text-center transition-all flex flex-col items-center gap-1 active:scale-95 ${
+                                                    feedbackType === opt.id
+                                                        ? `${opt.activeCls} font-black`
+                                                        : 'bg-stone-50 border-stone-200 text-stone-600 font-bold hover:bg-stone-100'
+                                                }`}>
+                                                <span className="text-lg">{opt.icon}</span>
+                                                <span className="text-[11px]">{opt.label}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {(!globalState?.activeUser || !activeUserData) ? (
+                                    <div>
+                                        <label className="block text-xs font-bold text-stone-600 mb-1.5">השם שלך:</label>
+                                        <input
+                                            type="text"
+                                            value={feedbackGuestName}
+                                            onChange={e => setFeedbackGuestName(e.target.value)}
+                                            placeholder="איך קוראים לך?"
+                                            className="w-full p-3 bg-stone-50 border border-stone-200 rounded-xl text-sm font-medium focus:bg-white focus:border-purple-400 outline-none"
+                                        />
+                                    </div>
+                                ) : (
+                                    <div className="bg-stone-50 border border-stone-200/80 rounded-xl px-3.5 py-2.5 flex items-center justify-between text-xs">
+                                        <span className="text-stone-500 font-semibold">נשלח מאת:</span>
+                                        <span className="font-bold text-stone-800">{activeUserData.name} <span className="text-stone-400 font-normal" dir="ltr">(@{globalState.activeUser})</span></span>
+                                    </div>
+                                )}
+
+                                <div>
+                                    <label className="block text-xs font-bold text-stone-600 mb-1.5">פירוט ההודעה (אפשר לכתוב כמה משפטים שרוצים):</label>
+                                    <textarea
+                                        rows="5"
+                                        required
+                                        value={feedbackMessage}
+                                        onChange={e => setFeedbackMessage(e.target.value)}
+                                        placeholder={
+                                            feedbackType === 'bug'
+                                                ? 'תארי מה קרה, באיזה מסך באפליקציה זה הופיע ומה לא עבד כמו שצריך...'
+                                                : feedbackType === 'request'
+                                                ? 'ספרי איזה פיצ\'ר או שדרוג היית רוצה שנוסיף לאפליקציה...'
+                                                : 'כתבי כאן כל הערה, שאלה או משוב שתרצי...'
+                                        }
+                                        className="w-full p-3.5 bg-stone-50 border border-stone-200 rounded-2xl text-sm font-medium leading-relaxed focus:bg-white focus:ring-2 focus:ring-purple-200 focus:border-purple-400 outline-none resize-y"
+                                    />
+                                </div>
+
+                                <div className="flex gap-2.5 pt-1">
+                                    <button
+                                        type="button"
+                                        onClick={() => setIsFeedbackModalOpen(false)}
+                                        className="flex-1 py-3 bg-stone-100 hover:bg-stone-200 text-stone-600 rounded-xl font-bold text-xs transition-colors active:scale-95">
+                                        ביטול
+                                    </button>
+                                    <button
+                                        type="submit"
+                                        disabled={isSubmittingFeedback}
+                                        className="flex-[2] py-3 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold text-sm shadow-md shadow-purple-500/20 transition-all active:scale-95 flex items-center justify-center gap-2">
+                                        <span>{isSubmittingFeedback ? '⏳' : '🚀'}</span>
+                                        <span>{isSubmittingFeedback ? 'שולח ושומר...' : 'שליחת הפנייה'}</span>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+                );
+            };
+
             if (!globalState.activeUser || !activeUserData) {
                 if (isAdminLoggedIn) {
                     return (
@@ -4670,6 +4956,20 @@ function App() {
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-2.5 flex-wrap relative z-10">
+                                        <a 
+                                            href="./feedback-doc.html"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="bg-purple-600 hover:bg-purple-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
+                                            <span>💬</span> מסמך תקלות ובקשות ↗️
+                                        </a>
+                                        <a 
+                                            href="./admin-log-doc.html"
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="bg-indigo-600 hover:bg-indigo-500 text-white px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-sm">
+                                            <span>📋</span> מסמך שינויי אדמין ↗️
+                                        </a>
                                         <button 
                                             onClick={loadAdminUsers}
                                             className="bg-stone-800 hover:bg-stone-700 text-stone-200 px-4 py-2.5 rounded-xl font-bold text-xs flex items-center gap-1.5 active:scale-95 transition-all">
@@ -5164,12 +5464,25 @@ function App() {
                                                         const p = document.getElementById('adminEditPass')?.value;
                                                         const ph = document.getElementById('adminEditPhone')?.value;
                                                         const p1 = document.getElementById('adminEditParent1')?.value;
+                                                        const newName = n || selectedAdminUser.name;
+                                                        const newPass = p || selectedAdminUser.password;
+                                                        const changes = [];
+                                                        if (newName !== selectedAdminUser.name) changes.push(`שם תצוגה: "${selectedAdminUser.name}" ← "${newName}"`);
+                                                        if (newPass !== selectedAdminUser.password) changes.push(`סיסמה עודכנה`);
+                                                        if ((ph || '') !== (selectedAdminUser.phoneNumber || '')) changes.push(`טלפון תלמידה: "${selectedAdminUser.phoneNumber || 'ללא'}" ← "${ph || 'ללא'}"`);
+                                                        if ((p1 || '') !== (selectedAdminUser.parentPhoneNumber || '')) changes.push(`טלפון הורה: "${selectedAdminUser.parentPhoneNumber || 'ללא'}" ← "${p1 || 'ללא'}"`);
                                                         saveAdminUserUpdate(selectedAdminUser.username, {
-                                                            name: n || selectedAdminUser.name,
-                                                            password: p || selectedAdminUser.password,
+                                                            name: newName,
+                                                            password: newPass,
                                                             phoneNumber: ph,
                                                             parentPhoneNumber: p1
                                                         });
+                                                        recordAdminAuditLog(
+                                                            'עדכון פרטים אישיים / סיסמה',
+                                                            'profile',
+                                                            selectedAdminUser,
+                                                            changes.length > 0 ? changes.join(' | ') : 'שמירת פרטים אישיים ללא שינוי ערכים'
+                                                        );
                                                     }}
                                                     className="w-full bg-purple-600 hover:bg-purple-700 text-white font-bold py-3 rounded-xl text-xs shadow-md active:scale-95 transition-all">
                                                     שמור פרטי משתמש 💾
@@ -5185,6 +5498,7 @@ function App() {
 
                 return (
                     <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] p-4" dir="rtl">
+                        {renderFeedbackModal()}
                         <div className="bg-white p-8 md:p-10 rounded-3xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] w-full max-w-sm border border-stone-100 relative overflow-hidden">
                             <div className="absolute top-0 right-0 w-32 h-32 bg-purple-100 rounded-full blur-3xl -mr-16 -mt-16 opacity-60 pointer-events-none"></div>
                             <div className="absolute bottom-0 left-0 w-32 h-32 bg-rose-100 rounded-full blur-3xl -ml-16 -mb-16 opacity-60 pointer-events-none"></div>
@@ -5221,6 +5535,12 @@ function App() {
                             <div className="text-center text-[11px] text-stone-400 mt-6 font-medium relative z-10">
                                 משתמשת חדשה? הקלידי שם וסיסמה והחשבון ייווצר בענן.
                             </div>
+                            <button
+                                type="button"
+                                onClick={() => setIsFeedbackModalOpen(true)}
+                                className="w-full mt-4 py-2.5 bg-purple-50/80 hover:bg-purple-100/80 text-purple-700 border border-purple-200/70 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 relative z-10 active:scale-95">
+                                <span>💬</span> דיווח על תקלה או בקשה לאפליקציה
+                            </button>
                         </div>
                     </div>
                 );
@@ -5284,6 +5604,7 @@ function App() {
 
             return (
                 <div className="min-h-screen flex flex-col md:flex-row pb-24 md:pb-0 no-print" dir="rtl">
+                    {renderFeedbackModal()}
                     
                     {toastMessage && (
                         <div className="fixed top-safe-top left-1/2 -translate-x-1/2 mt-4 z-[80] max-w-sm w-11/12 animate-[bounce_0.5s_ease-out]">
@@ -5362,7 +5683,10 @@ function App() {
                             <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-bold shadow-sm shadow-amber-500/20 flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
                                 <span>💡</span> סשן תרגול מהיר (+נקודות)
                             </button>
-                            <button onClick={handleLogout} className="w-full mt-3 py-3 text-sm text-stone-500 hover:text-rose-600 font-semibold bg-stone-50 hover:bg-rose-50 rounded-2xl transition-colors flex items-center justify-center gap-2 active:scale-95">
+                            <button onClick={() => setIsFeedbackModalOpen(true)} className="w-full mt-2 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 rounded-2xl font-bold flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
+                                <span>💬</span> דיווח על תקלה / בקשה
+                            </button>
+                            <button onClick={handleLogout} className="w-full mt-2 py-3 text-sm text-stone-500 hover:text-rose-600 font-semibold bg-stone-50 hover:bg-rose-50 rounded-2xl transition-colors flex items-center justify-center gap-2 active:scale-95">
                                 התנתקות
                             </button>
                         </div>
@@ -5374,7 +5698,14 @@ function App() {
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
                         </div>
-                        <div className="flex gap-2 items-center">
+                        <div className="flex gap-1.5 items-center">
+                            <button 
+                                onClick={() => setIsFeedbackModalOpen(true)}
+                                className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95"
+                                title="דיווח על תקלה / בקשה לאפליקציה">
+                                <span>💬</span>
+                                <span className="text-[10px]">פנייה</span>
+                            </button>
                             <button 
                                 onClick={() => setIsSyncDiagnosticsOpen(true)}
                                 className={`text-[10px] px-2.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer ${
@@ -11029,15 +11360,20 @@ function App() {
                                         { id: 'lesson_log', title: 'יומן שיעורים', desc: 'תיעוד כל השיעורים והנושאים שנלמדו השנה', icon: '📖', color: 'from-blue-500/10 to-cyan-500/10 hover:border-blue-300' },
                                         { id: 'schedule', title: 'לו"ז וזמנים', desc: 'מערכת שעות, שעות שקטות ועוגנים קבועים', icon: '📅', color: 'from-amber-500/10 to-orange-500/10 hover:border-amber-300' },
                                         { id: 'profile', title: 'פרופיל ותגים', desc: 'צפייה ברצף, בהישגים ובמדליות שלך', icon: '👤', color: 'from-pink-500/10 to-rose-500/10 hover:border-pink-300' },
-                                        { id: 'settings', title: 'הגדרות מערכת', desc: 'ניהול מקצועות, חוקי ניקוד ואיפוס נתונים', icon: '⚙️', color: 'from-stone-500/10 to-stone-600/10 hover:border-stone-300' }
+                                        { id: 'settings', title: 'הגדרות מערכת', desc: 'ניהול מקצועות, חוקי ניקוד ואיפוס נתונים', icon: '⚙️', color: 'from-stone-500/10 to-stone-600/10 hover:border-stone-300' },
+                                        { id: 'feedback_box', title: 'דיווח תקלה / בקשה', desc: 'תיבת הערות, באגים ובקשות לשדרוג האפליקציה', icon: '💬', color: 'from-indigo-500/10 to-purple-500/10 hover:border-indigo-300', isFeedback: true }
                                     ].map(item => {
-                                        const isSelected = activeTab === item.id;
+                                        const isSelected = !item.isFeedback && activeTab === item.id;
                                         return (
                                             <button
                                                 key={item.id}
                                                 onClick={() => {
-                                                    setActiveTab(item.id);
                                                     setIsMoreMenuOpen(false);
+                                                    if (item.isFeedback) {
+                                                        setIsFeedbackModalOpen(true);
+                                                    } else {
+                                                        setActiveTab(item.id);
+                                                    }
                                                 }}
                                                 className={`p-4 rounded-2xl border text-right transition-all flex items-start gap-3.5 bg-gradient-to-br ${item.color} active:scale-98 ${
                                                     isSelected ? 'border-purple-500 ring-2 ring-purple-200 shadow-sm bg-purple-50/50' : 'border-stone-200/80 hover:bg-stone-50/80'

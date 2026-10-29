@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>מסמך מעקב שינויי אדמין - StudyStreak Pro</title>
+    <link rel="icon" type="image/png" sizes="64x64" href="./favicon.png">
+
+    <!-- Firebase Compat SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
+    <script src="js/firebase-config.js?v=20261030_1"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+
+    <style>
+        body {
+            font-family: 'Heebo', -apple-system, BlinkMacSystemFont, sans-serif;
+            background-color: #f3f4f6;
+        }
+        .doc-paper {
+            background: #ffffff;
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06), 0 1px 3px rgba(0, 0, 0, 0.04);
+        }
+        .msg-wrap {
+            white-space: pre-wrap;
+            word-break: break-word;
+            overflow-wrap: anywhere;
+            line-height: 1.65;
+        }
+        @media print {
+            .no-print { display: none !important; }
+            body { background: #fff; }
+            .doc-paper { box-shadow: none; border: none; }
+        }
+    </style>
+</head>
+<body class="text-stone-800 min-h-screen pb-16">
+
+    <!-- Top Docs/Sheets Toolbar -->
+    <header class="bg-white border-b border-stone-200 sticky top-0 z-30 shadow-xs no-print">
+        <div class="max-w-6xl mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-indigo-600 to-slate-800 text-white flex items-center justify-center text-xl shadow-sm">
+                    🛡️
+                </div>
+                <div>
+                    <div class="flex items-center gap-2 flex-wrap">
+                        <h1 class="font-black text-lg md:text-xl text-stone-900">מסמך מעקב שינויי אדמין (Audit Log)</h1>
+                        <span id="sync-badge" class="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center gap-1">
+                            <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                            מחובר בלייב לענן
+                        </span>
+                    </div>
+                    <p class="text-xs text-stone-500">StudyStreak Pro • תיעוד אוטומטי של כל הפעולות והשינויים שבוצעו במצב מנהל</p>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-2 flex-wrap">
+                <a href="./feedback-doc.html" class="px-3 py-2 rounded-xl bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 text-xs font-bold flex items-center gap-1.5 transition-all">
+                    <span>💬</span> מעבר למסמך תקלות ובקשות ↗️
+                </a>
+                <button onclick="exportToWordDoc()" class="px-3 py-2 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 text-xs font-bold flex items-center gap-1.5 transition-all">
+                    <span>📄</span> הורדה כקובץ Docs/Word
+                </button>
+                <button onclick="exportToCSV()" class="px-3 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5 transition-all">
+                    <span>📊</span> הורדה לאקסל / Sheets
+                </button>
+                <button onclick="window.print()" class="px-3 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold flex items-center gap-1.5 transition-all">
+                    <span>🖨️</span> הדפסה / PDF
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <main class="max-w-6xl mx-auto px-3 sm:px-6 pt-6 space-y-5">
+
+        <!-- Summary Cards -->
+        <section class="grid grid-cols-2 sm:grid-cols-4 gap-3 no-print">
+            <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs">
+                <div class="text-xs text-stone-400 font-bold">סה"כ שינויי אדמין מתועדים</div>
+                <div id="stat-total" class="text-2xl font-black text-stone-800 mt-1">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-emerald-200 shadow-2xs">
+                <div class="text-xs text-emerald-600 font-bold">ביטולי קנסות ועדכוני נקודות 💰</div>
+                <div id="stat-points" class="text-2xl font-black text-emerald-600 mt-1">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-rose-200 shadow-2xs">
+                <div class="text-xs text-rose-500 font-bold">שינויים ושחזורי רצף 🔥</div>
+                <div id="stat-streaks" class="text-2xl font-black text-rose-500 mt-1">0</div>
+            </div>
+            <div class="bg-white p-4 rounded-2xl border border-indigo-200 shadow-2xs">
+                <div class="text-xs text-indigo-600 font-bold">משימות, תגים ופרופיל 📋</div>
+                <div id="stat-other" class="text-2xl font-black text-indigo-600 mt-1">0</div>
+            </div>
+        </section>
+
+        <!-- Filters & View Switcher -->
+        <section class="bg-white p-4 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-3 no-print">
+            <div class="flex items-center gap-2 flex-wrap flex-1 min-w-[240px]">
+                <div class="relative flex-1 min-w-[200px]">
+                    <input
+                        id="search-input"
+                        type="text"
+                        oninput="renderAll()"
+                        placeholder="חיפוש לפי שם משתמשת, פעולה או פירוט השינוי..."
+                        class="w-full pl-3 pr-9 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none focus:bg-white focus:border-indigo-400"
+                    />
+                    <span class="absolute right-3 top-2 text-stone-400 text-sm">🔍</span>
+                </div>
+
+                <select id="filter-category" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+                    <option value="all">כל סוגי השינויים</option>
+                    <option value="penalty">💚 ביטול קנסות</option>
+                    <option value="points">💰 עדכון נקודות ידני</option>
+                    <option value="streak">🔥 רצפים ושחזור סטריק</option>
+                    <option value="task">📋 שינוי / מחיקת משימות</option>
+                    <option value="badge">🏅 תגים והישגים</option>
+                    <option value="profile">👤 פרטים אישיים וסיסמה</option>
+                    <option value="delete_user">🗑️ מחיקת חשבון</option>
+                </select>
+
+                <select id="filter-user" onchange="renderAll()" class="px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl text-xs font-bold outline-none">
+                    <option value="all">כל המשתמשות</option>
+                </select>
+            </div>
+
+            <!-- View Switcher: Sheets vs Docs -->
+            <div class="flex items-center bg-stone-100 p-1 rounded-xl border border-stone-200">
+                <button id="btn-view-sheets" onclick="setViewMode('sheets')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs">
+                    📊 תצוגת שיטס (טבלה)
+                </button>
+                <button id="btn-view-docs" onclick="setViewMode('docs')" class="px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600">
+                    📄 תצוגת דוקס (מסמך)
+                </button>
+            </div>
+        </section>
+
+        <!-- Document Paper Container -->
+        <section class="doc-paper rounded-3xl border border-stone-200 p-5 md:p-8 min-h-[480px]">
+            <div class="flex items-center justify-between pb-4 mb-6 border-b-2 border-stone-100">
+                <div>
+                    <h2 class="text-lg font-black text-stone-800">יומן פעולות ושינויי אדמין מלא</h2>
+                    <p id="last-updated-text" class="text-xs text-stone-400 mt-0.5">טוען נתונים...</p>
+                </div>
+                <span id="visible-count-badge" class="text-xs font-bold bg-stone-100 text-stone-600 px-3 py-1 rounded-full">0 פעולות</span>
+            </div>
+
+            <!-- SHEETS VIEW (Default for Audit Log) -->
+            <div id="sheets-container" class="overflow-x-auto">
+                <table class="w-full border-collapse text-right text-xs">
+                    <thead>
+                        <tr class="bg-stone-100 text-stone-700 border-y border-stone-300 font-black">
+                            <th class="p-3 border-l border-stone-200 w-14 text-center">#</th>
+                            <th class="p-3 border-l border-stone-200 w-40">תאריך ושעה</th>
+                            <th class="p-3 border-l border-stone-200 w-40">משתמשת מושפעת</th>
+                            <th class="p-3 border-l border-stone-200 w-44">סוג הפעולה</th>
+                            <th class="p-3 min-w-[300px]">פירוט השינוי שבוצע (לפני ← אחרי)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="sheets-tbody" class="divide-y divide-stone-200 align-top"></tbody>
+                </table>
+            </div>
+
+            <!-- DOCS VIEW -->
+            <div id="docs-container" class="hidden space-y-3"></div>
+        </section>
+    </main>
+
+    <script>
+        let allLogs = [];
+        let currentViewMode = 'sheets'; // 'sheets' | 'docs'
+
+        function formatDateTime(iso) {
+            if (!iso) return '';
+            const d = new Date(iso);
+            if (isNaN(d.getTime())) return iso;
+            return d.toLocaleDateString('he-IL', {
+                day: '2-digit', month: '2-digit', year: 'numeric'
+            }) + ' • ' + d.toLocaleTimeString('he-IL', {
+                hour: '2-digit', minute: '2-digit', second: '2-digit'
+            });
+        }
+
+        function getCategoryMeta(cat) {
+            switch (cat) {
+                case 'penalty': return { icon: '💚', label: 'ביטול קנס', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' };
+                case 'points': return { icon: '💰', label: 'עדכון נקודות', cls: 'bg-purple-50 text-purple-700 border-purple-200' };
+                case 'streak': return { icon: '🔥', label: 'עדכון/שחזור רצף', cls: 'bg-rose-50 text-rose-700 border-rose-200' };
+                case 'task': return { icon: '📋', label: 'ניהול משימות', cls: 'bg-blue-50 text-blue-700 border-blue-200' };
+                case 'badge': return { icon: '🏅', label: 'תגים והישגים', cls: 'bg-amber-50 text-amber-800 border-amber-200' };
+                case 'profile': return { icon: '👤', label: 'פרטים אישיים', cls: 'bg-indigo-50 text-indigo-700 border-indigo-200' };
+                case 'delete_user': return { icon: '🗑️', label: 'מחיקת חשבון', cls: 'bg-red-100 text-red-800 border-red-300' };
+                default: return { icon: '🛡️', label: 'פעולת אדמין', cls: 'bg-stone-100 text-stone-700 border-stone-200' };
+            }
+        }
+
+        function escapeHtml(str) {
+            return String(str || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function setViewMode(mode) {
+            currentViewMode = mode;
+            const docsBtn = document.getElementById('btn-view-docs');
+            const sheetsBtn = document.getElementById('btn-view-sheets');
+            const docsCont = document.getElementById('docs-container');
+            const sheetsCont = document.getElementById('sheets-container');
+
+            if (mode === 'sheets') {
+                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
+                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+                sheetsCont.classList.remove('hidden');
+                docsCont.classList.add('hidden');
+            } else {
+                docsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all bg-white text-indigo-700 shadow-2xs';
+                sheetsBtn.className = 'px-3 py-1.5 rounded-lg text-xs font-bold transition-all text-stone-600';
+                docsCont.classList.remove('hidden');
+                sheetsCont.classList.add('hidden');
+            }
+            renderAll();
+        }
+
+        function populateUserDropdown() {
+            const select = document.getElementById('filter-user');
+            if (!select) return;
+            const currentVal = select.value;
+            const usersMap = new Map();
+            allLogs.forEach(item => {
+                if (item && item.targetUsername) {
+                    usersMap.set(item.targetUsername, item.targetDisplayName || item.targetUsername);
+                }
+            });
+            const options = ['<option value="all">כל המשתמשות</option>'];
+            usersMap.forEach((displayName, uName) => {
+                options.push(`<option value="${escapeHtml(uName)}">${escapeHtml(displayName)} (@${escapeHtml(uName)})</option>`);
+            });
+            select.innerHTML = options.join('');
+            if ([...usersMap.keys()].includes(currentVal)) {
+                select.value = currentVal;
+            }
+        }
+
+        function getFilteredLogs() {
+            const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+            const catFilter = document.getElementById('filter-category')?.value || 'all';
+            const userFilter = document.getElementById('filter-user')?.value || 'all';
+
+            return allLogs.filter(item => {
+                if (!item) return false;
+                if (catFilter !== 'all' && item.category !== catFilter) return false;
+                if (userFilter !== 'all' && item.targetUsername !== userFilter) return false;
+                if (q) {
+                    const hay = `${item.actionTitle || ''} ${item.details || ''} ${item.targetDisplayName || ''} ${item.targetUsername || ''}`.toLowerCase();
+                    if (!hay.includes(q)) return false;
+                }
+                return true;
+            });
+        }
+
+        function renderAll() {
+            document.getElementById('stat-total').textContent = allLogs.length;
+            document.getElementById('stat-points').textContent = allLogs.filter(i => i.category === 'points' || i.category === 'penalty').length;
+            document.getElementById('stat-streaks').textContent = allLogs.filter(i => i.category === 'streak').length;
+            document.getElementById('stat-other').textContent = allLogs.filter(i => !['points', 'penalty', 'streak'].includes(i.category)).length;
+
+            const filtered = getFilteredLogs();
+            document.getElementById('visible-count-badge').textContent = `${filtered.length} פעולות מוצגות`;
+            document.getElementById('last-updated-text').textContent = `עודכן לאחרונה: ${new Date().toLocaleTimeString('he-IL')}`;
+
+            const sheetsBody = document.getElementById('sheets-tbody');
+            const docsCont = document.getElementById('docs-container');
+
+            if (filtered.length === 0) {
+                const emptyHtml = `
+                    <div class="text-center py-16 text-stone-400">
+                        <div class="text-4xl mb-3">🛡️</div>
+                        <div class="font-bold text-base text-stone-600">אין פעולות אדמין להצגה כרגע</div>
+                        <div class="text-xs mt-1">כל שינוי שיבוצע דרך מסך הניהול (God Mode) באפליקציה יתועד כאן אוטומטית ובזמן אמת.</div>
+                    </div>
+                `;
+                sheetsBody.innerHTML = `<tr><td colspan="5">${emptyHtml}</td></tr>`;
+                docsCont.innerHTML = emptyHtml;
+                return;
+            }
+
+            sheetsBody.innerHTML = filtered.map((item, idx) => {
+                const meta = getCategoryMeta(item.category);
+                return `
+                    <tr class="hover:bg-indigo-50/20 transition-colors bg-white">
+                        <td class="p-3 border-l border-stone-200 text-center font-black text-stone-400">${filtered.length - idx}</td>
+                        <td class="p-3 border-l border-stone-200 font-medium text-stone-500 whitespace-nowrap">${formatDateTime(item.timestamp)}</td>
+                        <td class="p-3 border-l border-stone-200">
+                            <div class="font-bold text-stone-900">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</div>
+                            ${item.targetUsername ? `<div class="text-[11px] text-stone-400 font-mono" dir="ltr">@${escapeHtml(item.targetUsername)}</div>` : ''}
+                        </td>
+                        <td class="p-3 border-l border-stone-200">
+                            <span class="inline-flex items-center gap-1 text-[11px] font-bold px-2.5 py-1 rounded-lg border ${meta.cls}">
+                                <span>${meta.icon}</span>
+                                <span>${escapeHtml(item.actionTitle || meta.label)}</span>
+                            </span>
+                        </td>
+                        <td class="p-3">
+                            <div class="msg-wrap text-xs text-stone-800 font-medium">${escapeHtml(item.details || '')}</div>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+
+            docsCont.innerHTML = filtered.map((item, idx) => {
+                const meta = getCategoryMeta(item.category);
+                return `
+                    <article class="p-4 rounded-2xl border border-stone-200 bg-white shadow-2xs hover:border-indigo-300 transition-all">
+                        <div class="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-2.5 border-b border-stone-100">
+                            <div class="flex items-center gap-2 flex-wrap">
+                                <span class="text-xs font-black text-stone-400">#${filtered.length - idx}</span>
+                                <span class="text-xs font-bold px-2.5 py-1 rounded-lg border ${meta.cls}">${meta.icon} ${escapeHtml(item.actionTitle || meta.label)}</span>
+                                <span class="text-xs text-stone-500 font-bold">עבור:</span>
+                                <span class="font-black text-sm text-stone-900">${escapeHtml(item.targetDisplayName || item.targetUsername || '-')}</span>
+                                ${item.targetUsername ? `<span class="text-xs text-stone-400 font-mono" dir="ltr">(@${escapeHtml(item.targetUsername)})</span>` : ''}
+                            </div>
+                            <span class="text-xs text-stone-400 font-medium">${formatDateTime(item.timestamp)}</span>
+                        </div>
+                        <div class="msg-wrap text-sm text-stone-800 bg-stone-50/80 p-3.5 rounded-xl border border-stone-100 font-medium">${escapeHtml(item.details || '')}</div>
+                    </article>
+                `;
+            }).join('');
+        }
+
+        function exportToCSV() {
+            const filtered = getFilteredLogs();
+            const headers = ['תאריך ושעה', 'משתמשת', 'כינוי', 'סוג הפעולה', 'פירוט השינוי'];
+            const rows = filtered.map(item => [
+                formatDateTime(item.timestamp),
+                item.targetDisplayName || '',
+                item.targetUsername || '',
+                item.actionTitle || '',
+                item.details || ''
+            ]);
+            const csvContent = '\uFEFF' + [headers, ...rows]
+                .map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+                .join('\r\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `StudyStreak_Admin_Log_${new Date().toISOString().slice(0,10)}.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function exportToWordDoc() {
+            const filtered = getFilteredLogs();
+            const lines = filtered.map((item, i) => `
+                <div style="border-bottom:1px solid #ddd; padding:10px 0; margin-bottom:10px; direction:rtl; text-align:right; font-family:Arial,sans-serif;">
+                    <h3 style="margin:0 0 4px 0; color:#1e293b;">#${filtered.length - i} | ${escapeHtml(item.actionTitle)} — משתמשת: ${escapeHtml(item.targetDisplayName)} (@${escapeHtml(item.targetUsername)})</h3>
+                    <div style="font-size:12px; color:#64748b; margin-bottom:6px;">זמן ביצוע: ${formatDateTime(item.timestamp)}</div>
+                    <p style="margin:0; white-space:pre-wrap; font-size:14px; line-height:1.5;">${escapeHtml(item.details)}</p>
+                </div>
+            `).join('');
+
+            const htmlDoc = `
+                <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:w="urn:schemas-microsoft-com:office:word" xmlns="http://www.w3.org/TR/REC-html40" dir="rtl">
+                <head><meta charset="utf-8"><title>מסמך מעקב שינויי אדמין</title></head>
+                <body style="direction:rtl; text-align:right; font-family:Arial,sans-serif;">
+                    <h1>מסמך מעקב שינויי אדמין (Audit Log) - StudyStreak Pro</h1>
+                    <p>הופק בתאריך: ${formatDateTime(new Date().toISOString())}</p>
+                    <hr/>
+                    ${lines}
+                </body></html>
+            `;
+            const blob = new Blob(['\uFEFF', htmlDoc], { type: 'application/msword;charset=utf-8' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `StudyStreak_Admin_Log_${new Date().toISOString().slice(0,10)}.doc`;
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function initAdminLogDoc() {
+            try {
+                const localRaw = localStorage.getItem('studyStreak_system_admin_logs');
+                if (localRaw) {
+                    allLogs = JSON.parse(localRaw) || [];
+                    populateUserDropdown();
+                    renderAll();
+                }
+            } catch (e) {}
+
+            if (db) {
+                db.collection('task_attachments').doc('__system_admin_logs__').onSnapshot(doc => {
+                    if (doc.exists && Array.isArray(doc.data()?.items)) {
+                        const remoteItems = doc.data().items;
+                        const byId = new Map();
+                        [...allLogs, ...remoteItems].forEach(item => {
+                            if (item && item.id) byId.set(item.id, item);
+                        });
+                        allLogs = Array.from(byId.values()).sort(
+                            (a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime()
+                        );
+                        try {
+                            localStorage.setItem('studyStreak_system_admin_logs', JSON.stringify(allLogs));
+                        } catch (e) {}
+                    }
+                    populateUserDropdown();
+                    renderAll();
+                }, err => {
+                    console.warn('Firestore listener warning:', err);
+                    const badge = document.getElementById('sync-badge');
+                    if (badge) {
+                        badge.className = 'text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200';
+                        badge.textContent = 'מצב מקומי';
+                    }
+                    renderAll();
+                });
+            } else {
+                renderAll();
+            }
+        }
+
+        initAdminLogDoc();
+    </script>
+</body>
+</html>
