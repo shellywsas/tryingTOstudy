@@ -2434,8 +2434,9 @@ function App() {
                     const cleanedStr = String(directInput).replace(',', '.').trim();
                     const val = parseFloat(cleanedStr);
                     if (isNaN(val) || val <= 0) return null;
-                    const totalMinutes = Math.round(val * 60);
+                    const totalMinutes = Math.round(val);
                     if (totalMinutes <= 0) return null;
+                    const hoursExact = parseFloat((totalMinutes / 60).toFixed(2));
                     const hours = Math.floor(totalMinutes / 60);
                     const mins = totalMinutes % 60;
                     let formattedStr = '';
@@ -2447,7 +2448,7 @@ function App() {
                         formattedStr = `${mins} דקות`;
                     }
                     return {
-                        studyDurationHours: parseFloat(val.toFixed(2)),
+                        studyDurationHours: hoursExact,
                         studyDurationMinutes: totalMinutes,
                         studyTimeRange: formattedStr,
                         studyTimeStart: '',
@@ -8466,7 +8467,7 @@ function App() {
                                                                 : 'text-indigo-600 hover:text-indigo-800'
                                                         }`}
                                                     >
-                                                        לפי שעות
+                                                        לפי דקות
                                                     </button>
                                                     <button
                                                         type="button"
@@ -8487,9 +8488,9 @@ function App() {
                                                     <div className="flex items-center gap-2">
                                                         <input
                                                             type="text"
-                                                            inputMode="decimal"
+                                                            inputMode="numeric"
                                                             autoComplete="off"
-                                                            placeholder="למשל: 1.5, 2, 3.5..."
+                                                            placeholder="הקלידי דקות (למשל: 25, 45, 90)..."
                                                             value={studyDurationHoursInput}
                                                             onChange={(e) => {
                                                                 let val = e.target.value.replace(/[^0-9.,]/g, '').replace(',', '.');
@@ -8501,7 +8502,7 @@ function App() {
                                                             }}
                                                             className="flex-1 p-3 bg-white border border-indigo-200 rounded-xl text-sm font-bold text-stone-800 outline-none focus:ring-2 focus:ring-indigo-300"
                                                         />
-                                                        <span className="text-sm font-bold text-indigo-900 whitespace-nowrap">שעות</span>
+                                                        <span className="text-sm font-bold text-indigo-900 whitespace-nowrap">דקות</span>
                                                         {studyDurationHoursInput && (
                                                             <button
                                                                 type="button"
@@ -8519,7 +8520,7 @@ function App() {
                                                         if (!dur) return null;
                                                         return (
                                                             <div className="bg-white/90 p-2.5 rounded-xl border border-indigo-200 text-xs font-bold text-indigo-900 flex items-center justify-between shadow-2xs">
-                                                                <span>✨ משך למידה שחושב:</span>
+                                                                <span>✨ הומר לשעות:</span>
                                                                 <span className="text-indigo-700 font-extrabold">{dur.studyTimeRange} ({dur.studyDurationHours} שעות)</span>
                                                             </div>
                                                         );
@@ -8527,14 +8528,14 @@ function App() {
 
                                                     <div className="flex flex-wrap gap-1.5 pt-1">
                                                         {[
-                                                            { label: '30 דק\'', val: '0.5' },
-                                                            { label: 'שעה', val: '1' },
-                                                            { label: '1.5 שע\'', val: '1.5' },
-                                                            { label: 'שעתיים', val: '2' },
-                                                            { label: '2.5 שע\'', val: '2.5' },
-                                                            { label: '3 שעות', val: '3' },
-                                                            { label: '3.5 שע\'', val: '3.5' },
-                                                            { label: '4 שעות', val: '4' }
+                                                            { label: '30 דק\'', val: '30' },
+                                                            { label: 'שעה', val: '60' },
+                                                            { label: '1.5 שע\'', val: '90' },
+                                                            { label: 'שעתיים', val: '120' },
+                                                            { label: '2.5 שע\'', val: '150' },
+                                                            { label: '3 שעות', val: '180' },
+                                                            { label: '3.5 שע\'', val: '210' },
+                                                            { label: '4 שעות', val: '240' }
                                                         ].map(chip => {
                                                             const numVal = parseFloat(studyDurationHoursInput);
                                                             const isChipActive = studyDurationHoursInput === chip.val || 
