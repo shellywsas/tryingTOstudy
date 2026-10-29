@@ -638,7 +638,7 @@ function App() {
                             }
                             return task.completed ? task : { ...task, completed: true };
                         }
-                        if (task.isLessonLog || !task.dueDate || task.isFlexibleExamSession) return task;
+                        if (task.isLessonLog || !task.dueDate || task.isFlexibleExamSession || task.isPracticeSession) return task;
                         const timeStr = task.dueTime || '23:59:59';
                         const dueDate = new Date(`${task.dueDate}T${timeStr}`);
                         if (isNaN(dueDate.getTime())) return task;
@@ -1589,7 +1589,12 @@ function App() {
             const [pastExamSubjectFilter, setPastExamSubjectFilter] = useState('all'); 
 
 
-            const [taskFormHasHW, setTaskFormHasHW] = useState(true);
+            const [taskFormType, setTaskFormType] = useState('hw'); // 'hw' | 'practice' | 'log'
+            const taskFormHasHW = taskFormType === 'hw';
+            const [practiceDoneNow, setPracticeDoneNow] = useState(true);
+            const [practiceDurationMins, setPracticeDurationMins] = useState(45);
+            const [practiceUnderstanding, setPracticeUnderstanding] = useState(5);
+            const [showPastTopics, setShowPastTopics] = useState(false);
             const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
             const [lateReason, setLateReason] = useState('');
             const [otherLateReason, setOtherLateReason] = useState('');
@@ -2100,12 +2105,109 @@ function App() {
             };
 
 
-            const handleAddTask = (taskData, hasHW) => {
+            const handleAddTask = (taskData, currentFormType = 'hw', practiceOpts = {}) => {
                 const now = new Date();
                 const actualGivenDate = taskData.givenDate || now.toISOString().split('T')[0];
                 const attachments = taskData.attachments || taskFormAttachments || [];
+                const sub = (activeUserData.subjects || []).find(s => s.id === taskData.subjectId);
+                const actualType = typeof currentFormType === 'boolean' ? (currentFormType ? 'hw' : 'log') : currentFormType;
+
+                if (actualType === 'practice') {
+                    const topic = taskData.lessonTopic || taskData.title || '';
+                    const title = taskData.title ? (taskData.title.startsWith('תרגול') ? taskData.title : `תרגול: ${taskData.title}`) : (topic ? `תרגול: ${topic}` : 'סשן תרגול עצמאי');
+                    
+                    if (practiceOpts.doneNow) {
+                        const mins = practiceOpts.durationMins || 45;
+                        const pointsDelta = mins >= 30 ? 2 : 1;
+                        const pointsText = mins >= 30 ? 'בוצע סשן תרגול מעמיק (+2 נקודות)! 💡' : 'בוצע סשן תרגול קצר (+1 נקודה)! 💡';
+                        const hoursExact = parseFloat((mins / 60).toFixed(2));
+                        const hours = Math.floor(mins / 60);
+                        const remainMins = mins % 60;
+                        const formattedDuration = (hours > 0 && remainMins > 0)
+                            ? `${hours} שע' ו-${remainMins} דק'`
+                            : (hours === 1 ? 'שעה' : (hours === 2 ? 'שעתיים' : (hours > 0 ? `${hours} שעות` : `${mins} דקות`)));
+
+                        const completedPractice = {
+                            id: 't_' + Date.now(),
+                            subjectId: taskData.subjectId,
+                            title: title,
+                            lessonTopic: topic,
+                            createdAt: now.toISOString(),
+                            completed: true,
+                            completedAt: now.toISOString(),
+                            isPracticeSession: true,
+                            understandingRating: practiceOpts.understanding || 5,
+                            pointsEarned: pointsDelta,
+                            studyDurationMinutes: mins,
+                            studyDurationHours: hoursExact,
+                            studyTimeRange: formattedDuration,
+                            givenDate: actualGivenDate,
+                            attachments: attachments
+                        };
+
+                        const historyLog = {
+                            id: 'ph_' + Date.now(),
+                            taskId: completedPractice.id,
+                            taskTitle: title,
+                            subjectName: sub ? sub.name : 'כללי',
+                            subjectEmoji: sub ? sub.emoji : '📚',
+                            points: pointsDelta,
+                            date: now.toISOString(),
+                            details: pointsText,
+                            studyDurationHours: hoursExact,
+                            studyDurationMinutes: mins
+                        };
+
+                        updateUserData(prev => {
+                            let newStreak = (prev.taskStreak || 0) + 1;
+                            let newLongest = Math.max(newStreak, prev.longestStreak || 0);
+                            let newStreakStart = prev.currentStreakStart || now.toISOString();
+                            let newStreakEmojis = [...(prev.currentStreakEmojis || [])];
+                            if (sub && sub.name && !newStreakEmojis.includes(sub.name)) {
+                                newStreakEmojis.push(sub.name);
+                            }
+
+                            return checkAndAwardBadges({
+                                ...prev,
+                                tasks: [completedPractice, ...(prev.tasks || [])],
+                                totalPoints: (prev.totalPoints || 0) + pointsDelta,
+                                weeklyPoints: (prev.weeklyPoints || 0) + pointsDelta,
+                                taskStreak: newStreak,
+                                longestStreak: newLongest,
+                                currentStreakStart: newStreakStart,
+                                currentStreakEmojis: newStreakEmojis,
+                                pointsHistory: [historyLog, ...(prev.pointsHistory || [])]
+                            });
+                        });
+
+                        setTaskFormAttachments([]);
+                        toggleModal('task', false);
+                        showToast(`כל הכבוד! סשן תרגול הושלם בהצלחה (+${pointsDelta} נקודות, מדד 🔥)! 💡`, 'success');
+                    } else {
+                        const pendingPractice = {
+                            id: 't_' + Date.now(),
+                            subjectId: taskData.subjectId,
+                            title: title,
+                            lessonTopic: topic,
+                            createdAt: now.toISOString(),
+                            completed: false,
+                            isPracticeSession: true,
+                            givenDate: actualGivenDate,
+                            dueDate: null,
+                            autoPenaltyApplied: false,
+                            whatsappRemindersEnabled: false,
+                            attachments: attachments
+                        };
+
+                        updateUserData(prev => ({ ...prev, tasks: [pendingPractice, ...(prev.tasks || [])] }));
+                        setTaskFormAttachments([]);
+                        toggleModal('task', false);
+                        showToast('סשן התרגול נוסף בהצלחה לרשימת המשימות! 💡', 'success');
+                    }
+                    return;
+                }
                 
-                if (!hasHW) {
+                if (actualType === 'log') {
                     const noHwTask = {
                         id: 't_' + Date.now(),
                         subjectId: taskData.subjectId,
@@ -2242,7 +2344,17 @@ function App() {
                 let streakBroken = false;
 
 
-                if (task.rewardPoints || task.isFlexibleExamSession) {
+                if (task.isPracticeSession) {
+                    const durMins = durationInfo?.studyDurationMinutes || (durationInfo?.studyDurationHours ? Math.round(durationInfo.studyDurationHours * 60) : 0);
+                    if (durMins >= 30) {
+                        pointsDelta = 2;
+                        pointsText = 'בוצע סשן תרגול מעמיק (+2 נקודות)! 💡';
+                    } else {
+                        pointsDelta = 1;
+                        pointsText = 'בוצע סשן תרגול קצר (+1 נקודה)! 💡';
+                    }
+                    streakBroken = false;
+                } else if (task.rewardPoints || task.isFlexibleExamSession) {
                     pointsDelta = task.rewardPoints || 3;
                     const sessionNumStr = task.sessionNumber ? ` ${task.sessionNumber}` : '';
                     pointsText = `בוצע סשן למידה${sessionNumStr} למבחן (+${pointsDelta} נקודות)! 🎯`;
@@ -5063,8 +5175,11 @@ function App() {
                         <Navigation />
                         
                         <div className="mt-auto pt-6">
-                            <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all active:scale-95">
+                            <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all active:scale-95">
                                 <IconPlus className="w-4 h-4" /> הוספת שיעור/משימה
+                            </button>
+                            <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-bold shadow-sm shadow-amber-500/20 flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
+                                <span>💡</span> סשן תרגול מהיר (+נקודות)
                             </button>
                             <button onClick={handleLogout} className="w-full mt-3 py-3 text-sm text-stone-500 hover:text-rose-600 font-semibold bg-stone-50 hover:bg-rose-50 rounded-2xl transition-colors flex items-center justify-center gap-2 active:scale-95">
                                 התנתקות
@@ -5233,6 +5348,11 @@ function App() {
                                                                         <span>🔔</span> תזכורות
                                                                     </span>
                                                                 )}
+                                                                {task.isPracticeSession && (
+                                                                    <span className="text-[10px] font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded-lg border border-amber-200 flex items-center gap-1 shadow-xs">
+                                                                        <span>💡</span> סשן תרגול
+                                                                    </span>
+                                                                )}
                                                                 {task.whatsappRemindersEnabled && (
                                                                     <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-lg border border-emerald-200 flex items-center gap-1 shadow-xs">
                                                                         <span>💬</span> וואטסאפ
@@ -5264,14 +5384,22 @@ function App() {
                                                                 )}
                                                             </div>
                                                             <div className="flex items-center gap-1.5 flex-wrap">
-                                                                {countdown && (
-                                                                    <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shadow-xs ${countdown.badgeClass}`}>
-                                                                        {countdown.text}
+                                                                {task.isPracticeSession ? (
+                                                                    <span className="text-xs font-bold px-2.5 py-1 rounded-lg flex items-center gap-1.5 border text-amber-800 bg-amber-50 border-amber-200 shadow-2xs">
+                                                                        <span>💡</span> תרגול עצמאי (גמיש)
                                                                     </span>
+                                                                ) : (
+                                                                    <>
+                                                                        {countdown && (
+                                                                            <span className={`text-[11px] font-bold px-2 py-0.5 rounded-lg border shadow-xs ${countdown.badgeClass}`}>
+                                                                                {countdown.text}
+                                                                            </span>
+                                                                        )}
+                                                                        <span className={`text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1.5 border ${isLate ? 'text-rose-600 bg-rose-50 border-rose-100/50' : 'text-stone-600 bg-stone-50 border-stone-200/50'}`}>
+                                                                            <IconCalendar className="w-3.5 h-3.5"/> <span dir="rtl">{task.dueDate ? `${new Date(task.dueDate).toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'})} • ${task.startTime ? `מ-${task.startTime} עד ` : ''}${task.dueTime}` : 'לא הוגדר'}</span>
+                                                                        </span>
+                                                                    </>
                                                                 )}
-                                                                <span className={`text-xs font-bold px-2 py-1 rounded-lg flex items-center gap-1.5 border ${isLate ? 'text-rose-600 bg-rose-50 border-rose-100/50' : 'text-stone-600 bg-stone-50 border-stone-200/50'}`}>
-                                                                    <IconCalendar className="w-3.5 h-3.5"/> <span dir="rtl">{task.dueDate ? `${new Date(task.dueDate).toLocaleDateString('he-IL', {day:'2-digit', month:'2-digit'})} • ${task.startTime ? `מ-${task.startTime} עד ` : ''}${task.dueTime}` : 'לא הוגדר'}</span>
-                                                                </span>
                                                             </div>
                                                         </div>
                                                         <div className="font-bold text-stone-800 text-base">{task.title}</div>
@@ -5331,7 +5459,10 @@ function App() {
                                         <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות.</p>
                                     </div>
                                     <div className="flex items-center gap-2.5 flex-wrap">
-                                        <button onClick={() => { setTaskFormHasHW(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
+                                        <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-4 py-3 rounded-2xl text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 active:scale-95">
+                                            <span>💡</span> סשן תרגול
+                                        </button>
+                                        <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
                                             <IconPlus className="w-4 h-4"/> הוספת חדש
                                         </button>
                                     </div>
@@ -5392,7 +5523,12 @@ function App() {
                                                                     <span>💬</span> תזכורות וואטסאפ
                                                                 </span>
                                                             )}
-                                                            {!task.isLessonLog && !isTaskDone && task.dueDate && (() => {
+                                                            {task.isPracticeSession && !isTaskDone && (
+                                                                <span className="text-xs font-bold text-amber-800 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-lg shadow-2xs">
+                                                                    💡 תרגול עצמאי (גמיש)
+                                                                </span>
+                                                            )}
+                                                            {!task.isLessonLog && !task.isPracticeSession && !isTaskDone && task.dueDate && (() => {
                                                                 const countdown = getTaskCountdown(task.dueDate, task.dueTime);
                                                                 return (
                                                                     <div className="flex items-center gap-1.5 flex-wrap">
@@ -5567,103 +5703,159 @@ function App() {
                                     )}
 
 
-                                    <div className="grid grid-cols-1 gap-4">
-                                        {filteredLogs.map(task => {
-                                            const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
+                                    {(() => {
+                                        // Group tasks by (subjectId + topic) so selecting a past topic adds a task under the same topic rather than a new duplicate topic entry
+                                        const topicGroupsMap = new Map();
+                                        filteredLogs.forEach(task => {
+                                            const topicName = (task.lessonTopic || '').trim();
+                                            if (!topicName) return;
+                                            const key = (task.subjectId || 'all') + '___' + topicName.toLowerCase();
+                                            if (!topicGroupsMap.has(key)) {
+                                                topicGroupsMap.set(key, {
+                                                    key,
+                                                    topic: topicName,
+                                                    subjectId: task.subjectId,
+                                                    firstDate: task.givenDate || task.createdAt,
+                                                    primaryTask: task,
+                                                    tasks: []
+                                                });
+                                            }
+                                            const group = topicGroupsMap.get(key);
+                                            group.tasks.push(task);
+                                            if (task.givenDate && (!group.firstDate || task.givenDate < group.firstDate)) {
+                                                group.firstDate = task.givenDate;
+                                            }
+                                        });
+
+                                        const topicGroups = Array.from(topicGroupsMap.values())
+                                            .sort((a, b) => (b.firstDate || '').localeCompare(a.firstDate || ''));
+
+                                        if (topicGroups.length === 0) {
                                             return (
-                                                <div key={task.id} className="p-4 rounded-3xl border border-stone-100 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
-                                                    <div className="flex-1">
-                                                        <div className="flex items-center gap-2 mb-3 flex-wrap">
-                                                            <span className="text-xs px-2 py-1 rounded-lg font-bold shadow-sm" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
-                                                                {sub?.emoji} {sub?.name || 'כללי'}
-                                                            </span>
-                                                            <span className="text-xs font-medium text-stone-500 bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">
-                                                                נלמד ב: <span dir="ltr">{new Date(task.givenDate || task.createdAt).toLocaleDateString('he-IL')}</span>
-                                                            </span>
-                                                            {task.isLessonLog && (
-                                                                <span className="text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-lg border border-purple-100">
-                                                                    (סומן ללא שיעורי בית)
-                                                                </span>
-                                                            )}
-                                                            {(() => {
-                                                                const allAtts = task.attachments || [];
-                                                                const boardAtts = allAtts.filter(a => a.category === 'board' || (!a.category && task.isLessonLog));
-                                                                const hwAtts = allAtts.filter(a => a.category === 'homework' || (!a.category && !task.isLessonLog));
-
-                                                                return (
-                                                                    <>
-                                                                        {boardAtts.length > 0 && (
-                                                                            <button 
-                                                                                type="button"
-                                                                                onClick={() => openAttachmentViewer(task, 0, 'board')} 
-                                                                                className="text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                                                                title="צפייה בצילומי לוח מהשיעור"
-                                                                            >
-                                                                                <span>📸</span> צילומי לוח ({boardAtts.length})
-                                                                            </button>
-                                                                        )}
-                                                                        {hwAtts.length > 0 && (
-                                                                            <button 
-                                                                                type="button"
-                                                                                onClick={() => openAttachmentViewer(task, 0, 'homework')} 
-                                                                                className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
-                                                                                title="צפייה בקובצי שיעורי הבית של השיעור"
-                                                                            >
-                                                                                <span>📄</span> קובצי ש.ב ({hwAtts.length})
-                                                                            </button>
-                                                                        )}
-                                                                    </>
-                                                                );
-                                                            })()}
-                                                        </div>
-                                                        <h3 className="font-bold text-lg text-stone-800">{task.lessonTopic}</h3>
-                                                        {!task.isLessonLog && <div className="text-sm text-stone-500 mt-1">מתוך משימה: {task.title}</div>}
-                                                    </div>
-                                                    <div className="flex gap-2 shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4 items-center flex-wrap">
-                                                        <label className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 px-3 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs font-bold w-full md:w-auto active:scale-95 cursor-pointer shadow-xs" title="הוספת צילום לוח מהשיעור">
-                                                            <input 
-                                                                type="file" 
-                                                                multiple 
-                                                                accept="image/*" 
-                                                                className="hidden" 
-                                                                onChange={async (e) => {
-                                                                    const files = Array.from(e.target.files || []);
-                                                                    if (files.length === 0) return;
-                                                                    await handleQuickAddAttachmentsToTask(task, files, 'board');
-                                                                    e.target.value = '';
-                                                                }} 
-                                                            />
-                                                            <span>📸</span> + צילום לוח
-                                                        </label>
-                                                        
-                                                        {!task.isLessonLog && (
-                                                            <label className="bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 px-3 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs font-bold w-full md:w-auto active:scale-95 cursor-pointer shadow-xs" title="הוספת דף עבודה או קובץ שיעורי בית">
-                                                                <input 
-                                                                    type="file" 
-                                                                    multiple 
-                                                                    accept="image/*,application/pdf" 
-                                                                    className="hidden" 
-                                                                    onChange={async (e) => {
-                                                                        const files = Array.from(e.target.files || []);
-                                                                        if (files.length === 0) return;
-                                                                        await handleQuickAddAttachmentsToTask(task, files, 'homework');
-                                                                        e.target.value = '';
-                                                                    }} 
-                                                                />
-                                                                <span>📄</span> + דף ש.ב
-                                                            </label>
-                                                        )}
-
-                                                        <button onClick={() => handleRemoveFromLessonLog(task.id)} className="bg-stone-50 text-stone-400 hover:text-rose-600 border border-stone-200 hover:border-rose-200 px-2.5 py-2 rounded-xl hover:bg-rose-50 transition-colors flex items-center justify-center gap-1 text-xs font-medium w-full md:w-auto active:scale-95" title="מחיקה מהיומן">
-                                                            <IconTrash className="w-4 h-4"/>
-                                                        </button>
-                                                    </div>
+                                                <div className="text-stone-400 text-base font-medium text-center py-16 bg-white rounded-3xl border border-stone-200 border-dashed">
+                                                    יומן השיעורים ריק. תעדי שיעור חדש!
                                                 </div>
-                                            )
-                                        })}
-                                        {filteredLogs.length === 0 && <div className="text-stone-400 text-base font-medium text-center py-16 bg-white rounded-3xl border border-stone-200 border-dashed">יומן השיעורים ריק. תעדי שיעור חדש!</div>}
-                                    </div>
-                                </div>
+                                            );
+                                        }
+
+                                        return (
+                                            <div className="grid grid-cols-1 gap-4">
+                                                {topicGroups.map(group => {
+                                                    const sub = activeUserData.subjects.find(s => s.id === group.subjectId);
+                                                    
+                                                    // Gather all unique attachments for this topic
+                                                    const allGroupAtts = [];
+                                                    const seenAttIds = new Set();
+                                                    group.tasks.forEach(t => {
+                                                        (t.attachments || []).forEach(a => {
+                                                            const aid = a.id || a.name;
+                                                            if (!seenAttIds.has(aid)) {
+                                                                seenAttIds.add(aid);
+                                                                allGroupAtts.push(a);
+                                                            }
+                                                        });
+                                                    });
+                                                    const boardAtts = allGroupAtts.filter(a => a.category === 'board');
+                                                    const hwAtts = allGroupAtts.filter(a => a.category === 'homework');
+                                                    const relatedWorkTasks = group.tasks.filter(t => !t.isLessonLog);
+
+                                                    return (
+                                                        <div key={group.key} className="p-5 rounded-3xl border border-stone-100 bg-white shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md transition-all flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                                            <div className="flex-1">
+                                                                <div className="flex items-center gap-2 mb-2 flex-wrap">
+                                                                    <span className="text-xs px-2.5 py-1 rounded-lg font-bold shadow-xs" style={{backgroundColor: sub?.color || '#f5f5f4', color: sub ? '#fff' : '#57534e'}}>
+                                                                        {sub?.emoji} {sub?.name || 'כללי'}
+                                                                    </span>
+                                                                    <span className="text-xs font-medium text-stone-500 bg-stone-50 px-2 py-1 rounded-lg border border-stone-100">
+                                                                        נלמד ב: <span dir="ltr">{new Date(group.firstDate).toLocaleDateString('he-IL')}</span>
+                                                                    </span>
+                                                                    {relatedWorkTasks.length > 0 && (
+                                                                        <span className="text-[11px] font-bold text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-full border border-purple-200">
+                                                                            {relatedWorkTasks.length} {relatedWorkTasks.length === 1 ? 'משימה משויכת' : 'משימות משויכות'}
+                                                                        </span>
+                                                                    )}
+                                                                    {boardAtts.length > 0 && (
+                                                                        <button 
+                                                                            type="button" 
+                                                                            onClick={() => openAttachmentViewer(group.primaryTask, 0, 'board')} 
+                                                                            className="text-xs font-bold text-purple-700 bg-purple-50 hover:bg-purple-100 px-2.5 py-1 rounded-lg border border-purple-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                                                            title="צפייה בצילומי לוח מהשיעור"
+                                                                        >
+                                                                            <span>📸</span> צילומי לוח ({boardAtts.length})
+                                                                        </button>
+                                                                    )}
+                                                                    {hwAtts.length > 0 && (
+                                                                        <button 
+                                                                            type="button" 
+                                                                            onClick={() => openAttachmentViewer(group.primaryTask, 0, 'homework')} 
+                                                                            className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg border border-indigo-200 flex items-center gap-1.5 transition-colors cursor-pointer shadow-xs"
+                                                                            title="צפייה בקובצי שיעורי הבית של השיעור"
+                                                                        >
+                                                                            <span>📄</span> קובצי ש.ב ({hwAtts.length})
+                                                                        </button>
+                                                                    )}
+                                                                </div>
+
+                                                                <h3 className="font-extrabold text-xl text-stone-800 tracking-tight">{group.topic}</h3>
+
+                                                                {relatedWorkTasks.length > 0 && (
+                                                                    <div className="mt-3 space-y-1.5">
+                                                                        {relatedWorkTasks.map(t => (
+                                                                            <div key={t.id} className="flex items-center justify-between text-xs bg-stone-50/80 p-2 rounded-xl border border-stone-100 gap-2">
+                                                                                <div className="flex items-center gap-2 truncate">
+                                                                                    <span>{t.isPracticeSession ? '💡' : '📝'}</span>
+                                                                                    <span className={`font-semibold truncate ${t.completed ? 'line-through text-stone-400' : 'text-stone-800'}`}>
+                                                                                        {t.title}
+                                                                                    </span>
+                                                                                </div>
+                                                                                <span className={`text-[10px] font-bold shrink-0 px-2 py-0.5 rounded-lg border ${t.completed ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-800 border-amber-200'}`}>
+                                                                                    {t.completed ? '✅ הושלם' : (t.isPracticeSession ? '⏳ תרגול גמיש' : '⏳ להגשה')}
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+
+                                                            <div className="flex gap-2 shrink-0 border-t md:border-t-0 md:border-r border-stone-100 pt-3 md:pt-0 md:pr-4 items-center flex-wrap">
+                                                                <label className="bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200 px-3 py-2 rounded-xl transition-all flex items-center justify-center gap-1.5 text-xs font-bold w-full md:w-auto active:scale-95 cursor-pointer shadow-xs" title="הוספת צילום לוח לנושא זה">
+                                                                    <input 
+                                                                        type="file" 
+                                                                        multiple 
+                                                                        accept="image/*" 
+                                                                        className="hidden" 
+                                                                        onChange={async (e) => {
+                                                                            const files = Array.from(e.target.files || []);
+                                                                            if (files.length === 0) return;
+                                                                            await handleQuickAddAttachmentsToTask(group.primaryTask, files, 'board');
+                                                                            e.target.value = '';
+                                                                        }} 
+                                                                    />
+                                                                    <span>📸</span> + צילום לוח
+                                                                </label>
+                                                                <button 
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        if (window.confirm(`האם את בטוחה שברצונך להסיר את הנושא "${group.topic}" מהיומן?`)) {
+                                                                            updateUserData(prev => ({
+                                                                                ...prev,
+                                                                                tasks: prev.tasks.map(t => group.tasks.some(gt => gt.id === t.id) ? { ...t, lessonTopic: '' } : t)
+                                                                            }));
+                                                                            showToast('נושא השיעור הוסר מהיומן', 'success');
+                                                                        }
+                                                                    }}
+                                                                    className="text-stone-400 hover:text-rose-600 bg-stone-50 hover:bg-rose-50 border border-stone-200 hover:border-rose-200 p-2 rounded-xl transition-all active:scale-95 text-xs"
+                                                                    title="הסרת נושא זה מהיומן"
+                                                                >
+                                                                    <IconTrash className="w-4 h-4" />
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        );
+                                    })()}                                </div>
                             );
                         })()}
 
@@ -7348,6 +7540,20 @@ function App() {
                                 </div>
                                 <form onSubmit={(e) => {
                                     e.preventDefault();
+                                    if (taskFormType === 'practice') {
+                                        const pTitle = e.target.practiceTitle?.value || e.target.topic?.value || '';
+                                        handleAddTask({
+                                            subjectId: e.target.subId.value,
+                                            givenDate: taskGivenDate,
+                                            title: pTitle,
+                                            lessonTopic: e.target.topic?.value || ''
+                                        }, 'practice', {
+                                            doneNow: practiceDoneNow,
+                                            durationMins: practiceDurationMins,
+                                            understanding: practiceUnderstanding
+                                        });
+                                        return;
+                                    }
                                     handleAddTask({
                                         subjectId: e.target.subId.value, 
                                         givenDate: taskGivenDate,
@@ -7355,7 +7561,7 @@ function App() {
                                         dueDate: taskFormHasHW ? (e.target.date?.value || null) : null, 
                                         dueTime: taskFormHasHW ? (e.target.time?.value || null) : null, 
                                         lessonTopic: e.target.topic.value
-                                    }, taskFormHasHW);
+                                    }, taskFormType);
                                 }} className="space-y-3.5">
                                     
                                     <div className="flex gap-3">
@@ -7401,14 +7607,23 @@ function App() {
                                     <div>
                                         <div className="flex justify-between items-center mb-1">
                                             <label className="text-xs font-bold text-stone-500 uppercase tracking-wide">נושא השיעור (למחולל המבחנים)</label>
-                                            {pastTopics.length > 0 && <span className="text-[10px] text-purple-600 font-bold">נושאים קודמים זמינים לבחירה</span>}
+                                            {pastTopics.length > 0 && (
+                                                <button 
+                                                    type="button" 
+                                                    onClick={() => setShowPastTopics(p => !p)}
+                                                    className="text-xs text-purple-700 bg-purple-50 hover:bg-purple-100 border border-purple-200 px-2 py-0.5 rounded-lg font-bold flex items-center gap-1 transition-all active:scale-95 cursor-pointer shadow-2xs"
+                                                >
+                                                    <span>📚 נושאים קודמים ({pastTopics.length})</span>
+                                                    <span className="text-[10px]">{showPastTopics ? '▲' : '▼'}</span>
+                                                </button>
+                                            )}
                                         </div>
                                         <input 
                                             id="taskTopicInput"
                                             name="topic" 
                                             list="past-topics-list"
                                             required={false} 
-                                            placeholder="למשל: אינטגרלים, אוטופיה... (או בחרי נושא קיים)" 
+                                            placeholder="למשל: אינטגרלים, אוטופיה... (או לחצי על 'נושאים קודמים')" 
                                             className="w-full p-3 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-purple-400 transition-all shadow-sm" 
                                         />
                                         <datalist id="past-topics-list">
@@ -7416,33 +7631,153 @@ function App() {
                                                 <option key={idx} value={tp} />
                                             ))}
                                         </datalist>
-                                        {pastTopics.length > 0 && (
-                                            <div className="mt-2 flex flex-wrap gap-1.5 items-center">
-                                                <span className="text-[11px] font-bold text-stone-400">נושאים שהיו:</span>
-                                                {pastTopics.slice(0, 6).map((tp, idx) => (
-                                                    <button 
-                                                        key={idx} 
-                                                        type="button" 
-                                                        onClick={() => {
-                                                            const input = document.getElementById('taskTopicInput');
-                                                            if (input) input.value = tp;
-                                                        }}
-                                                        className="text-xs bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-200 px-2.5 py-1 rounded-xl transition-all font-medium active:scale-95">
-                                                        + {tp}
-                                                    </button>
-                                                ))}
+                                        {pastTopics.length > 0 && showPastTopics && (
+                                            <div className="mt-2 p-2.5 bg-stone-50 border border-stone-200 rounded-2xl animate-[fadeIn_0.2s_ease-out]">
+                                                <div className="text-[11px] font-bold text-stone-500 mb-1.5 flex items-center justify-between">
+                                                    <span>בחרי נושא מהעבר (מוסיף עוד משימה לאותו נושא ביומן):</span>
+                                                    <button type="button" onClick={() => setShowPastTopics(false)} className="text-stone-400 hover:text-stone-600 text-xs">✕</button>
+                                                </div>
+                                                <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto custom-scrollbar">
+                                                    {pastTopics.map((tp, idx) => (
+                                                        <button 
+                                                            key={idx} 
+                                                            type="button" 
+                                                            onClick={() => {
+                                                                const input = document.getElementById('taskTopicInput');
+                                                                if (input) input.value = tp;
+                                                                setShowPastTopics(false);
+                                                            }}
+                                                            className="text-xs bg-white text-purple-800 hover:bg-purple-50 border border-purple-200 px-2.5 py-1 rounded-xl transition-all font-medium active:scale-95 shadow-2xs">
+                                                            + {tp}
+                                                        </button>
+                                                    ))}
+                                                </div>
                                             </div>
                                         )}
                                     </div>
 
 
                                     <div className="pt-2 border-t border-stone-100">
-                                        <label className="text-sm font-bold text-stone-800 block mb-2">האם קיבלתם שיעורי בית?</label>
-                                        <div className="flex gap-2">
-                                            <button type="button" onClick={()=>setTaskFormHasHW(true)} className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all ${taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>כן, יש משימה</button>
-                                            <button type="button" onClick={()=>setTaskFormHasHW(false)} className={`flex-1 py-3 rounded-xl border font-bold text-sm transition-all ${!taskFormHasHW ? 'bg-purple-50 border-purple-200 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>לא, רק לתעד</button>
+                                        <label className="text-xs font-bold text-stone-500 uppercase tracking-wide block mb-2">סוג הפעילות:</label>
+                                        <div className="grid grid-cols-3 gap-2">
+                                            <button type="button" onClick={()=>setTaskFormType('hw')} className={`py-2.5 px-1.5 rounded-xl border font-bold text-xs transition-all flex flex-col items-center gap-1 ${taskFormType === 'hw' ? 'bg-purple-50 border-purple-300 text-purple-700 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>
+                                                <span className="text-base">📝</span>
+                                                <span>שיעורי בית</span>
+                                            </button>
+                                            <button type="button" onClick={()=>setTaskFormType('practice')} className={`py-2.5 px-1.5 rounded-xl border font-bold text-xs transition-all flex flex-col items-center gap-1 ${taskFormType === 'practice' ? 'bg-amber-50 border-amber-300 text-amber-800 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>
+                                                <span className="text-base">💡</span>
+                                                <span>סשן תרגול</span>
+                                            </button>
+                                            <button type="button" onClick={()=>setTaskFormType('log')} className={`py-2.5 px-1.5 rounded-xl border font-bold text-xs transition-all flex flex-col items-center gap-1 ${taskFormType === 'log' ? 'bg-emerald-50 border-emerald-300 text-emerald-800 shadow-sm' : 'bg-stone-50 border-stone-200 text-stone-500 hover:bg-stone-100'}`}>
+                                                <span className="text-base">📖</span>
+                                                <span>רק לתעד</span>
+                                            </button>
                                         </div>
                                     </div>
+
+                                    {taskFormType === 'practice' && (
+                                        <div className="space-y-3.5 animate-[fadeIn_0.3s_ease-out]">
+                                            <div>
+                                                <label className="text-xs font-bold text-stone-500 block mb-1 uppercase tracking-wide">מה תרגלת / נושא התרגול?</label>
+                                                <input 
+                                                    id="practiceTitleInput" 
+                                                    name="practiceTitle" 
+                                                    placeholder="למשל: תרגול בעיות קיצון, שאלות בגרות..." 
+                                                    className="w-full p-3 bg-white border border-amber-200 rounded-2xl text-sm outline-none font-medium focus:border-amber-400 transition-all shadow-sm" 
+                                                />
+                                                <div className="mt-1.5 flex flex-wrap gap-1.5 items-center">
+                                                    <span className="text-[11px] font-bold text-stone-400">קיצור:</span>
+                                                    {['שאלות מבגרות', 'חזרה על החומר', 'תרגול שאלות קשות', 'דף תרגול'].map(preset => (
+                                                        <button key={preset} type="button" onClick={() => {
+                                                            const input = document.getElementById('practiceTitleInput');
+                                                            if (input) input.value = preset;
+                                                        }} className="text-[11px] bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-lg transition-colors font-medium active:scale-95">
+                                                            {preset}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                            </div>
+
+                                            <div className="bg-amber-50/70 p-3.5 rounded-2xl border border-amber-200 space-y-3">
+                                                <div className="flex justify-between items-center">
+                                                    <label className="text-xs font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
+                                                        <span>⚡</span> סטטוס התרגול
+                                                    </label>
+                                                    <div className="flex bg-white p-0.5 rounded-xl border border-amber-200 text-xs font-bold">
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setPracticeDoneNow(true)} 
+                                                            className={`px-3 py-1 rounded-lg transition-all ${practiceDoneNow ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-700 hover:text-amber-900'}`}
+                                                        >
+                                                            תרגלתי עכשיו! ✨
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            onClick={() => setPracticeDoneNow(false)} 
+                                                            className={`px-3 py-1 rounded-lg transition-all ${!practiceDoneNow ? 'bg-amber-500 text-white shadow-xs' : 'text-amber-700 hover:text-amber-900'}`}
+                                                        >
+                                                            לתכנן ברשימה 📋
+                                                        </button>
+                                                    </div>
+                                                </div>
+
+                                                {practiceDoneNow ? (
+                                                    <div className="space-y-3 pt-1 border-t border-amber-200/60">
+                                                        <div className="text-[11px] text-amber-900 font-semibold flex items-center justify-between">
+                                                            <span>⏱️ משך התרגול:</span>
+                                                            <span className="bg-amber-200 text-amber-950 px-2.5 py-0.5 rounded-md font-bold text-xs">
+                                                                {practiceDurationMins >= 30 ? '+2 נקודות 🔥' : '+1 נקודה 🔥'}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="flex items-center gap-2">
+                                                            <input 
+                                                                type="number" 
+                                                                min="5" 
+                                                                max="360"
+                                                                value={practiceDurationMins} 
+                                                                onChange={(e) => setPracticeDurationMins(Math.max(1, parseInt(e.target.value) || 0))}
+                                                                className="w-20 p-2.5 bg-white border border-amber-300 rounded-xl text-sm font-bold text-center outline-none focus:ring-2 focus:ring-amber-400"
+                                                            />
+                                                            <span className="text-xs font-bold text-amber-900">דקות</span>
+                                                            <div className="flex flex-wrap gap-1 flex-1 justify-end">
+                                                                {[15, 30, 45, 60, 90].map(mins => (
+                                                                    <button 
+                                                                        key={mins} 
+                                                                        type="button" 
+                                                                        onClick={() => setPracticeDurationMins(mins)}
+                                                                        className={`text-xs px-2 py-1 rounded-lg border font-bold transition-all active:scale-95 ${practiceDurationMins === mins ? 'bg-amber-600 text-white border-amber-600' : 'bg-white text-amber-800 border-amber-200 hover:bg-amber-100'}`}
+                                                                    >
+                                                                        {mins} דק'
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="pt-2">
+                                                            <label className="text-xs font-bold text-amber-950 block mb-1.5">רמת הבנה בתרגול:</label>
+                                                            <div className="flex justify-between gap-1">
+                                                                {[1, 2, 3, 4, 5].map(star => (
+                                                                    <button 
+                                                                        key={star} 
+                                                                        type="button" 
+                                                                        onClick={() => setPracticeUnderstanding(star)}
+                                                                        className={`flex-1 py-1.5 rounded-lg border text-xs font-bold transition-all ${practiceUnderstanding === star ? 'bg-amber-500 text-white border-amber-500 shadow-xs' : 'bg-white text-stone-600 border-stone-200'}`}
+                                                                    >
+                                                                        {star} ⭐
+                                                                    </button>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-[11px] text-amber-800 font-medium pt-1">
+                                                        הסשן יתווסף לרשימת המשימות כסשן גמיש ללא דדליין מלחיץ. כשתסיימי תסמני V ותקבלי את הנקודות!
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    )}
 
 
                                     {taskFormHasHW && (
@@ -7601,7 +7936,7 @@ function App() {
                                     )}
 
                                     <button type="submit" className="w-full bg-stone-800 text-white rounded-2xl py-3.5 font-bold text-base shadow-md hover:bg-stone-900 transition-colors mt-2 active:scale-95">
-                                        {taskFormHasHW ? 'שמירת משימה' : 'תיעוד שיעור'}
+                                        {taskFormType === 'hw' ? 'שמירת משימה' : (taskFormType === 'practice' ? (practiceDoneNow ? 'סיום סשן וקבלת נקודות! 💡' : 'הוספת סשן תרגול לרשימה 💡') : 'תיעוד שיעור')}
                                     </button>
                                 </form>
                             </div>
@@ -7816,7 +8151,7 @@ function App() {
                         const dueTimeStr = activeTask.dueTime || '23:59:59';
                         const taskDueDateTime = activeTask.dueDate ? new Date(`${activeTask.dueDate}T${dueTimeStr}`) : null;
                         const GRACE_PERIOD_MS = 5 * 60 * 1000;
-                        const activeTaskIsLate = !activeTask.isFlexibleExamSession && !activeTask.rewardPoints && !onTimeSubmitted && taskDueDateTime ? (new Date().getTime() > (taskDueDateTime.getTime() + GRACE_PERIOD_MS)) : false;
+                        const activeTaskIsLate = !activeTask.isPracticeSession && !activeTask.isFlexibleExamSession && !activeTask.rewardPoints && !onTimeSubmitted && taskDueDateTime ? (new Date().getTime() > (taskDueDateTime.getTime() + GRACE_PERIOD_MS)) : false;
                         
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
@@ -7827,6 +8162,17 @@ function App() {
                                         <button onClick={()=>{toggleModal('complete',false); setActiveTask(null);}} className="text-stone-400 bg-stone-100 p-2 rounded-full active:scale-95"><IconX className="w-4 h-4"/></button>
                                     </div>
                                     
+                                    {activeTask.isPracticeSession && (
+                                        <div className="bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 p-3.5 rounded-2xl border border-amber-200 text-xs font-bold mb-4 shadow-2xs">
+                                            <div className="flex items-center justify-between mb-1.5">
+                                                <span className="flex items-center gap-1.5 text-sm"><span>💡</span> סשן תרגול עצמאי</span>
+                                                <span className="bg-amber-200 text-amber-950 px-2 py-0.5 rounded-lg font-black text-[11px]">+1 לסטריק 🔥</span>
+                                            </div>
+                                            <div className="text-[11px] text-amber-800 font-medium">
+                                                ⏱️ 30 דקות ומעלה = <b className="text-amber-950 font-black">2 נקודות</b> | מתחת ל-30 דקות = <b className="text-amber-950 font-black">1 נקודה</b>
+                                            </div>
+                                        </div>
+                                    )}
                                     {(activeTask.isFlexibleExamSession || activeTask.rewardPoints) && (
                                         <div className="bg-gradient-to-r from-amber-50 to-orange-50 text-amber-950 p-3 rounded-2xl border border-amber-200 text-xs font-bold mb-4 flex items-center justify-between shadow-2xs">
                                             <span className="flex items-center gap-1.5"><span>⚡</span> סשן למידה למבחן:</span>
@@ -9301,11 +9647,14 @@ function App() {
                                             <span className="text-stone-400 text-xs">שליחת קישור</span>
                                         </button>
 
-                                        {task.isFlexibleExamSession ? (
+                                        {task.isFlexibleExamSession || task.isPracticeSession ? (
                                             <button 
                                                 onClick={() => {
                                                     setTaskActionsMenu(null);
-                                                    if (window.confirm('האם את בטוחה שברצונך למחוק את מפגש הלמידה הזה? (הפעולה ללא קנס וללא פגיעה ברצף)')) {
+                                                    const msg = task.isPracticeSession 
+                                                        ? 'האם את בטוחה שברצונך למחוק את סשן התרגול הזה? (הפעולה ללא קנס וללא פגיעה ברצף)'
+                                                        : 'האם את בטוחה שברצונך למחוק את מפגש הלמידה הזה? (הפעולה ללא קנס וללא פגיעה ברצף)';
+                                                    if (window.confirm(msg)) {
                                                         updateUserData(prev => {
                                                             const remainingTasks = (prev.tasks || []).filter(t => t.id !== task.id);
                                                             const updatedExams = (prev.exams || []).map(ex => {
