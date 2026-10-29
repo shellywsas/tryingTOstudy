@@ -2292,7 +2292,7 @@ function App() {
                 const actualType = typeof currentFormType === 'boolean' ? (currentFormType ? 'hw' : 'log') : currentFormType;
 
                 if (actualType === 'practice') {
-                    const topic = taskData.lessonTopic || taskData.title || '';
+                    const topic = (taskData.lessonTopic || '').trim();
                     const title = taskData.title ? (taskData.title.startsWith('תרגול') ? taskData.title : `תרגול: ${taskData.title}`) : (topic ? `תרגול: ${topic}` : 'סשן תרגול עצמאי');
                     
                     if (practiceOpts.doneNow) {
@@ -5582,7 +5582,7 @@ function App() {
                                                             </div>
                                                         </div>
                                                         <div className="font-bold text-stone-800 text-base">{task.title}</div>
-                                                        {task.lessonTopic && <div className="text-sm text-stone-500 mt-1">{task.lessonTopic}</div>}
+                                                        {task.lessonTopic && task.lessonTopic.trim() !== '' && task.lessonTopic.trim() !== (task.title || '').trim() && `תרגול: ${task.lessonTopic.trim()}` !== (task.title || '').trim() && <div className="text-sm text-stone-500 mt-1">{task.lessonTopic}</div>}
                                                     </div>
                                                     <div className="flex gap-2 w-full mt-1 items-center">
                                                         <button onClick={() => handleOpenCompleteModal(task)} className={`flex-1 border px-4 py-3 rounded-2xl transition-all font-bold text-sm flex items-center justify-center gap-2 active:scale-95 shadow-xs ${isLate ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100' : 'bg-stone-50 text-stone-700 border-stone-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200'}`}>
@@ -5763,7 +5763,9 @@ function App() {
                                                             )}
                                                         </div>
                                                         <h3 className={`font-bold text-lg ${isTaskDone ? 'line-through text-stone-400' : 'text-stone-800'}`}>{task.title}</h3>
-                                                        <div className="text-sm text-stone-500 mt-1 font-medium">{task.lessonTopic && `נושא: ${task.lessonTopic}`}</div>
+                                                        {task.lessonTopic && task.lessonTopic.trim() !== '' && task.lessonTopic.trim() !== (task.title || '').trim() && `תרגול: ${task.lessonTopic.trim()}` !== (task.title || '').trim() && (
+                                                            <div className="text-sm text-stone-500 mt-1 font-medium">נושא: {task.lessonTopic}</div>
+                                                        )}
                                                         
                                                         {isTaskDone && !task.isLessonLog && !task.givenUp && (
                                                             <div className="mt-4 text-xs space-y-2 border-t border-stone-200/50 pt-3 flex flex-wrap gap-2">
@@ -6522,7 +6524,7 @@ function App() {
                                                                     </div>
                                                                     <div className="min-w-0 flex-1">
                                                                         <div className="flex items-center gap-1.5 flex-wrap">
-                                                                            <span className="font-bold text-sm sm:text-base text-stone-800 truncate">
+                                                                            <span className={`font-bold text-sm sm:text-base text-stone-800 ${isExpanded ? 'whitespace-normal break-words leading-snug' : 'truncate'}`}>
                                                                                 {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
                                                                             </span>
                                                                             {examCountdown && (
@@ -6586,7 +6588,10 @@ function App() {
 
                                                             {/* Collapsible Expanded Details Drawer */}
                                                             {isExpanded && (
-                                                                <div className="px-3.5 pb-3.5 pt-2 border-t border-indigo-100/80 bg-white/90 space-y-2.5 text-xs animate-[fadeIn_0.15s_ease-out]">
+                                                                <div className="px-3.5 pb-3.5 pt-2.5 border-t border-indigo-100/80 bg-white/95 space-y-2.5 text-xs animate-[fadeIn_0.15s_ease-out]">
+                                                                    <div className="font-extrabold text-sm sm:text-base text-indigo-950 leading-snug break-words">
+                                                                        📌 {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
+                                                                    </div>
                                                                     {exam.notes && (
                                                                         <div className="p-2.5 bg-indigo-50/50 border border-indigo-100 rounded-xl text-stone-700 whitespace-pre-wrap leading-relaxed">
                                                                             <span className="font-bold text-indigo-900 block mb-0.5">📖 חומר ומיקוד למבחן:</span>
@@ -6714,8 +6719,13 @@ function App() {
                                                                 ? 'bg-amber-100 text-amber-800 border-amber-200' 
                                                                 : 'bg-stone-100 text-stone-800 border-stone-200';
 
+                                                            const isPastExpanded = Boolean(expandedExamIds[exam.id]);
                                                             return (
-                                                                <div key={exam.id} className="p-3 rounded-2xl border border-stone-200/80 bg-stone-50/70 hover:bg-white hover:border-purple-200 shadow-2xs transition-all flex items-center justify-between gap-2.5">
+                                                                <div 
+                                                                    key={exam.id} 
+                                                                    onClick={() => toggleExamExpand(exam.id)}
+                                                                    className="p-3 rounded-2xl border border-stone-200/80 bg-stone-50/70 hover:bg-white hover:border-purple-200 shadow-2xs transition-all flex items-center justify-between gap-2.5 cursor-pointer select-none"
+                                                                >
                                                                     <div className="flex items-center gap-2.5 min-w-0 flex-1">
                                                                         <div 
                                                                             className="w-8 h-8 rounded-xl flex items-center justify-center text-sm shrink-0 text-white font-bold"
@@ -6724,7 +6734,7 @@ function App() {
                                                                             {sub?.emoji || '📚'}
                                                                         </div>
                                                                         <div className="min-w-0 flex-1">
-                                                                            <div className="font-bold text-sm text-stone-800 truncate">
+                                                                            <div className={`font-bold text-sm text-stone-800 ${isPastExpanded ? 'whitespace-normal break-words leading-snug' : 'truncate'}`}>
                                                                                 {exam.examName || 'מבחן'} ב{sub?.name || 'כללי'}
                                                                             </div>
                                                                             <div className="flex items-center gap-1.5 text-[11px] text-stone-500 mt-0.5 flex-wrap">
@@ -6735,7 +6745,7 @@ function App() {
                                                                         </div>
                                                                     </div>
 
-                                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                                    <div className="flex items-center gap-1.5 shrink-0" onClick={(e) => e.stopPropagation()}>
                                                                         {exam.grade ? (
                                                                             <button 
                                                                                 onClick={() => { setActiveExamForGrade(exam); toggleModal('examGrade', true); }}
@@ -9447,7 +9457,7 @@ function App() {
                                                                         </span>
                                                                     )}
                                                                 </div>
-                                                                {pt.lessonTopic && <div className="text-xs text-stone-400 mt-0.5 font-medium">נושא: {pt.lessonTopic}</div>}
+                                                                {pt.lessonTopic && pt.lessonTopic.trim() !== '' && pt.lessonTopic.trim() !== (pt.title || '').trim() && `תרגול: ${pt.lessonTopic.trim()}` !== (pt.title || '').trim() && <div className="text-xs text-stone-400 mt-0.5 font-medium">נושא: {pt.lessonTopic}</div>}
                                                             </div>
                                                             <button 
                                                                 onClick={() => handleCopyFriendTask(pt, fSubName)} 
@@ -9701,7 +9711,7 @@ function App() {
                                                 )}
                                             </div>
                                             <h3 className="font-bold text-lg text-stone-800 leading-snug">{task.title}</h3>
-                                            {task.lessonTopic && <div className="text-xs text-stone-400 mt-0.5 font-medium">נושא: {task.lessonTopic}</div>}
+                                            {task.lessonTopic && task.lessonTopic.trim() !== '' && task.lessonTopic.trim() !== (task.title || '').trim() && `תרגול: ${task.lessonTopic.trim()}` !== (task.title || '').trim() && <div className="text-xs text-stone-400 mt-0.5 font-medium">נושא: {task.lessonTopic}</div>}
                                         </div>
                                         <button onClick={() => setTaskActionsMenu(null)} className="text-stone-400 bg-stone-100 hover:bg-stone-200 p-2 rounded-full active:scale-95 transition-colors">
                                             <IconX className="w-4 h-4"/>
