@@ -1420,6 +1420,7 @@ function App() {
                 examGrade: false, quickExam: false, edit: false, reminderMode: false, notificationHelp: false,
                 singleExamSession: false
             });
+            const [pointsHistoryFilter, setPointsHistoryFilter] = useState('all'); // 'weekly' | 'all'
 
 
             const [activeTask, setActiveTask] = useState(null);
@@ -4432,9 +4433,9 @@ function App() {
                         const taskDate = getTaskDate(t);
                         if (!taskDate || isNaN(taskDate.getTime())) return false;
                         if (analyticsTimeFilter === 'last7') {
-                            const sevenDaysAgo = new Date();
-                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                            return taskDate >= sevenDaysAgo;
+                            const now = new Date();
+                            const startOfWeekSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 0, 0, 0, 0);
+                            return taskDate >= startOfWeekSunday;
                         }
                         if (analyticsTimeFilter === 'last30') {
                             const thirtyDaysAgo = new Date();
@@ -4455,9 +4456,9 @@ function App() {
                         const exDate = new Date(ex.date);
                         if (!exDate || isNaN(exDate.getTime())) return false;
                         if (analyticsTimeFilter === 'last7') {
-                            const sevenDaysAgo = new Date();
-                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
-                            return exDate >= sevenDaysAgo;
+                            const now = new Date();
+                            const startOfWeekSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 0, 0, 0, 0);
+                            return exDate >= startOfWeekSunday;
                         }
                         if (analyticsTimeFilter === 'last30') {
                             const thirtyDaysAgo = new Date();
@@ -5427,14 +5428,14 @@ function App() {
                                             <div className="text-3xl font-bold text-stone-800">{activeUserData.taskStreak}</div>
                                         </div>
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => { setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
                                         <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{activeUserData.weeklyPoints}</div>
                                         {(() => {
                                             const now = new Date();
                                             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                                            const sevenDaysAgo = new Date();
-                                            sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+                                            const startOfWeekSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 0, 0, 0, 0);
+                                            const startOfWeekStr = `${startOfWeekSunday.getFullYear()}-${String(startOfWeekSunday.getMonth() + 1).padStart(2, '0')}-${String(startOfWeekSunday.getDate()).padStart(2, '0')}`;
                                             
                                             let weekHours = 0;
                                             let todayHours = 0;
@@ -5450,14 +5451,16 @@ function App() {
                                                 if (t.completedAt) {
                                                     const cd = new Date(t.completedAt);
                                                     if (!isNaN(cd.getTime())) {
-                                                        if (cd >= sevenDaysAgo) isWeek = true;
+                                                        if (cd >= startOfWeekSunday) isWeek = true;
                                                         const cdStr = `${cd.getFullYear()}-${String(cd.getMonth() + 1).padStart(2, '0')}-${String(cd.getDate()).padStart(2, '0')}`;
                                                         if (cdStr === todayStr) isToday = true;
                                                     }
                                                 } else if (t.dueDate) {
                                                     if (t.dueDate === todayStr) isToday = true;
-                                                    const dd = new Date(t.dueDate);
-                                                    if (!isNaN(dd.getTime()) && dd >= sevenDaysAgo) isWeek = true;
+                                                    if (t.dueDate >= startOfWeekStr && t.dueDate <= todayStr) isWeek = true;
+                                                } else if (t.givenDate) {
+                                                    if (t.givenDate === todayStr) isToday = true;
+                                                    if (t.givenDate >= startOfWeekStr && t.givenDate <= todayStr) isWeek = true;
                                                 }
                                                 
                                                 if (isWeek) weekHours += hours;
@@ -5481,7 +5484,7 @@ function App() {
                                             return null;
                                         })()}
                                     </div>
-                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => toggleModal('pointsHistory', true)}>
+                                    <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => { setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
                                         <div className="text-3xl font-bold text-emerald-600 text-right" dir="ltr">{activeUserData.totalPoints}</div>
                                     </div>
@@ -6939,7 +6942,7 @@ function App() {
 
                             const getTaskDate = (t) => {
                                 if (t.completedAt) return new Date(t.completedAt);
-                                if (t.dueDate) return new Date(t.dueDate);
+                                if (t.dueDate) return new Date(t.dueDate.length === 10 ? `${t.dueDate}T12:00:00` : t.dueDate);
                                 if (t.createdAt) return new Date(t.createdAt);
                                 return null;
                             };
@@ -7642,12 +7645,12 @@ function App() {
                                     </div>
                                     
                                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
-                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
+                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95" onClick={()=>{ setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
                                             <div className="text-4xl font-black text-emerald-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.totalPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">סה"כ נקודות</div>
                                         </button>
                                         
-                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>toggleModal('pointsHistory', true)}>
+                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>{ setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
                                             <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.weeklyPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
@@ -9242,16 +9245,43 @@ function App() {
                     )}
 
 
-                    {modals.pointsHistory && (
+                    {modals.pointsHistory && (() => {
+                        const isWeeklyMode = pointsHistoryFilter === 'weekly';
+                        const now = new Date();
+                        const startOfWeekSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 0, 0, 0, 0);
+                        // Include points earned after Saturday 22:00 right before this Sunday (since weekly crowning is at 22:00 and new week points accrue from 22:00)
+                        const weekCutoffMs = startOfWeekSunday.getTime() - (2 * 3600000);
+                        const displayedPointsHistory = isWeeklyMode
+                            ? safePointsHistory.filter(log => {
+                                if (!log || log.canceled) return false;
+                                const d = new Date(log.date);
+                                return !isNaN(d.getTime()) && d.getTime() >= weekCutoffMs;
+                            })
+                            : safePointsHistory;
+
+                        return (
                         <div className="fixed inset-0 bg-stone-900/40 backdrop-blur-sm z-[70] flex flex-col justify-end md:justify-center items-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]">
                             <div className="bg-white rounded-t-[32px] md:rounded-[32px] w-full max-w-md p-6 md:p-8 h-[85vh] md:max-h-[70vh] flex flex-col shadow-2xl animate-[slideUp_0.3s_ease-out] pb-safe-bottom md:pb-8">
                                 <div className="flex justify-between items-center mb-6 pb-4 border-b border-stone-100">
-                                    <h3 className="font-bold text-xl text-stone-800">היסטוריית נקודות 🏆</h3>
+                                    <div>
+                                        <h3 className="font-bold text-xl text-stone-800">
+                                            {isWeeklyMode ? 'היסטוריית נקודות השבוע ⚡' : 'היסטוריית כל הנקודות 🏆'}
+                                        </h3>
+                                        {isWeeklyMode && (
+                                            <div className="text-xs font-semibold text-purple-600 mt-0.5">
+                                                נקודות שנצברו השבוע (מיום ראשון {startOfWeekSunday.toLocaleDateString('he-IL')})
+                                            </div>
+                                        )}
+                                    </div>
                                     <button onClick={()=>toggleModal('pointsHistory',false)} className="bg-stone-100 p-2 rounded-full text-stone-500 hover:bg-stone-200 transition-colors active:scale-95"><IconX className="w-4 h-4"/></button>
                                 </div>
                                 <div className="overflow-y-auto flex-1 space-y-3 pr-2 custom-scrollbar">
-                                    {safePointsHistory.length === 0 ? <div className="text-center py-10 text-sm text-stone-400 font-medium">אין היסטוריה עדיין. בצעי משימות כדי לצבור נקודות!</div> : 
-                                    [...safePointsHistory].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(log => (
+                                    {displayedPointsHistory.length === 0 ? (
+                                        <div className="text-center py-10 text-sm text-stone-400 font-medium">
+                                            {isWeeklyMode ? 'אין עדיין נקודות השבוע. בצעי משימות כדי לצבור נקודות השבוע! 💪' : 'אין היסטוריה עדיין. בצעי משימות כדי לצבור נקודות!'}
+                                        </div>
+                                    ) : 
+                                    [...displayedPointsHistory].sort((a,b)=>new Date(b.date)-new Date(a.date)).map(log => (
                                         <div key={log.id} className={`p-4 rounded-2xl border-r-[6px] shadow-[0_2px_10px_-2px_rgba(0,0,0,0.02)] ${log.points > 0 ? 'bg-emerald-50/50 border-emerald-400 border-l border-y border-stone-100' : log.points === 0 ? 'bg-stone-50 border-stone-400 border-l border-y' : 'bg-rose-50/50 border-rose-400 border-l border-y border-stone-100'}`}>
                                             <div className="flex justify-between items-start font-bold text-sm mb-1.5 text-stone-800">
                                                 <div className="flex flex-col">
@@ -9274,7 +9304,8 @@ function App() {
                                 </div>
                             </div>
                         </div>
-                    )}
+                        );
+                    })()}
 
 
                     {modals.streakHistory && (
