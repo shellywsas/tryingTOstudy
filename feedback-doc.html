@@ -9,7 +9,7 @@
     <!-- Firebase Compat SDKs -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-firestore-compat.js"></script>
-    <script src="js/firebase-config.js?v=20261030_1"></script>
+    <script src="js/firebase-config.js?v=20261030_2"></script>
 
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
@@ -267,7 +267,7 @@
 
             if (db) {
                 try {
-                    await db.collection('task_attachments').doc('__system_feedback__').set({
+                    await db.collection('task_attachments').doc('system_feedback_doc').set({
                         items: allItems,
                         updatedAt: Date.now(),
                         docType: 'system_feedback'
@@ -518,7 +518,7 @@
             } catch (e) {}
 
             if (db) {
-                db.collection('task_attachments').doc('__system_feedback__').onSnapshot(doc => {
+                db.collection('task_attachments').doc('system_feedback_doc').onSnapshot(doc => {
                     if (doc.exists && Array.isArray(doc.data()?.items)) {
                         const remoteItems = doc.data().items;
                         const byId = new Map();

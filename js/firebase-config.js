@@ -22,9 +22,9 @@ try {
         } catch (e) {
             console.warn('Firestore settings warning:', e);
         }
-        // Enable offline persistence if available
+        // Enable offline persistence with multi-tab support if available
         if (db && db.enablePersistence) {
-            db.enablePersistence().catch(err => {
+            db.enablePersistence({ synchronizeTabs: true }).catch(err => {
                 console.warn('Firestore offline persistence warning:', err.code);
             });
         }

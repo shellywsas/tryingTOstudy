@@ -1906,28 +1906,27 @@ function App() {
                     } catch (e) {}
 
                     if (db) {
-                        const docRef = db.collection('task_attachments').doc('__system_admin_logs__');
-                        const snap = await docRef.get();
-                        const remoteItems = (snap.exists && Array.isArray(snap.data()?.items)) ? snap.data().items : [];
-                        const byId = new Map();
-                        [...remoteItems, ...nextLocal].forEach(item => {
-                            if (item && item.id) byId.set(item.id, item);
-                        });
-                        const merged = Array.from(byId.values())
-                            .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
-                            .slice(0, 500);
-                        await docRef.set({
-                            items: merged,
-                            updatedAt: Date.now(),
-                            docType: 'system_admin_logs'
-                        }, { merge: true });
+                        const docRef = db.collection('task_attachments').doc('system_admin_logs_doc');
+                        if (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue) {
+                            await docRef.set({
+                                items: firebase.firestore.FieldValue.arrayUnion(entry),
+                                updatedAt: Date.now(),
+                                docType: 'system_admin_logs'
+                            }, { merge: true });
+                        } else {
+                            await docRef.set({
+                                items: nextLocal,
+                                updatedAt: Date.now(),
+                                docType: 'system_admin_logs'
+                            }, { merge: true });
+                        }
                     }
                 } catch (err) {
                     console.warn('Could not record admin audit log:', err);
                 }
             };
 
-            const handleSendUserFeedback = async (e) => {
+            const handleSendUserFeedback = (e) => {
                 if (e && e.preventDefault) e.preventDefault();
                 const cleanMsg = (feedbackMessage || '').trim();
                 if (!cleanMsg) {
@@ -1935,59 +1934,54 @@ function App() {
                     return;
                 }
                 setIsSubmittingFeedback(true);
+
+                const senderUsername = globalState?.activeUser || '';
+                const senderName = activeUserData?.name || (feedbackGuestName || '').trim() || senderUsername || 'משתמשת';
+                const newReport = {
+                    id: 'fb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
+                    timestamp: new Date().toISOString(),
+                    type: feedbackType || 'bug',
+                    message: cleanMsg,
+                    senderName,
+                    senderUsername,
+                    status: 'open',
+                    adminNote: ''
+                };
+
+                let localReports = [];
                 try {
-                    const senderUsername = globalState?.activeUser || '';
-                    const senderName = activeUserData?.name || (feedbackGuestName || '').trim() || senderUsername || 'משתמשת';
-                    const newReport = {
-                        id: 'fb_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7),
-                        timestamp: new Date().toISOString(),
-                        type: feedbackType || 'bug',
-                        message: cleanMsg,
-                        senderName,
-                        senderUsername,
-                        status: 'open',
-                        adminNote: ''
-                    };
+                    const raw = localStorage.getItem('studyStreak_system_feedback');
+                    if (raw) localReports = JSON.parse(raw) || [];
+                } catch (err) {}
+                const nextLocal = [newReport, ...localReports.filter(x => x && x.id !== newReport.id)].slice(0, 500);
+                try {
+                    localStorage.setItem('studyStreak_system_feedback', JSON.stringify(nextLocal));
+                } catch (err) {}
 
-                    let localReports = [];
-                    try {
-                        const raw = localStorage.getItem('studyStreak_system_feedback');
-                        if (raw) localReports = JSON.parse(raw) || [];
-                    } catch (err) {}
-                    const nextLocal = [newReport, ...localReports.filter(x => x && x.id !== newReport.id)].slice(0, 500);
-                    try {
-                        localStorage.setItem('studyStreak_system_feedback', JSON.stringify(nextLocal));
-                    } catch (err) {}
+                // Close modal & show confirmation immediately so UI never hangs
+                setFeedbackMessage('');
+                setFeedbackGuestName('');
+                setIsSubmittingFeedback(false);
+                setIsFeedbackModalOpen(false);
+                showToast('הפנייה שלך נשלחה ונשמרה במסמך הדיווחים! תודה רבה 💜', 'success');
 
-                    if (db) {
-                        const docRef = db.collection('task_attachments').doc('__system_feedback__');
-                        const snap = await docRef.get();
-                        const remoteItems = (snap.exists && Array.isArray(snap.data()?.items)) ? snap.data().items : [];
-                        const byId = new Map();
-                        [...remoteItems, ...nextLocal].forEach(item => {
-                            if (item && item.id) byId.set(item.id, item);
-                        });
-                        const merged = Array.from(byId.values())
-                            .sort((a, b) => new Date(b.timestamp || 0).getTime() - new Date(a.timestamp || 0).getTime())
-                            .slice(0, 500);
-                        await docRef.set({
-                            items: merged,
+                // Sync to Firebase Cloud in background
+                if (db) {
+                    const docRef = db.collection('task_attachments').doc('system_feedback_doc');
+                    const payload = (typeof firebase !== 'undefined' && firebase.firestore && firebase.firestore.FieldValue)
+                        ? {
+                            items: firebase.firestore.FieldValue.arrayUnion(newReport),
                             updatedAt: Date.now(),
                             docType: 'system_feedback'
-                        }, { merge: true });
-                    }
-
-                    setFeedbackMessage('');
-                    setFeedbackGuestName('');
-                    setIsFeedbackModalOpen(false);
-                    showToast('הפנייה שלך נשלחה ונשמרה במסמך הדיווחים! תודה רבה 💜', 'success');
-                } catch (err) {
-                    console.error('Error submitting feedback:', err);
-                    setFeedbackMessage('');
-                    setIsFeedbackModalOpen(false);
-                    showToast('ההודעה נשמרה במכשיר ותסונכרן אוטומטית! 💜', 'info');
-                } finally {
-                    setIsSubmittingFeedback(false);
+                        }
+                        : {
+                            items: nextLocal,
+                            updatedAt: Date.now(),
+                            docType: 'system_feedback'
+                        };
+                    docRef.set(payload, { merge: true }).catch(err => {
+                        console.error('Error syncing feedback to cloud:', err);
+                    });
                 }
             };
 
@@ -5626,37 +5620,20 @@ function App() {
                             <div className="flex items-center gap-3">
                                 <div className="w-10 h-10 bg-gradient-to-br from-purple-100 to-rose-100 rounded-xl flex items-center justify-center text-xl shadow-sm">✨</div>
                                 <div>
-                                    <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
+                                    <div className="flex items-center gap-2">
+                                        <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
+                                        <button
+                                            onClick={() => setIsSyncDiagnosticsOpen(true)}
+                                            className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer shrink-0 ${
+                                                syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' :
+                                                syncState === 'syncing' ? 'bg-amber-500 animate-pulse' :
+                                                syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]'
+                                            }`}
+                                            title={syncState === 'synced' ? 'מסונכרן לענן' : syncState === 'syncing' ? 'מסנכרן...' : 'סטטוס סנכרון'}
+                                        />
+                                    </div>
                                     <div className="flex items-center gap-1.5 mt-0.5">
                                         <span className="text-xs text-stone-500 font-medium">היי, {activeUserData.name}</span>
-                                        {(() => {
-                                            const champBadge = (activeUserData.badges || []).find(b => (typeof b === 'string' ? b === 'b_weekly_champ' : b?.id === 'b_weekly_champ'));
-                                            const champCount = champBadge?.count || (champBadge ? 1 : 0);
-                                            if (champCount <= 0) return null;
-                                            return (
-                                                <span className="text-[11px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-black flex items-center gap-1 shadow-2xs" title={`אלופת השבוע ${champCount} פעמים`}>
-                                                    👑 {champCount > 1 ? `x${champCount}` : ''}
-                                                </span>
-                                            );
-                                        })()}
-                                        <button 
-                                            onClick={() => setIsSyncDiagnosticsOpen(true)}
-                                            className={`text-[10px] px-2 py-0.5 rounded-full font-bold transition-all flex items-center gap-1 cursor-pointer ${
-                                                syncState === 'synced' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100' :
-                                                syncState === 'syncing' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
-                                                syncState === 'offline' ? 'bg-stone-100 text-stone-600 border border-stone-200 hover:bg-stone-200' :
-                                                'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
-                                            }`}
-                                            title="סטטוס סנכרון ענן - לחצי לבדיקה ואבחון">
-                                            <span className={`w-1.5 h-1.5 rounded-full ${
-                                                syncState === 'synced' ? 'bg-emerald-500' :
-                                                syncState === 'syncing' ? 'bg-amber-500' :
-                                                syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500'
-                                            }`}></span>
-                                            {syncState === 'synced' ? 'מסונכרן' :
-                                             syncState === 'syncing' ? 'מסנכרן...' :
-                                             syncState === 'offline' ? 'מצב מקומי' : 'שגיאת סנכרון'}
-                                        </button>
                                     </div>
                                 </div>
                             </div>
@@ -5694,46 +5671,27 @@ function App() {
 
 
                     <header className="md:hidden flex justify-between items-center bg-white/90 backdrop-blur-md p-4 sticky top-0 z-40 border-b border-stone-100 pt-safe-top">
-                        <div className="flex items-center gap-2.5">
+                        <div className="flex items-center gap-2">
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
+                            <button
+                                onClick={() => setIsSyncDiagnosticsOpen(true)}
+                                className={`w-2.5 h-2.5 rounded-full transition-all active:scale-95 cursor-pointer shrink-0 ${
+                                    syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' :
+                                    syncState === 'syncing' ? 'bg-amber-500 animate-pulse' :
+                                    syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]'
+                                }`}
+                                title={syncState === 'synced' ? 'מסונכרן לענן' : syncState === 'syncing' ? 'מסנכרן...' : 'סטטוס סנכרון'}
+                            />
                         </div>
-                        <div className="flex gap-1.5 items-center">
+                        <div className="flex gap-2 items-center">
                             <button 
                                 onClick={() => setIsFeedbackModalOpen(true)}
-                                className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-2.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95"
+                                className="bg-indigo-50 text-indigo-700 border border-indigo-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 active:scale-95"
                                 title="דיווח על תקלה / בקשה לאפליקציה">
                                 <span>💬</span>
-                                <span className="text-[10px]">פנייה</span>
+                                <span>פנייה</span>
                             </button>
-                            <button 
-                                onClick={() => setIsSyncDiagnosticsOpen(true)}
-                                className={`text-[10px] px-2.5 py-1.5 rounded-xl font-bold transition-all flex items-center gap-1 active:scale-95 cursor-pointer ${
-                                    syncState === 'synced' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                                    syncState === 'syncing' ? 'bg-amber-50 text-amber-700 border border-amber-200 animate-pulse' :
-                                    syncState === 'offline' ? 'bg-stone-100 text-stone-600 border border-stone-200' :
-                                    'bg-rose-50 text-rose-700 border border-rose-200'
-                                }`}
-                                title="סטטוס סנכרון ענן">
-                                <span className={`w-1.5 h-1.5 rounded-full ${
-                                    syncState === 'synced' ? 'bg-emerald-500' :
-                                    syncState === 'syncing' ? 'bg-amber-500' :
-                                    syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500'
-                                }`}></span>
-                                <span>{syncState === 'synced' ? 'מסונכרן' :
-                                       syncState === 'syncing' ? 'מסנכרן...' :
-                                       syncState === 'offline' ? 'מקומי' : 'שגיאה'}</span>
-                            </button>
-                            {(() => {
-                                const champBadge = (activeUserData.badges || []).find(b => (typeof b === 'string' ? b === 'b_weekly_champ' : b?.id === 'b_weekly_champ'));
-                                const champCount = champBadge?.count || (champBadge ? 1 : 0);
-                                if (champCount <= 0) return null;
-                                return (
-                                    <button onClick={() => setActiveTab('friends')} className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1 shadow-2xs active:scale-95" title={`אלופת השבוע ${champCount} פעמים - לחצי לצפייה בטבלה`}>
-                                        <span>👑</span> {champCount > 1 ? `x${champCount}` : ''}
-                                    </button>
-                                );
-                            })()}
                             <button onClick={()=>toggleModal('streakHistory', true)} className="bg-purple-50 text-purple-700 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1 active:scale-95">
                                 <span>🔥</span> {activeUserData.taskStreak}
                             </button>
