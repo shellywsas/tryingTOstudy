@@ -561,7 +561,7 @@ function App() {
                                 earnedAt: new Date().toISOString()
                             });
                         }
-                        showToast(👑 מזל טוב! השעה 22:00 והוכתרת לאלופת השבוע עם  נקודות! (הנקודות יתאפסו ב-00:00) 👑, 'success');
+                        showToast(`👑 מזל טוב! השעה 22:00 והוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! (הנקודות יתאפסו ב-00:00) 👑`, 'success');
                         setCrowningCelebrationModal({
                             winnerName: activeUserData.name || 'אלופה',
                             points: userWeeklyPts,
@@ -569,7 +569,7 @@ function App() {
                             isNewWin: true
                         });
                     } else if (topFriendName && topFriendPts > 0) {
-                        showToast(הכתרת אלופת השבוע (22:00)! אלופת השבוע היא  עם  נק' 👑 (איפוס הנקודות ב-00:00), 'info');
+                        showToast(`הכתרת אלופת השבוע (22:00)! אלופת השבוע היא ${topFriendName} עם ${topFriendPts} נק' 👑 (איפוס הנקודות ב-00:00)`, 'info');
                     }
 
                     const midnightAfterCrowning = completedWeekEnd + (2 * 3600000);
@@ -633,7 +633,7 @@ function App() {
                         ...prev,
                         badges: healedBadges
                     }));
-                    showToast(👑 עודכנו הכתרים שלך! יש לך כעת  כתרים של אלופת השבוע! 👑, 'success');
+                    showToast(`👑 עודכנו הכתרים שלך! יש לך כעת ${totalPastWins} כתרים של אלופת השבוע! 👑`, 'success');
                     setCrowningCelebrationModal({
                         winnerName: activeUserData.name || 'אלופה',
                         points: activeUserData.highestWeeklyPoints || activeUserData.weeklyPoints || 0,
@@ -641,7 +641,7 @@ function App() {
                         isNewWin: false
                     });
                 }
-            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, Object.keys(liveFriends || {}).length, nowTime]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints]);
 
 
             useEffect(() => {
@@ -1468,8 +1468,6 @@ function App() {
                 taskActionsMenu ||
                 examActionsMenu ||
                 isMoreMenuOpen ||
-                selectedAdminUser ||
-                deleteConfirmUser ||
                 printMode ||
                 Object.values(modals).some(Boolean)
             );
@@ -1488,8 +1486,6 @@ function App() {
                 taskActionsMenu,
                 examActionsMenu,
                 isMoreMenuOpen,
-                selectedAdminUser,
-                deleteConfirmUser,
                 printMode,
                 modals,
                 activeTab
@@ -1548,13 +1544,7 @@ function App() {
                     } else if (st.isMoreMenuOpen) {
                         setIsMoreMenuOpen(false);
                         handled = true;
-                    } else if (st.deleteConfirmUser) {
-                        setDeleteConfirmUser(null);
-                        setDeleteConfirmStep(0);
-                        handled = true;
-                    } else if (st.selectedAdminUser) {
-                        setSelectedAdminUser(null);
-                        handled = true;
+
                     } else if (st.printMode) {
                         setPrintMode(false);
                         setPrintType(null);
@@ -1591,8 +1581,6 @@ function App() {
                                 nextSt.taskActionsMenu ||
                                 nextSt.examActionsMenu ||
                                 nextSt.isMoreMenuOpen ||
-                                nextSt.selectedAdminUser ||
-                                nextSt.deleteConfirmUser ||
                                 nextSt.printMode ||
                                 (nextSt.modals && Object.values(nextSt.modals).some(Boolean))
                             );
