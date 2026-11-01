@@ -401,9 +401,11 @@ function App() {
 
             const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
 
+            const hasHealedStartupRef = useRef(false);
             useEffect(() => {
                 // Guard: NEVER trigger cloud updates from stale startup state before remote sync completes
-                if (!activeUserData || !hasRemoteSynced.current) return;
+                if (!activeUserData || !hasRemoteSynced.current || hasHealedStartupRef.current) return;
+                hasHealedStartupRef.current = true;
                 const healed = healCompletedFromHistory(activeUserData);
                 if (healed !== activeUserData && JSON.stringify(healed) !== JSON.stringify(activeUserData)) {
                     updateUserData(() => healed);
@@ -447,7 +449,6 @@ function App() {
                     } catch (e) {}
 
                     if (db) {
-                        setSyncState('syncing');
                         try {
                             const cleanData = sanitizeForFirestore(updatedUser);
                             withTimeout(db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true }), 3500)
@@ -817,34 +818,10 @@ function App() {
                     }
                 };
 
-                // Auto-heal all friends in liveFriends if their reset timestamp has passed
-                if (typeof db !== 'undefined' && db && liveFriends) {
-                    const nowTs = Date.now();
-                    const curLastSat22 = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(nowTs) : (nowTs - (7 * 86400000));
-                    const curNextSat22 = typeof getNextSaturday22PM === 'function' ? getNextSaturday22PM(nowTs) : (nowTs + (7 * 86400000));
-                    const curNextSatMidnight = typeof getNextSaturdayMidnight === 'function' ? getNextSaturdayMidnight(nowTs) : (curNextSat22 + (2 * 3600000));
-
-                    Object.keys(liveFriends).forEach(fUsername => {
-                        const f = liveFriends[fUsername];
-                        if (!f) return;
-                        const fReset = Number(f.nextWeeklyReset) || 0;
-                        if (!fReset || nowTs >= fReset) {
-                            const fEffectivePts = calculatePointsInWindow(f, curLastSat22, nowTs);
-                            const fOldPts = f.crownedWeekPoints || f.weeklyPoints || 0;
-                            db.collection("users").doc(fUsername).update({
-                                weeklyPoints: fEffectivePts,
-                                lastWeekPoints: fOldPts,
-                                nextWeeklyReset: curNextSatMidnight,
-                                nextWeeklyCrowning: curNextSat22
-                            }).catch(e => console.warn('Auto-healing friend doc in firestore:', e));
-                        }
-                    });
-                }
-
                 checkCrowningAndMidnightReset();
                 const crowningTimerId = setInterval(checkCrowningAndMidnightReset, 30 * 1000);
                 return () => clearInterval(crowningTimerId);
-            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd, liveFriends]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd]);
 
 
             useEffect(() => {
@@ -852,103 +829,108 @@ function App() {
                 // Guard: Wait for initial remote Firestore sync when online so stale localStorage doesn't trigger false penalties
                 if (!hasRemoteSynced.current && typeof navigator !== 'undefined' && navigator.onLine !== false) return;
 
-                updateUserData(prev => {
-                    if (!prev || !prev.tasks) return prev;
-                    const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
-                    const now = new Date();
-                    let shouldBreakStreak = false;
-                    let oldestUncompletedDate = null;
-                    let oldestUncompletedTaskId = null;
-                    let needsUpdate = false;
-                    let pointsToDeduct = 0;
-                    let historyLogs = [];
-                    const GRACE_PERIOD_MS = 5 * 60 * 1000;
+                const checkOverdueAndStreak = () => {
+                    updateUserData(prev => {
+                        if (!prev || !prev.tasks) return prev;
+                        const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
+                        const now = new Date();
+                        let shouldBreakStreak = false;
+                        let oldestUncompletedDate = null;
+                        let oldestUncompletedTaskId = null;
+                        let needsUpdate = false;
+                        let pointsToDeduct = 0;
+                        let historyLogs = [];
+                        const GRACE_PERIOD_MS = 5 * 60 * 1000;
 
-                    const updatedTasks = (healedPrev.tasks || []).map(task => {
-                        const isDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task, healedPrev.pointsHistory));
-                        if (isDone) {
-                            const onTime = typeof isTaskSubmittedOnTime === 'function'
-                                ? isTaskSubmittedOnTime(task)
-                                : (task.completedAt && task.dueDate && new Date(task.completedAt).getTime() <= (new Date(`${task.dueDate}T${task.dueTime || '23:59:59'}`).getTime() + GRACE_PERIOD_MS));
-                            if (onTime && task.autoPenaltyApplied) {
-                                return { ...task, completed: true, autoPenaltyApplied: false };
+                        const updatedTasks = (healedPrev.tasks || []).map(task => {
+                            const isDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task, healedPrev.pointsHistory));
+                            if (isDone) {
+                                const onTime = typeof isTaskSubmittedOnTime === 'function'
+                                    ? isTaskSubmittedOnTime(task)
+                                    : (task.completedAt && task.dueDate && new Date(task.completedAt).getTime() <= (new Date(`${task.dueDate}T${task.dueTime || '23:59:59'}`).getTime() + GRACE_PERIOD_MS));
+                                if (onTime && task.autoPenaltyApplied) {
+                                    return { ...task, completed: true, autoPenaltyApplied: false };
+                                }
+                                return task.completed ? task : { ...task, completed: true };
                             }
-                            return task.completed ? task : { ...task, completed: true };
-                        }
-                        if (task.isLessonLog || !task.dueDate || task.isFlexibleExamSession || task.isPracticeSession) return task;
-                        const timeStr = task.dueTime || '23:59:59';
-                        const dueDate = new Date(`${task.dueDate}T${timeStr}`);
-                        if (isNaN(dueDate.getTime())) return task;
+                            if (task.isLessonLog || !task.dueDate || task.isFlexibleExamSession || task.isPracticeSession) return task;
+                            const timeStr = task.dueTime || '23:59:59';
+                            const dueDate = new Date(`${task.dueDate}T${timeStr}`);
+                            if (isNaN(dueDate.getTime())) return task;
 
-                        const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
-                        const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 86400000);
+                            const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
+                            const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 86400000);
 
-                        if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS) && (healedPrev.taskStreak || 0) > 0) {
-                            shouldBreakStreak = true;
-                            if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
-                                oldestUncompletedDate = dueDate;
-                                oldestUncompletedTaskId = task.id;
+                            if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS) && (healedPrev.taskStreak || 0) > 0) {
+                                shouldBreakStreak = true;
+                                if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
+                                    oldestUncompletedDate = dueDate;
+                                    oldestUncompletedTaskId = task.id;
+                                }
                             }
-                        }
-                        const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
-                        // Only apply auto-penalty to recent overdue tasks (within 72 hours), never retroactively on ancient backlog
-                        if (hoursLate >= 3 && hoursLate <= 72 && !task.autoPenaltyApplied) {
-                            needsUpdate = true;
-                            pointsToDeduct += 2;
-                            const sub = (healedPrev.subjects || []).find(s => s.id === task.subjectId);
-                            historyLogs.push({
-                                id: 'ph_auto_' + task.id + '_' + Date.now(),
-                                taskId: task.id,
-                                taskTitle: task.title,
-                                subjectName: sub ? sub.name : 'כללי',
-                                subjectEmoji: sub ? sub.emoji : '📚',
-                                points: -2,
-                                date: now.toISOString(),
-                                details: 'קנס אוטומטי! המשימה עברה את זמן ההגשה ביותר מ-3 שעות.'
-                            });
-                            return { ...task, autoPenaltyApplied: true };
-                        }
-                        return task;
-                    });
-
-                    const healedChanged = healedPrev !== prev;
-                    if (!shouldBreakStreak && !needsUpdate && !healedChanged) return prev;
-
-                    let newStreakHistory = [...(healedPrev.streakHistory || [])];
-                    let taskStreak = healedPrev.taskStreak;
-                    let currentStreakStart = healedPrev.currentStreakStart;
-                    let currentStreakEmojis = healedPrev.currentStreakEmojis;
-
-                    if (shouldBreakStreak && taskStreak > 0) {
-                        newStreakHistory.push({
-                            id: 'sh_' + Date.now(),
-                            startDate: currentStreakStart,
-                            endDate: oldestUncompletedDate.toISOString(),
-                            length: taskStreak,
-                            emojis: [...(currentStreakEmojis || [])],
-                            brokenByTaskId: oldestUncompletedTaskId
+                            const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
+                            // Only apply auto-penalty to recent overdue tasks (within 72 hours), never retroactively on ancient backlog
+                            if (hoursLate >= 3 && hoursLate <= 72 && !task.autoPenaltyApplied) {
+                                needsUpdate = true;
+                                pointsToDeduct += 2;
+                                const sub = (healedPrev.subjects || []).find(s => s.id === task.subjectId);
+                                historyLogs.push({
+                                    id: 'ph_auto_' + task.id + '_' + Date.now(),
+                                    taskId: task.id,
+                                    taskTitle: task.title,
+                                    subjectName: sub ? sub.name : 'כללי',
+                                    subjectEmoji: sub ? sub.emoji : '📚',
+                                    points: -2,
+                                    date: now.toISOString(),
+                                    details: 'קנס אוטומטי! המשימה עברה את זמן ההגשה ביותר מ-3 שעות.'
+                                });
+                                return { ...task, autoPenaltyApplied: true };
+                            }
+                            return task;
                         });
-                        taskStreak = 0;
-                        currentStreakStart = null;
-                        currentStreakEmojis = [];
-                        setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
-                    }
-                    if (needsUpdate) {
-                        setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
-                    }
-                    return {
-                        ...healedPrev,
-                        tasks: updatedTasks,
-                        totalPoints: (healedPrev.totalPoints || 0) - pointsToDeduct,
-                        weeklyPoints: (healedPrev.weeklyPoints || 0) - pointsToDeduct,
-                        pointsHistory: [...historyLogs, ...(healedPrev.pointsHistory || [])],
-                        taskStreak,
-                        currentStreakStart,
-                        currentStreakEmojis,
-                        streakHistory: newStreakHistory
-                    };
-                });
-            }, [globalState.activeUser, activeUserData?.tasks, activeUserData?.taskStreak]);
+
+                        if (!shouldBreakStreak && !needsUpdate) return prev;
+
+                        let newStreakHistory = [...(healedPrev.streakHistory || [])];
+                        let taskStreak = healedPrev.taskStreak;
+                        let currentStreakStart = healedPrev.currentStreakStart;
+                        let currentStreakEmojis = healedPrev.currentStreakEmojis;
+
+                        if (shouldBreakStreak && taskStreak > 0) {
+                            newStreakHistory.push({
+                                id: 'sh_' + Date.now(),
+                                startDate: currentStreakStart,
+                                endDate: oldestUncompletedDate.toISOString(),
+                                length: taskStreak,
+                                emojis: [...(currentStreakEmojis || [])],
+                                brokenByTaskId: oldestUncompletedTaskId
+                            });
+                            taskStreak = 0;
+                            currentStreakStart = null;
+                            currentStreakEmojis = [];
+                            setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
+                        }
+                        if (needsUpdate) {
+                            setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
+                        }
+                        return {
+                            ...healedPrev,
+                            tasks: updatedTasks,
+                            totalPoints: (healedPrev.totalPoints || 0) - pointsToDeduct,
+                            weeklyPoints: (healedPrev.weeklyPoints || 0) - pointsToDeduct,
+                            pointsHistory: [...historyLogs, ...(healedPrev.pointsHistory || [])],
+                            taskStreak,
+                            currentStreakStart,
+                            currentStreakEmojis,
+                            streakHistory: newStreakHistory
+                        };
+                    });
+                };
+
+                checkOverdueAndStreak();
+                const overdueInterval = setInterval(checkOverdueAndStreak, 60000);
+                return () => clearInterval(overdueInterval);
+            }, [globalState.activeUser, hasRemoteSynced.current]);
 
 
             const handleAddTaskToCalendar = (task) => {

@@ -583,7 +583,9 @@
 
         // Preserve weeklyPoints - weekly crowning and points reset are handled safely in weekly reset cycle
 
-        const isShely = user.username === 'שליי' || user.name === 'שלי' || user.id === 'שליי' || (!user.username && !user.name);
+        const isShely = (user.username && (user.username === 'שליי' || user.username === 'שלי')) || 
+                (user.name && (user.name === 'שלי' || user.name === 'שליי')) || 
+                (user.id && (user.id === 'שליי' || user.id === 'שלי' || user.id === '0bH9B6rJ1sduoF2i6k7aD2k4sB33'));
         const isInbar = (user.username && user.username.includes('ענבר')) || (user.name && user.name.includes('ענבר'));
 
         // Streak healing: preserve real active streak without artificial lifetime task inflation
@@ -638,7 +640,9 @@
             }
         }
 
-        if (!changed && safeStreak === (user.taskStreak || 0) && safeLongest === (user.longestStreak || 0)) return user;
+        if (!changed && safeStreak === (user.taskStreak || 0) && safeLongest === (user.longestStreak || 0)) {
+            return user;
+        }
 
         return {
             ...user,
