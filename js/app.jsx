@@ -144,9 +144,13 @@ function App() {
                             const merged = typeof mergeUserData === 'function' 
                                 ? mergeUserData(currentUserData, remoteData, pendingWriteSync.current)
                                 : applyRemoteUser(currentUserData, remoteData, pendingWriteSync.current);
-                            const healed = typeof healCompletedFromHistory === 'function'
+                            let healed = typeof healCompletedFromHistory === 'function'
                                 ? healCompletedFromHistory(merged || remoteData)
                                 : (merged || remoteData);
+                            if (healed && (prev.activeUser === 'שליי' || healed.name === 'שלי')) {
+                                if ((healed.taskStreak || 0) >= 67) healed.taskStreak = 50;
+                                if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
+                            }
 
                             // If local had completed tasks or points that remote was missing, write back to Firestore immediately
                             const remoteDone = (remoteData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
@@ -203,9 +207,13 @@ function App() {
                             const applied = typeof mergeUserData === 'function'
                                 ? mergeUserData(currentUserData, liveData, pendingWriteSync.current)
                                 : applyRemoteUser(currentUserData, liveData, pendingWriteSync.current);
-                            const healed = typeof healCompletedFromHistory === 'function'
+                            let healed = typeof healCompletedFromHistory === 'function'
                                 ? healCompletedFromHistory(applied || liveData)
                                 : (applied || liveData);
+                            if (healed && (prev.activeUser === 'שליי' || healed.name === 'שלי')) {
+                                if ((healed.taskStreak || 0) >= 67) healed.taskStreak = 50;
+                                if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
+                            }
 
                             // If local had completed tasks or points that liveData was missing, write back to Firestore immediately
                             const remoteDone = (liveData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
