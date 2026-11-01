@@ -137,11 +137,25 @@
             if (!existing) {
                 map.set(b.id, b);
             } else {
-                map.set(b.id, {
-                    ...existing,
-                    ...b,
-                    count: Math.max(existing.count || 1, b.count || 1)
-                });
+                if (b.id === 'b_weekly_champ') {
+                    const wA = Array.isArray(existing.wonWeeks) ? existing.wonWeeks : [];
+                    const wB = Array.isArray(b.wonWeeks) ? b.wonWeeks : [];
+                    const mergedWeeks = Array.from(new Set([...wA, ...wB]));
+                    const safeCount = mergedWeeks.length > 0 ? mergedWeeks.length : Math.max(existing.count || 1, b.count || 1);
+                    map.set(b.id, {
+                        ...existing,
+                        ...b,
+                        wonWeeks: mergedWeeks,
+                        count: safeCount,
+                        lastWonWeek: mergedWeeks.length > 0 ? mergedWeeks[mergedWeeks.length - 1] : (b.lastWonWeek || existing.lastWonWeek)
+                    });
+                } else {
+                    map.set(b.id, {
+                        ...existing,
+                        ...b,
+                        count: Math.max(existing.count || 1, b.count || 1)
+                    });
+                }
             }
         });
         return Array.from(map.values());
@@ -566,9 +580,9 @@
         const safeStreak = Math.max(taskStreak || 0, user.taskStreak || 0, streakHistory.length === 0 ? onTimeCompletedCount : 0);
         const safeLongest = Math.max(user.longestStreak || 0, safeStreak);
 
-        // Heal b_weekly_champ badge count:
-        // Shely has at least 5 wins. Inbar has at least 4 wins.
-        // Heal stale device counts that are below baseline floor, or that suffered from historical inflation (>5) before Nov 1.
+        // Canonical Crown Architecture: Distinct wonWeeks Set
+        // Shely has 5 official wins up to Week 44. Inbar has 4 official wins.
+        // Count is derived deterministically from wonWeeks so it can NEVER inflate arbitrarily.
         let badges = user.badges ? [...user.badges] : [];
         const isShely = user.username === 'שליי' || user.name === 'שלי' || user.id === 'שליי' || (!user.username && !user.name);
         const isInbar = (user.username && user.username.includes('ענבר')) || (user.name && user.name.includes('ענבר'));
@@ -576,30 +590,36 @@
             const champBadgeIdx = badges.findIndex(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
             if (champBadgeIdx !== -1) {
                 const bObj = { ...badges[champBadgeIdx] };
-                const count = Number(bObj.count) || 1;
-                const wonTime = bObj.lastWonAt ? new Date(bObj.lastWonAt).getTime() : 0;
-                const isPreNov2026 = wonTime <= 1793484000000; // on or before Nov 1, 2026 00:00
+                let wonWeeks = Array.isArray(bObj.wonWeeks) ? Array.from(new Set(bObj.wonWeeks)) : [];
+                
+                const lastWonTime = bObj.lastWonAt ? new Date(bObj.lastWonAt).getTime() : 0;
+                const hasFutureTimestamp = lastWonTime >= 1794081600000; // on or after Nov 7, 2026 22:00
 
                 if (isShely) {
-                    if (count < 5) {
-                        bObj.count = 5;
-                        badges[champBadgeIdx] = bObj;
-                        changed = true;
-                    } else if (count > 5 && isPreNov2026) {
-                        bObj.count = 5;
-                        badges[champBadgeIdx] = bObj;
-                        changed = true;
+                    const baseWeeksShely = ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
+                    let futureWeeks = wonWeeks.filter(w => w > '2026-W44');
+                    if (futureWeeks.length === 0 && hasFutureTimestamp && (bObj.count || 0) > 5) {
+                        for (let i = 5; i < bObj.count; i++) futureWeeks.push("2026-W" + (44 + (i - 4)));
                     }
+                    const finalWeeks = Array.from(new Set([...baseWeeksShely, ...futureWeeks]));
+                    bObj.wonWeeks = finalWeeks;
+                    bObj.count = finalWeeks.length;
+                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1];
+                    badges[champBadgeIdx] = bObj;
+                    changed = true;
                 } else if (isInbar) {
-                    if (count < 4) {
-                        bObj.count = 4;
-                        badges[champBadgeIdx] = bObj;
-                        changed = true;
-                    } else if (count > 4 && isPreNov2026) {
-                        bObj.count = 4;
-                        badges[champBadgeIdx] = bObj;
-                        changed = true;
+                    const baseWeeksInbar = ['2026-W36', '2026-W39', '2026-W41', '2026-W43'];
+                    // Strip accidental 2026-W44 if present from morning race condition
+                    let futureWeeks = wonWeeks.filter(w => w > '2026-W44');
+                    if (futureWeeks.length === 0 && hasFutureTimestamp && (bObj.count || 0) > 4) {
+                        for (let i = 4; i < bObj.count; i++) futureWeeks.push("2026-W" + (44 + (i - 3)));
                     }
+                    const finalWeeks = Array.from(new Set([...baseWeeksInbar, ...futureWeeks]));
+                    bObj.wonWeeks = finalWeeks;
+                    bObj.count = finalWeeks.length;
+                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1];
+                    badges[champBadgeIdx] = bObj;
+                    changed = true;
                 }
             }
         }

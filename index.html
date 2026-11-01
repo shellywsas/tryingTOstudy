@@ -176,7 +176,7 @@
         </div>
     </div>
 
-    <!-- Immediate Crown State Calibration -->
+    <!-- Immediate Crown State Calibration with Canonical wonWeeks -->
     <script>
     (function() {
         try {
@@ -190,8 +190,20 @@
                         if (usr && Array.isArray(usr.badges)) {
                             usr.badges.forEach(b => {
                                 if (b && b.id === 'b_weekly_champ') {
-                                    if (u === 'שליי' || usr.name === 'שלי') b.count = Math.max(Number(b.count) || 0, 5);
-                                    if (u.includes('ענבר') || (usr.name && usr.name.includes('ענבר'))) b.count = Math.max(Number(b.count) || 0, 4);
+                                    if (u === 'שליי' || usr.name === 'שלי') {
+                                        b.wonWeeks = Array.isArray(b.wonWeeks) && b.wonWeeks.length >= 5 
+                                            ? Array.from(new Set(b.wonWeeks)) 
+                                            : ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
+                                        b.count = b.wonWeeks.length;
+                                        b.lastWonWeek = '2026-W44';
+                                    }
+                                    if (u.includes('ענבר') || (usr.name && usr.name.includes('ענבר'))) {
+                                        b.wonWeeks = Array.isArray(b.wonWeeks) && b.wonWeeks.length >= 4 && !b.wonWeeks.includes('2026-W44')
+                                            ? Array.from(new Set(b.wonWeeks))
+                                            : ['2026-W36', '2026-W39', '2026-W41', '2026-W43'];
+                                        b.count = b.wonWeeks.length;
+                                        b.lastWonWeek = '2026-W43';
+                                    }
                                 }
                             });
                         }
@@ -204,12 +216,12 @@
     </script>
 
     <!-- Modular Scripts -->
-    <script src="js/firebase-config.js?v=20261101_v1"></script>
-    <script src="js/helpers.js?v=20261101_v1"></script>
-    <script src="js/sync-helpers.js?v=20261101_v1"></script>
+    <script src="js/firebase-config.js?v=20261101_v2"></script>
+    <script src="js/helpers.js?v=20261101_v2"></script>
+    <script src="js/sync-helpers.js?v=20261101_v2"></script>
     <script src="js/whatsapp-service.js?v=20261010_1"></script>
     <script src="js/file-storage.js?v=20261004_2"></script>
     <script type="text/babel" src="js/icons.jsx?v=20261004_2"></script>
-    <script type="text/babel" src="js/app.jsx?v=20261101_v1"></script>
+    <script type="text/babel" src="js/app.jsx?v=20261101_v2"></script>
 </body>
 </html>

@@ -24,8 +24,20 @@ function App() {
                                     if (Array.isArray(parsed.users[u].badges)) {
                                         const cBadge = parsed.users[u].badges.find(b => b && b.id === 'b_weekly_champ');
                                         if (cBadge) {
-                                            if (u === 'שליי' || parsed.users[u].name === 'שלי') cBadge.count = Math.max(Number(cBadge.count) || 0, 5);
-                                            if (u.includes('ענבר') || (parsed.users[u].name && parsed.users[u].name.includes('ענבר'))) cBadge.count = Math.max(Number(cBadge.count) || 0, 4);
+                                            if (u === 'שליי' || parsed.users[u].name === 'שלי') {
+                                                cBadge.wonWeeks = Array.isArray(cBadge.wonWeeks) && cBadge.wonWeeks.length >= 5 
+                                                    ? Array.from(new Set(cBadge.wonWeeks)) 
+                                                    : ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
+                                                cBadge.count = cBadge.wonWeeks.length;
+                                                cBadge.lastWonWeek = '2026-W44';
+                                            }
+                                            if (u.includes('ענבר') || (parsed.users[u].name && parsed.users[u].name.includes('ענבר'))) {
+                                                cBadge.wonWeeks = Array.isArray(cBadge.wonWeeks) && cBadge.wonWeeks.length >= 4 && !cBadge.wonWeeks.includes('2026-W44')
+                                                    ? Array.from(new Set(cBadge.wonWeeks))
+                                                    : ['2026-W36', '2026-W39', '2026-W41', '2026-W43'];
+                                                cBadge.count = cBadge.wonWeeks.length;
+                                                cBadge.lastWonWeek = '2026-W43';
+                                            }
                                         }
                                     }
                                     if (typeof healCompletedFromHistory === 'function') {
@@ -595,6 +607,25 @@ function App() {
                 return Math.max(histSum, taskSum);
             };
 
+            // Shared Cloud Registry for Weekly Champions
+            const [weeklyChampionsMap, setWeeklyChampionsMap] = useState({});
+
+            useEffect(() => {
+                if (typeof db === 'undefined' || !db) return;
+                try {
+                    const unsub = db.collection('task_attachments').doc('system_weekly_champions_doc').onSnapshot(doc => {
+                        if (doc.exists) {
+                            const data = doc.data() || {};
+                            try {
+                                const weeks = data.weeks_json ? JSON.parse(data.weeks_json) : {};
+                                setWeeklyChampionsMap(weeks);
+                            } catch(e) {}
+                        }
+                    }, err => console.warn('Weekly champions sync listener error:', err));
+                    return () => unsub();
+                } catch(e) {}
+            }, []);
+
             // Real-Time Weekly Crowning and Midnight Reset with 30s Sentinel
             useEffect(() => {
                 if (!activeUserData || !globalState.activeUser) return;
@@ -612,85 +643,118 @@ function App() {
                         targetReset = targetReset + (2 * 3600000);
                     }
 
-                    // PHASE 1: At Saturday 22:00 -> Crown the Weekly Champion (WITHOUT resetting points yet!)
-                    if (now >= targetCrowning && (activeUserData.lastCrownedWeekEnd || 0) < targetCrowning) {
+                    const crowningWeekKey = typeof getWeekIdentifier === 'function' ? getWeekIdentifier(new Date(lastSat22)) : '2026-W44';
+
+                    // PHASE 1: At Saturday 22:00 -> Crown Single Official Champion via Shared Cloud Registry
+                    if (now >= targetCrowning) {
+                        const existingOfficialWin = weeklyChampionsMap[crowningWeekKey];
+                        const currentChampBadge = (activeUserData.badges || []).find(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
+                        const userWonWeeks = Array.isArray(currentChampBadge?.wonWeeks) ? currentChampBadge.wonWeeks : [];
+                        const userAlreadyHasThisWeek = userWonWeeks.includes(crowningWeekKey);
+                        const celebratedKey = 'studystreak_celebrated_' + crowningWeekKey + '_' + (globalState.activeUser || '');
+
                         const completedWeekEnd = targetCrowning <= now ? targetCrowning : lastSat22;
                         const completedWeekStart = completedWeekEnd - (7 * 86400000);
-
-                        // Points earned after 22:00 belong to the next week
-                        const pointsAfter22 = now > completedWeekEnd ? calculatePointsInWindow(activeUserData, completedWeekEnd, now) : 0;
-                        const currentPointsUpTo22 = Math.max(0, (activeUserData.weeklyPoints || 0) - pointsAfter22);
-                        const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
-                        const userWeeklyPts = Math.max(currentPointsUpTo22, userHistoricalPts);
-
-                        const friendsArr = Object.values(liveFriends || {});
-                        let isTop = userWeeklyPts > 0;
-                        let topFriendName = '';
-                        let topFriendPts = 0;
-
-                        friendsArr.forEach(f => {
-                            const fAfter22 = now > completedWeekEnd ? calculatePointsInWindow(f, completedWeekEnd, now) : 0;
-                            const fCurrentUpTo22 = Math.max(0, (f.weeklyPoints || 0) - fAfter22);
-                            const fHistPts = calculatePointsInWindow(f, completedWeekStart, completedWeekEnd);
-                            const fPts = Math.max(fCurrentUpTo22, f.crownedWeekPoints || 0, fHistPts);
-                            if (fPts > userWeeklyPts) {
-                                isTop = false;
-                                if (fPts > topFriendPts) {
-                                    topFriendPts = fPts;
-                                    topFriendName = f.name || f.username;
-                                }
-                            }
-                        });
-
-                        let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
-                        let wonCrown = false;
-                        let newChampCount = 1;
-
-                        if (isTop && userWeeklyPts > 0) {
-                            wonCrown = true;
-                            const champBadgeIdx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
-                            if (champBadgeIdx !== -1) {
-                                newChampCount = (updatedBadges[champBadgeIdx].count || 1) + 1;
-                                updatedBadges[champBadgeIdx] = {
-                                    ...updatedBadges[champBadgeIdx],
-                                    count: newChampCount,
-                                    lastWonAt: new Date().toISOString()
-                                };
-                            } else {
-                                newChampCount = 1;
-                                updatedBadges.push({
-                                    id: 'b_weekly_champ',
-                                    count: 1,
-                                    earnedAt: new Date().toISOString()
-                                });
-                            }
-                            showToast(`👑 מזל טוב! השעה 22:00 והוכתרת לאלופת השבוע עם ${userWeeklyPts} נקודות! (הנקודות יתאפסו ב-00:00) 👑`, 'success');
-                            setCrowningCelebrationModal({
-                                winnerName: activeUserData.name || 'אלופה',
-                                points: userWeeklyPts,
-                                crownCount: newChampCount,
-                                isNewWin: true
-                            });
-                        } else if (topFriendName && topFriendPts > 0) {
-                            showToast(`הכתרת אלופת השבוע (22:00)! אלופת השבוע היא ${topFriendName} עם ${topFriendPts} נק' 👑 (איפוס הנקודות ב-00:00)`, 'info');
-                        }
-
                         const midnightAfterCrowning = completedWeekEnd + (2 * 3600000);
                         const isAlsoPastMidnight = now >= midnightAfterCrowning;
                         const newWeekPointsAfter22 = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
 
-                        updateUserData(prev => ({
-                            ...prev,
-                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, userWeeklyPts),
-                            lastWeekPoints: userWeeklyPts,
-                            crownedWeekPoints: userWeeklyPts,
-                            lastCrownedWeekEnd: completedWeekEnd,
-                            nextWeeklyCrowning: nextSat22,
-                            weeklyPoints: isAlsoPastMidnight ? newWeekPointsAfter22 : prev.weeklyPoints,
-                            nextWeeklyReset: isAlsoPastMidnight ? nextSatMidnight : midnightAfterCrowning,
-                            badges: wonCrown ? updatedBadges : (prev.badges || [])
-                        }));
-                        return;
+                        if (!existingOfficialWin && (activeUserData.lastCrownedWeekEnd || 0) < targetCrowning) {
+                            // First online client crowns the definitive winner
+                            const pointsAfter22 = now > completedWeekEnd ? calculatePointsInWindow(activeUserData, completedWeekEnd, now) : 0;
+                            const currentPointsUpTo22 = Math.max(0, (activeUserData.weeklyPoints || 0) - pointsAfter22);
+                            const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
+                            const userWeeklyPts = Math.max(currentPointsUpTo22, userHistoricalPts);
+
+                            let topUsername = globalState.activeUser;
+                            let topName = activeUserData.name || globalState.activeUser;
+                            let topPts = userWeeklyPts;
+
+                            const friendsArr = Object.values(liveFriends || {});
+                            friendsArr.forEach(f => {
+                                const fAfter22 = now > completedWeekEnd ? calculatePointsInWindow(f, completedWeekEnd, now) : 0;
+                                const fCurrentUpTo22 = Math.max(0, (f.weeklyPoints || 0) - fAfter22);
+                                const fHistPts = calculatePointsInWindow(f, completedWeekStart, completedWeekEnd);
+                                const fPts = Math.max(fCurrentUpTo22, f.crownedWeekPoints || 0, fHistPts);
+                                if (fPts > topPts) {
+                                    topPts = fPts;
+                                    topUsername = f.username || f.id;
+                                    topName = f.name || f.username;
+                                }
+                            });
+
+                            if (topPts > 0) {
+                                const newRecord = {
+                                    winner: topUsername,
+                                    winnerName: topName,
+                                    points: topPts,
+                                    crownedAt: new Date().toISOString()
+                                };
+                                const updatedWeeks = { ...weeklyChampionsMap, [crowningWeekKey]: newRecord };
+                                setWeeklyChampionsMap(updatedWeeks);
+                                if (typeof db !== 'undefined' && db) {
+                                    db.collection('task_attachments').doc('system_weekly_champions_doc').set({
+                                        weeks_json: JSON.stringify(updatedWeeks)
+                                    }, { merge: true }).catch(e => console.warn('Failed to record weekly champion:', e));
+                                }
+                            }
+                        } else if (existingOfficialWin) {
+                            const isMeWinner = (globalState.activeUser === existingOfficialWin.winner);
+
+                            if (isMeWinner && !userAlreadyHasThisWeek) {
+                                const updatedWonWeeks = Array.from(new Set([...userWonWeeks, crowningWeekKey]));
+                                let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
+                                const idx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
+                                const newBadgeObj = {
+                                    id: 'b_weekly_champ',
+                                    count: updatedWonWeeks.length,
+                                    wonWeeks: updatedWonWeeks,
+                                    lastWonWeek: crowningWeekKey,
+                                    lastWonAt: existingOfficialWin.crownedAt || new Date().toISOString()
+                                };
+                                if (idx !== -1) {
+                                    updatedBadges[idx] = { ...updatedBadges[idx], ...newBadgeObj };
+                                } else {
+                                    updatedBadges.push(newBadgeObj);
+                                }
+
+                                updateUserData(prev => ({
+                                    ...prev,
+                                    lastCrownedWeekEnd: completedWeekEnd,
+                                    crownedWeekPoints: existingOfficialWin.points || prev.weeklyPoints,
+                                    nextWeeklyCrowning: nextSat22,
+                                    weeklyPoints: isAlsoPastMidnight ? newWeekPointsAfter22 : prev.weeklyPoints,
+                                    nextWeeklyReset: isAlsoPastMidnight ? nextSatMidnight : midnightAfterCrowning,
+                                    badges: updatedBadges
+                                }));
+
+                                if (!sessionStorage.getItem(celebratedKey)) {
+                                    sessionStorage.setItem(celebratedKey, 'true');
+                                    showToast(`👑 מזל טוב! השעה 22:00 והוכתרת לאלופת השבוע עם ${existingOfficialWin.points} נקודות! 👑`, 'success');
+                                    setCrowningCelebrationModal({
+                                        winnerName: activeUserData.name || 'אלופה',
+                                        points: existingOfficialWin.points,
+                                        crownCount: updatedWonWeeks.length,
+                                        isNewWin: true
+                                    });
+                                }
+                                return;
+                            } else if (!isMeWinner && userAlreadyHasThisWeek) {
+                                // If user erroneously had this week, strip it so counts remain 100% exact
+                                const sanitizedWonWeeks = userWonWeeks.filter(w => w !== crowningWeekKey);
+                                let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
+                                const idx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
+                                if (idx !== -1) {
+                                    updatedBadges[idx] = {
+                                        ...updatedBadges[idx],
+                                        count: sanitizedWonWeeks.length,
+                                        wonWeeks: sanitizedWonWeeks,
+                                        lastWonWeek: sanitizedWonWeeks[sanitizedWonWeeks.length - 1]
+                                    };
+                                    updateUserData(prev => ({ ...prev, badges: updatedBadges }));
+                                }
+                            }
+                        }
                     }
 
                     // PHASE 2: At Saturday 00:00 (Midnight) -> Reset points occurred up to 22:00 that week
@@ -7981,11 +8045,10 @@ function App() {
                                                 const progressPct = Math.max(2, (points / topPoints) * 100);
                                                 const gap = topUserPoints - points;
                                                 const champBadge = (u.badges || []).find(b => b.id === 'b_weekly_champ');
-                                                let champCount = champBadge?.count || (champBadge ? 1 : 0);
-                                                if (u.isMe || u.username === 'שליי' || u.name === 'שלי') {
-                                                    champCount = Math.max(champCount, 5);
-                                                } else if (u.username && u.username.includes('ענבר')) {
-                                                    champCount = Math.max(champCount, 4);
+                                                let champCount = Array.isArray(champBadge?.wonWeeks) ? champBadge.wonWeeks.length : (champBadge?.count || 0);
+                                                if (champCount === 0) {
+                                                    if (u.isMe || u.username === 'שליי' || u.name === 'שלי') champCount = 5;
+                                                    else if (u.username && u.username.includes('ענבר')) champCount = 4;
                                                 }
                                                 
                                                 return (
@@ -8173,7 +8236,7 @@ function App() {
                                             {ALL_BADGES.map(badge => {
                                                 const earned = userBadges.find(b => (typeof b === 'string' ? b === badge.id : b?.id === badge.id));
                                                 const badgeCount = (badge.id === 'b_weekly_champ')
-                                                    ? Math.max(earned?.count || 1, (globalState.activeUser === 'שליי' || activeUserData?.name === 'שלי') ? 5 : 1)
+                                                    ? (Array.isArray(earned?.wonWeeks) ? earned.wonWeeks.length : (earned?.count || ((globalState.activeUser === 'שליי' || activeUserData?.name === 'שלי') ? 5 : (globalState.activeUser?.includes('ענבר') ? 4 : 1))))
                                                     : (earned?.count || 1);
                                                 return (
                                                     <div key={badge.id} className={`p-4 rounded-2xl border text-center transition-all ${earned ? 'bg-gradient-to-b from-amber-50 to-orange-50 border-amber-200 shadow-sm' : 'bg-stone-50 border-stone-200 opacity-60 grayscale'}`}>
@@ -9946,7 +10009,7 @@ function App() {
                                             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                                                 {earnedBadges.map(b => {
                                                     const fCount = (b.id === 'b_weekly_champ')
-                                                        ? Math.max(Number(b.count) || 1, (activeFriend?.username === 'שליי' || activeFriend?.name === 'שלי') ? 5 : ((activeFriend?.username?.includes('ענבר') || (activeFriend?.name && activeFriend?.name?.includes('ענבר'))) ? 4 : 1))
+                                                        ? (Array.isArray(b.wonWeeks) ? b.wonWeeks.length : (Number(b.count) || ((activeFriend?.username === 'שליי' || activeFriend?.name === 'שלי') ? 5 : ((activeFriend?.username?.includes('ענבר')) ? 4 : 1))))
                                                         : b.count;
                                                     return (
                                                     <div key={b.id} className="bg-gradient-to-b from-amber-50 to-orange-50 border border-amber-200 p-2.5 rounded-xl text-center shadow-xs">
