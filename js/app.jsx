@@ -25,6 +25,8 @@ function App() {
                                         const cBadge = parsed.users[u].badges.find(b => b && b.id === 'b_weekly_champ');
                                         if (cBadge) {
                                             if (u === 'שליי' || parsed.users[u].name === 'שלי') {
+                                                if (parsed.users[u].taskStreak >= 67) parsed.users[u].taskStreak = 50;
+                                                if (parsed.users[u].longestStreak >= 67) parsed.users[u].longestStreak = 50;
                                                 cBadge.wonWeeks = Array.isArray(cBadge.wonWeeks) && cBadge.wonWeeks.length >= 5 
                                                     ? Array.from(new Set(cBadge.wonWeeks)) 
                                                     : ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];

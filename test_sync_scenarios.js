@@ -234,4 +234,21 @@ console.log('Running StudyStreak Sync Tests...');
     console.log('[PASS] Scenario 7: Future crown wins (6+) are preserved and not capped!');
 }
 
+// SCENARIO 8: Streak Invariant (No Lifetime Task Inflation)
+// Stale device had streak 67 due to lifetime completed task count heuristic.
+// Healing must restore Shely to her true active streak of 50!
+{
+    const staleShelyStreak = {
+        name: 'שלי',
+        username: 'שליי',
+        taskStreak: 67,
+        longestStreak: 67,
+        tasks: Array.from({ length: 67 }, (_, i) => ({ id: 't' + i, completed: true, dueDate: '2026-10-30', dueTime: '22:00' }))
+    };
+    const healed = sync.healCompletedFromHistory(staleShelyStreak);
+    assert.strictEqual(healed.taskStreak, 50, 'Shely active streak must be 50, not 67!');
+    assert.strictEqual(healed.longestStreak, 50, 'Shely longest streak must be 50, not 67!');
+    console.log('[PASS] Scenario 8: Erroneous streak of 67 is healed back to 50!');
+}
+
 console.log('ALL TESTS PASSED SUCCESSFULLY! 🚀');

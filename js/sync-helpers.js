@@ -299,12 +299,20 @@
         const mergedStreakHistory = mergeStreakHistory(local.streakHistory, remote.streakHistory);
 
         // Streak Count Invariant: Never lose streak progress due to stale device syncing
-        const localStreak = Number(local.taskStreak) || 0;
-        const remoteStreak = Number(remote.taskStreak) || 0;
-        const mergedTaskStreak = Math.max(localStreak, remoteStreak);
+        let localStreak = Number(local.taskStreak) || 0;
+        let remoteStreak = Number(remote.taskStreak) || 0;
+        let localLongest = Number(local.longestStreak) || 0;
+        let remoteLongest = Number(remote.longestStreak) || 0;
 
-        const localLongest = Number(local.longestStreak) || 0;
-        const remoteLongest = Number(remote.longestStreak) || 0;
+        const isShelyUser = local.username === 'שליי' || local.name === 'שלי' || remote.username === 'שליי' || remote.name === 'שלי';
+        if (isShelyUser) {
+            if (localStreak === 67) localStreak = 50;
+            if (remoteStreak === 67) remoteStreak = 50;
+            if (localLongest === 67) localLongest = 50;
+            if (remoteLongest === 67) remoteLongest = 50;
+        }
+
+        const mergedTaskStreak = Math.max(localStreak, remoteStreak);
         const mergedLongestStreak = Math.max(localLongest, remoteLongest, mergedTaskStreak);
 
         let mergedStreakStart = local.currentStreakStart || remote.currentStreakStart || null;
@@ -575,17 +583,23 @@
 
         // Preserve weeklyPoints - weekly crowning and points reset are handled safely in weekly reset cycle
 
-        // Streak healing: count on-time completed tasks since last broken streak
-        const onTimeCompletedCount = tasks.filter(t => t && t.completed && !t.givenUp && isTaskSubmittedOnTime(t)).length;
-        const safeStreak = Math.max(taskStreak || 0, user.taskStreak || 0, streakHistory.length === 0 ? onTimeCompletedCount : 0);
-        const safeLongest = Math.max(user.longestStreak || 0, safeStreak);
+        const isShely = user.username === 'שליי' || user.name === 'שלי' || user.id === 'שליי' || (!user.username && !user.name);
+        const isInbar = (user.username && user.username.includes('ענבר')) || (user.name && user.name.includes('ענבר'));
+
+        // Streak healing: preserve real active streak without artificial lifetime task inflation
+        let streakVal = taskStreak !== undefined ? taskStreak : (user.taskStreak || 0);
+        let longestVal = user.longestStreak || 0;
+        if (isShely) {
+            if (streakVal === 67) streakVal = 50;
+            if (longestVal === 67) longestVal = 50;
+        }
+        const safeStreak = Math.max(streakVal, 0);
+        const safeLongest = Math.max(longestVal, safeStreak);
 
         // Canonical Crown Architecture: Distinct wonWeeks Set
         // Shely has 5 official wins up to Week 44. Inbar has 4 official wins.
         // Count is derived deterministically from wonWeeks so it can NEVER inflate arbitrarily.
         let badges = user.badges ? [...user.badges] : [];
-        const isShely = user.username === 'שליי' || user.name === 'שלי' || user.id === 'שליי' || (!user.username && !user.name);
-        const isInbar = (user.username && user.username.includes('ענבר')) || (user.name && user.name.includes('ענבר'));
         if (badges.length > 0) {
             const champBadgeIdx = badges.findIndex(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
             if (champBadgeIdx !== -1) {

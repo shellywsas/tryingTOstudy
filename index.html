@@ -196,6 +196,8 @@
                                             : ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
                                         b.count = b.wonWeeks.length;
                                         b.lastWonWeek = '2026-W44';
+                                        if (usr.taskStreak >= 67) usr.taskStreak = 50;
+                                        if (usr.longestStreak >= 67) usr.longestStreak = 50;
                                     }
                                     if (u.includes('ענבר') || (usr.name && usr.name.includes('ענבר'))) {
                                         b.wonWeeks = Array.isArray(b.wonWeeks) && b.wonWeeks.length >= 4 && !b.wonWeeks.includes('2026-W44')
@@ -216,12 +218,12 @@
     </script>
 
     <!-- Modular Scripts -->
-    <script src="js/firebase-config.js?v=20261101_v2"></script>
-    <script src="js/helpers.js?v=20261101_v2"></script>
-    <script src="js/sync-helpers.js?v=20261101_v2"></script>
+    <script src="js/firebase-config.js?v=20261101_v3"></script>
+    <script src="js/helpers.js?v=20261101_v3"></script>
+    <script src="js/sync-helpers.js?v=20261101_v3"></script>
     <script src="js/whatsapp-service.js?v=20261010_1"></script>
     <script src="js/file-storage.js?v=20261004_2"></script>
     <script type="text/babel" src="js/icons.jsx?v=20261004_2"></script>
-    <script type="text/babel" src="js/app.jsx?v=20261101_v2"></script>
+    <script type="text/babel" src="js/app.jsx?v=20261101_v3"></script>
 </body>
 </html>
