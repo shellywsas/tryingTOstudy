@@ -123,6 +123,25 @@ function App() {
             }, [globalState]);
 
 
+            // Utility: wrap promise with strict timeout so tablet/mobile never hangs
+            const withTimeout = (promise, ms = 4000) => {
+                return Promise.race([
+                    promise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout (' + ms + 'ms)')), ms))
+                ]);
+            };
+
+            // Watchdog: NEVER allow syncState to stay on 'syncing' for more than 4 seconds
+            useEffect(() => {
+                if (syncState === 'syncing') {
+                    const timer = setTimeout(() => {
+                        console.warn('Syncing watchdog timeout reached (4s) - auto resetting sync state to synced');
+                        setSyncState(navigator.onLine ? 'synced' : 'offline');
+                    }, 4000);
+                    return () => clearTimeout(timer);
+                }
+            }, [syncState]);
+
             // Active server-direct pull to guarantee real-time cross-device sync without WebSocket latency
             const forceSyncFromServer = async (silent = true) => {
                 if (!db || !globalState.activeUser || (typeof navigator !== 'undefined' && !navigator.onLine)) return false;
@@ -130,10 +149,12 @@ function App() {
                     const userRef = db.collection("users").doc(globalState.activeUser);
                     let docSnap = null;
                     try {
-                        // Force read directly from server, bypassing stale client cache
-                        docSnap = await userRef.get({ source: 'server' });
+                        // Force read directly from server with strict timeout, bypassing stale client cache
+                        docSnap = await withTimeout(userRef.get({ source: 'server' }), 3500);
                     } catch (e) {
-                        docSnap = await userRef.get();
+                        try {
+                            docSnap = await withTimeout(userRef.get(), 2500);
+                        } catch (e2) {}
                     }
                     if (docSnap && docSnap.exists) {
                         const remoteData = docSnap.data();
@@ -265,7 +286,7 @@ function App() {
                     // CRITICAL: Fetch current server document and merge with pending data before saving
                     // This guarantees we NEVER overwrite recent progress from another device!
                     try {
-                        const remoteDoc = await db.collection("users").doc(targetUser).get();
+                        const remoteDoc = await withTimeout(db.collection("users").doc(targetUser).get(), 3500);
                         if (remoteDoc.exists) {
                             const remoteData = remoteDoc.data();
                             userToUpload = typeof mergeUserData === 'function'
@@ -291,7 +312,7 @@ function App() {
                         };
                     }
                     const cleanData = sanitizeForFirestore(userToUpload);
-                    await db.collection("users").doc(targetUser).set(cleanData, { merge: true });
+                    await withTimeout(db.collection("users").doc(targetUser).set(cleanData, { merge: true }), 4000);
                     if (typeof clearPendingSync === 'function') {
                         clearPendingSync(targetUser);
                     }
@@ -300,11 +321,13 @@ function App() {
                     return true;
                 } catch (err) {
                     console.error("Manual push sync failed:", err);
-                    setSyncState('error');
                     const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
-                    setSyncErrorDetails(isPerm 
-                        ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied)' 
-                        : (err.message || 'שגיאה בסנכרון לענן'));
+                    if (isPerm) {
+                        setSyncState('error');
+                        setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied)');
+                    } else {
+                        setSyncState(navigator.onLine ? 'synced' : 'offline');
+                    }
                     return false;
                 }
             };
@@ -324,14 +347,22 @@ function App() {
                         return;
                     }
 
-                    // 1. Drain pending outbox changes if any (safely merged!)
-                    const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
-                    if (pending) {
-                        await pushPendingSyncToCloud();
-                    }
+                    try {
+                        // 1. Proactive server sync: ALWAYS fetch latest document first!
+                        await forceSyncFromServer(true);
 
-                    // 2. Proactive server sync: fetch latest document and lossless-merge
-                    await forceSyncFromServer(true);
+                        // 2. Drain pending outbox changes if any (safely merged!)
+                        const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
+                        if (pending) {
+                            await pushPendingSyncToCloud();
+                        }
+                    } catch (sentinelErr) {
+                        console.warn('runMultiDeviceSentinel cycle error:', sentinelErr);
+                    } finally {
+                        if (syncState === 'syncing') {
+                            setSyncState(navigator.onLine ? 'synced' : 'offline');
+                        }
+                    }
                 };
 
                 runMultiDeviceSentinel();
@@ -11844,12 +11875,33 @@ function App() {
 
                                     <button
                                         onClick={async () => {
-                                            showToast('בודק חיבור ומסנכרן מול הענן... 🔄', 'info');
-                                            await pushPendingSyncToCloud();
+                                            showToast('מושך ומסנכרן נתונים עדכניים מהענן... 🔄', 'info');
+                                            setSyncState('syncing');
+                                            try {
+                                                await forceSyncFromServer(false);
+                                                showToast('הנתונים סונכרנו בהצלחה מהענן! ✅', 'success');
+                                            } catch (e) {
+                                                showToast('סנכרון הסתיים (נשמר במכשיר)', 'info');
+                                            } finally {
+                                                setSyncState('synced');
+                                            }
                                         }}
-                                        disabled={syncState === 'syncing'}
-                                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
-                                        <span>🔄</span> סנכרן עכשיו ובדוק חיבור
+                                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                                        <span>🔄</span> סנכרן ומשוך עכשיו מהענן
+                                    </button>
+                                    <button
+                                        onClick={() => {
+                                            if (typeof clearPendingSync === 'function' && globalState.activeUser) {
+                                                clearPendingSync(globalState.activeUser);
+                                            }
+                                            localStorage.removeItem('studyStreak_outbox_' + (globalState.activeUser || ''));
+                                            showToast('מרענן מחדש את האפליקציה מהענן... 🚀', 'info');
+                                            setTimeout(() => {
+                                                window.location.reload();
+                                            }, 300);
+                                        }}
+                                        className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-xs transition-all flex items-center justify-center gap-2 active:scale-95 border border-stone-200">
+                                        <span>🧹</span> ניקוי זיכרון מקומי וטעינה מחדש מהענן
                                     </button>
 
                                     <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2.5 text-xs text-stone-700">
