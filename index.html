@@ -180,7 +180,16 @@
     <script>
     (function() {
         try {
-            const k = 'studyStreakData_DB_v7';
+            // Clear stuck outbox from previous failed sync attempts
+        try {
+            Object.keys(localStorage).forEach(key => {
+                if (key.startsWith('studyStreak_outbox_')) {
+                    localStorage.removeItem(key);
+                }
+            });
+        } catch (e) {}
+
+        const k = 'studyStreakData_DB_v7';
             const raw = localStorage.getItem(k);
             if (raw) {
                 const data = JSON.parse(raw);
