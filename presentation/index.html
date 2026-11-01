@@ -1,0 +1,1387 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>StudyStreak Pro - מצגת להרצאה: המערכת האמיתית</title>
+    
+    <!-- Google Fonts: Heebo -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Heebo', 'sans-serif'],
+                    },
+                    colors: {
+                        brand: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            200: '#ddd6fe',
+                            500: '#8b5cf6',
+                            600: '#7c3aed',
+                            700: '#6d28d9',
+                            900: '#4c1d95',
+                        },
+                        stoneBg: '#fafaf9'
+                    }
+                }
+            }
+        }
+    </script>
+    
+    <style>
+        * {
+            box-sizing: border-box;
+            user-select: none;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            font-family: 'Heebo', sans-serif;
+            background-color: #0c1222;
+            color: #1e293b;
+            overflow: hidden;
+            height: 100vh;
+            width: 100vw;
+            margin: 0;
+            padding: 0;
+        }
+
+        /* Ambient glowing background */
+        .ambient-bg {
+            position: fixed;
+            inset: 0;
+            background: radial-gradient(circle at 15% 15%, rgba(124, 58, 237, 0.18) 0%, transparent 45%),
+                        radial-gradient(circle at 85% 85%, rgba(14, 165, 233, 0.18) 0%, transparent 45%),
+                        radial-gradient(circle at 50% 50%, rgba(30, 41, 59, 0.95) 0%, rgba(12, 18, 34, 1) 100%);
+            z-index: 0;
+            pointer-events: none;
+        }
+
+        /* Slide Stage Container */
+        #slide-container {
+            position: relative;
+            z-index: 10;
+            height: calc(100vh - 72px);
+            width: 100vw;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 1.25rem 2rem;
+        }
+
+        /* Slide Card (16:9 Aspect Ratio) */
+        .slide {
+            display: none;
+            width: 100%;
+            max-width: 1280px;
+            aspect-ratio: 16 / 9;
+            max-height: calc(100vh - 96px);
+            background: rgba(255, 255, 255, 0.97);
+            backdrop-filter: blur(25px);
+            border: 1px solid rgba(255, 255, 255, 0.7);
+            border-radius: 28px;
+            box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.55), 0 0 35px rgba(124, 58, 237, 0.15);
+            padding: 2.25rem 3rem;
+            position: relative;
+            overflow-y: auto;
+            animation: slideEntrance 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+        }
+
+        .slide.active {
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        @keyframes slideEntrance {
+            from {
+                opacity: 0;
+                transform: translateY(14px) scale(0.988);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0) scale(1);
+            }
+        }
+
+        /* Gradient Text */
+        .text-gradient {
+            background: linear-gradient(135deg, #7c3aed 0%, #0284c7 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        /* Feature Card */
+        .feature-card {
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 20px;
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 14px -3px rgba(0, 0, 0, 0.04);
+        }
+
+        .feature-card:hover {
+            transform: translateY(-3px);
+            border-color: #c4b5fd;
+            box-shadow: 0 10px 24px -4px rgba(124, 58, 237, 0.12);
+        }
+
+        /* Speaker Notes Panel */
+        #notes-panel {
+            position: fixed;
+            bottom: 72px;
+            right: 24px;
+            width: 480px;
+            max-height: 420px;
+            background: rgba(15, 23, 42, 0.96);
+            backdrop-filter: blur(20px);
+            color: #f8fafc;
+            border: 1px solid #334155;
+            border-radius: 22px;
+            padding: 1.5rem;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.5);
+            z-index: 100;
+            transform: translateY(120%);
+            opacity: 0;
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
+            overflow-y: auto;
+        }
+
+        #notes-panel.open {
+            transform: translateY(0);
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Overview Grid Overlay */
+        #overview-modal {
+            position: fixed;
+            inset: 0;
+            background: rgba(15, 23, 42, 0.94);
+            backdrop-filter: blur(24px);
+            z-index: 200;
+            display: none;
+            flex-direction: column;
+            padding: 2.5rem;
+            overflow-y: auto;
+        }
+
+        #overview-modal.open {
+            display: flex;
+        }
+
+        .overview-card {
+            background: white;
+            border-radius: 16px;
+            padding: 1.25rem;
+            aspect-ratio: 16 / 9;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 2px solid transparent;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+        }
+
+        .overview-card:hover {
+            transform: scale(1.03);
+            border-color: #7c3aed;
+            box-shadow: 0 10px 25px rgba(124, 58, 237, 0.3);
+        }
+
+        .overview-card.active-card {
+            border-color: #7c3aed;
+            box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.4);
+        }
+
+        /* Top Progress Bar */
+        #progress-bar {
+            height: 4px;
+            background: linear-gradient(90deg, #7c3aed, #38bdf8);
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 50;
+            transition: width 0.3s ease;
+        }
+
+        /* Custom Scrollbars */
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 4px;
+        }
+    </style>
+</head>
+<body class="relative flex flex-col justify-between">
+
+    <!-- Glowing Background Effect -->
+    <div class="ambient-bg"></div>
+
+    <!-- Top Slide Progress Bar -->
+    <div id="progress-bar" style="width: 7.14%;"></div>
+
+    <!-- MAIN SLIDES STAGE -->
+    <main id="slide-container">
+
+        <!-- ============================================== -->
+        <!-- SLIDE 1: שער (Title Slide & Developers)        -->
+        <!-- ============================================== -->
+        <section class="slide active" data-slide="1">
+            <div class="flex items-center justify-between border-b border-stone-200 pb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-11 h-11 rounded-2xl bg-gradient-to-tr from-purple-600 to-sky-400 p-0.5 shadow-md flex items-center justify-center text-xl">
+                        📚
+                    </div>
+                    <div>
+                        <span class="text-xl font-black text-slate-800 tracking-tight">StudyStreak <span class="text-purple-600">Pro</span></span>
+                        <span class="text-xs text-slate-400 block font-medium">המרחב שלך להצלחה בבגרויות</span>
+                    </div>
+                </div>
+                <span class="px-3.5 py-1 bg-purple-50 text-purple-700 text-xs font-bold rounded-full border border-purple-200">
+                    מצגת חשיפה והדגמה 🚀
+                </span>
+            </div>
+
+            <div class="my-auto text-center py-4 px-2">
+                <div class="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-purple-50 text-purple-700 text-xs font-bold mb-4 border border-purple-200 shadow-sm">
+                    ✨ פותח במיוחד עבור תלמידות ותלמידים בישראל
+                </div>
+                <h1 class="text-4xl lg:text-5xl font-black text-slate-900 leading-tight mb-3 tracking-tight">
+                    ניהול למידה חכם לבגרויות<br>
+                    <span class="text-gradient">עם תזכורות אוטומטיות</span>
+                </h1>
+                <p class="text-base lg:text-lg text-slate-600 max-w-2xl mx-auto font-normal leading-relaxed">
+                    המערכת שמחברת משימות דחופות, חישוב חלונות זמן פנויים, שמירת תרגילים קשים לחזרה, ותזכורות וואטסאפ אוטומטיות לתלמיד ולהורים.
+                </p>
+
+                <!-- Dedicated Developers Recognition Box -->
+                <div class="max-w-2xl mx-auto mt-6 p-4 rounded-2xl bg-slate-50 border border-slate-200 text-right shadow-sm">
+                    <div class="text-xs font-bold text-slate-400 mb-2 flex items-center gap-1.5">
+                        <span>👩‍💻</span> <span>הצוות שמאחורי הפרויקט:</span>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                        <div class="p-3 bg-white rounded-xl border border-purple-100 shadow-xs">
+                            <div class="font-bold text-purple-900 text-sm">שלי וידמן ששון</div>
+                            <div class="text-slate-600 mt-0.5 leading-relaxed">הובילה את הפיתוח המלא, ארכיטקטורת המערכת (PWA & Firebase), אינטגרציית הוואטסאפ והשדרוג המתמיד.</div>
+                        </div>
+                        <div class="p-3 bg-white rounded-xl border border-sky-100 shadow-xs">
+                            <div class="font-bold text-sky-900 text-sm">ענבר נתן</div>
+                            <div class="text-slate-600 mt-0.5 leading-relaxed">שותפה לרעיון הראשוני והכיוון, וסייעה בגיבוש הקונספט והחזון יחד עם שלי.</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-stone-100 text-xs text-slate-500">
+                <div class="flex items-center gap-2 font-medium">
+                    <a href="https://github.com/shellywsas/tryingTOstudy" target="_blank" class="text-purple-600 hover:underline">GitHub: shellywsas/tryingTOstudy</a>
+                </div>
+                <div class="text-slate-400">חצים במקלדת למעבר שקופית • לחצו N להערות דובר ➔</div>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 2: הצורך האמיתי בשטח (The Real Pain)     -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="2">
+            <div>
+                <span class="text-xs font-bold text-rose-600 uppercase tracking-wider bg-rose-50 px-3 py-1 rounded-full border border-rose-200">אתגרי היומיום</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">איך נראים החיים של תלמיד/ה לקראת בגרויות?</h2>
+                <p class="text-slate-600 text-xs mt-1">עומס המטלות יוצר בלאגן, איבודי עשתונות וחיכוכים מיותרים בבית.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-5 my-auto py-3">
+                <div class="feature-card p-5 border-rose-100 bg-rose-50/30">
+                    <div class="text-3xl mb-2">📚</div>
+                    <h3 class="text-base font-bold text-slate-800 mb-1.5">הצפה של משימות ודחיות</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        מטלות ב-7 מקצועות במקביל. תלמידים לא יודעים מה דחוף קודם, שוכחים מועדי הגשה, ומגיעים שוב ושוב ללילה שלפני הבחינה.
+                    </p>
+                </div>
+
+                <div class="feature-card p-5 border-amber-100 bg-amber-50/30">
+                    <div class="text-3xl mb-2">⏰</div>
+                    <h3 class="text-base font-bold text-slate-800 mb-1.5">לו"ז צפוף בלי זמן פנוי ברור</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        סיום בי"ס בשעות משתנות (פעם ב-13:30 ופעם ב-16:00), חוגים, אימונים ושיעורים פרטיים. קשה למצוא מתי בדיוק אפשר לשבת ללמוד.
+                    </p>
+                </div>
+
+                <div class="feature-card p-5 border-purple-100 bg-purple-50/30">
+                    <div class="text-3xl mb-2">🗣️</div>
+                    <h3 class="text-base font-bold text-slate-800 mb-1.5">שאלת ה-"למדת כבר?"</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        ההורים דואגים ורוצים לדעת מה המצב, שואלים ומנדנדים, ויוצרים לחץ מיותר ומריבות במקום תמיכה ופרגון.
+                    </p>
+                </div>
+            </div>
+
+            <div class="bg-slate-900 text-white p-4 rounded-2xl flex items-center justify-between text-xs">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">💡</span>
+                    <span><strong>פתרון אמיתי:</strong> לא עוד מחברת או רשימה ששוכחים ממנה, אלא מערכת חיה שמחשבת זמנים, מנהלת משימות ומתזכרת בוואטסאפ.</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 3: מסך הבית ולוח הבקרה (Dashboard)       -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="3">
+            <div>
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full border border-purple-200">לשונית "ראשי" (Dashboard)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">מסך הבית: 4 המדדים הראשיים והמשימות הקרובות</h2>
+                <p class="text-slate-600 text-xs mt-1">מבט-על מהיר בכל פתיחה של האפליקציה – בדיוק כמו שזה נראה בקוד.</p>
+            </div>
+
+            <!-- Top 4 metric cards replicating the real UI -->
+            <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 my-auto py-2">
+                <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+                    <div class="flex justify-between items-center text-xs text-slate-400 font-semibold mb-1">
+                        <span>מד משימות</span>
+                        <span>🔥</span>
+                    </div>
+                    <div class="text-2xl font-bold text-slate-800">14 <span class="text-xs font-normal text-slate-400">רצף פעיל</span></div>
+                    <div class="text-[10px] text-purple-600 font-medium mt-1">לחיצה פותחת היסטוריית רצף</div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+                    <div class="text-xs text-slate-400 font-semibold mb-1">נקודות השבוע</div>
+                    <div class="text-2xl font-bold text-purple-600">18 <span class="text-xs font-normal text-slate-400">נק'</span></div>
+                    <div class="text-[10px] text-slate-400 mt-1">מתאפס במוצ"ש • שיא נשמר</div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+                    <div class="text-xs text-slate-400 font-semibold mb-1">סה"כ נקודות</div>
+                    <div class="text-2xl font-bold text-emerald-600">245 <span class="text-xs font-normal text-slate-400">מצטבר</span></div>
+                    <div class="text-[10px] text-emerald-700 font-medium mt-1">קובע את הדרגה בפרופיל</div>
+                </div>
+
+                <div class="bg-white p-4 rounded-2xl border border-stone-200 shadow-sm">
+                    <div class="text-xs text-slate-400 font-semibold mb-1">תרגילים בארכיון</div>
+                    <div class="text-2xl font-bold text-rose-500">8 <span class="text-xs font-normal text-slate-400">קשים</span></div>
+                    <div class="text-[10px] text-rose-600 font-medium mt-1">שאלות שנשמרו לחזרה למבחן</div>
+                </div>
+            </div>
+
+            <!-- "הבאים בתור לביצוע" section replicating the actual app cards -->
+            <div class="bg-stone-50 border border-stone-200 p-4 rounded-2xl mt-2">
+                <div class="flex justify-between items-center mb-3">
+                    <span class="font-bold text-sm text-slate-800">הבאים בתור לביצוע (ממוין לפי זמן קרוב)</span>
+                    <span class="text-xs text-purple-600 font-bold">לכל המשימות ←</span>
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
+                    <div class="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between gap-1 mb-2 flex-wrap">
+                            <span class="px-2 py-0.5 rounded-md font-bold text-white bg-indigo-600 text-[11px]">📐 מתמטיקה</span>
+                            <span class="text-[10px] bg-purple-100 text-purple-800 px-1.5 py-0.5 rounded font-bold">🔔 תזכורות</span>
+                            <span class="text-[10px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">💬 וואטסאפ</span>
+                            <span class="text-stone-500 font-bold mr-auto">היום • 20:00</span>
+                        </div>
+                        <div class="font-bold text-slate-800 text-sm mb-1">פתרון בגרות קיץ 2023 - שאלות 1-3</div>
+                        <div class="text-slate-400 text-[11px] mb-3">נושא: חקירת פונקציה מעריכית</div>
+                        <div class="flex gap-2">
+                            <span class="flex-1 bg-stone-50 border border-stone-200 py-1.5 text-center rounded-lg font-bold text-slate-700">✓ סיימתי!</span>
+                            <span class="px-3 bg-stone-50 border border-stone-200 py-1.5 text-center rounded-lg font-bold text-slate-600">⋯ אפשרויות</span>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs flex flex-col justify-between">
+                        <div class="flex items-center justify-between gap-1 mb-2 flex-wrap">
+                            <span class="px-2 py-0.5 rounded-md font-bold text-white bg-amber-600 text-[11px]">📖 היסטוריה</span>
+                            <span class="text-[10px] bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded font-bold">נותרו 4 שעות!</span>
+                            <span class="text-stone-500 font-bold mr-auto">היום • 22:00</span>
+                        </div>
+                        <div class="font-bold text-slate-800 text-sm mb-1">סיכום פרק: מלחמת העצמאות</div>
+                        <div class="text-slate-400 text-[11px] mb-3">נושא: שלב א' של המלחמה</div>
+                        <div class="flex gap-2">
+                            <span class="flex-1 bg-stone-50 border border-stone-200 py-1.5 text-center rounded-lg font-bold text-slate-700">✓ סיימתי!</span>
+                            <span class="px-3 bg-stone-50 border border-stone-200 py-1.5 text-center rounded-lg font-bold text-slate-600">⋯ אפשרויות</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 4: ניהול משימות ואיחורים (Tasks)          -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="4">
+            <div>
+                <span class="text-xs font-bold text-indigo-600 uppercase tracking-wider bg-indigo-50 px-3 py-1 rounded-full border border-indigo-200">לשונית "משימות" (Tasks)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">רשימת משימות, חוקי יעד אוטומטיים ואיחורים</h2>
+                <p class="text-slate-600 text-xs mt-1">מנגנון הניקוד, הקנסות וחישוב מועד ההגשה מתוך חוקי המערכת.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-auto py-3">
+                <div class="feature-card p-5">
+                    <div class="text-2xl mb-2">⚡</div>
+                    <h3 class="text-sm font-bold text-slate-800 mb-1">חוקי הגשה אוטומטיים</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        לכל מקצוע מוגדר חוק: יום חלוקת שיעורי הבית מול יום ההגשה. למשל: משימה שנפתחה ביום שני במתמטיקה מחושבת אוטומטית להגשה בחמישי ב-22:00!
+                    </p>
+                </div>
+
+                <div class="feature-card p-5 border-emerald-200 bg-emerald-50/20">
+                    <div class="text-2xl mb-2">🏆</div>
+                    <h3 class="text-sm font-bold text-emerald-900 mb-1">הגשה בזמן = נקודות ורצף</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        סיום משימה בזמן מעניק נקודות (בין 5 ל-15 נק' לפי המשימה), ומקדם את ה-Task Streak היומי.
+                    </p>
+                </div>
+
+                <div class="feature-card p-5 border-rose-200 bg-rose-50/20">
+                    <div class="text-2xl mb-2">⚠️</div>
+                    <h3 class="text-sm font-bold text-rose-900 mb-1">מנגנון איחורים וקנסות</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        אם עבר זמן ההגשה, הכפתור משתנה ל-"הגשה באיחור". קנס אוטומטי של -2 נקודות יורד מהמאזן, והתלמיד/ה בוחר/ת את סיבת האיחור לצורך בקרה.
+                    </p>
+                </div>
+            </div>
+
+            <div class="p-3.5 bg-white border border-slate-200 rounded-2xl flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="text-rose-500 font-bold">🏳️ כפתור "ויתרתי על המשימה":</span>
+                    <span class="text-slate-600">קיימת אפשרות רשמית לוותר על משימה מתוך תפריט האפשרויות, במחיר שקוף של הורדת נקודה אחת (-1 נק').</span>
+                </div>
+                <span class="font-bold text-slate-700 bg-slate-100 px-2 py-1 rounded-lg">משמעת עצמית שקופה</span>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 5: בנק התרגילים המאתגרים (Hard Exercises) -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="5">
+            <div>
+                <span class="text-xs font-bold text-rose-600 uppercase tracking-wider bg-rose-50 px-3 py-1 rounded-full border border-rose-200">פיצ'ר ייחודי</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">סימון "תרגילים מאתגרים" בסיום משימה</h2>
+                <p class="text-slate-600 text-xs mt-1">איך שאלה שלא הצלחת היום בשיעורי הבית הופכת לחומר חזרה מושלם לפני הבגרות.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-auto py-3 items-center">
+                <div class="space-y-3">
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">1. שדה ייעודי במודאל סיום משימה</div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            בלחיצה על "סיימתי!", נפתח חלון ששואל: <em>"היו שאלות או תרגילים ספציפיים שהסתבכת איתם?"</em>. התלמיד/ה מזין/ה למשל: <em>"עמ' 144 תרגיל 12 ב'"</em>.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">2. שמירה אוטומטית בארכיון לפי מקצוע</div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            כל התרגילים שסומנו נאספים אוטומטית לתוך <strong>"בנק תרגילים מאתגרים"</strong> בלשונית הכנה למבחנים, מסודרים לפי המקצוע.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">3. למידה אפקטיבית למתכונת ובגרות</div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            במקום לפתור שוב שאלות קלות שיודעים, לפני המבחן פותחים את הרשימה ומתרגלים בדיוק את הנקודות שדרשו חיזוק!
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Visual Mockup of the Complete Task Modal -->
+                <div class="bg-white border-2 border-purple-200 rounded-3xl p-5 shadow-lg">
+                    <div class="flex justify-between items-center pb-2 border-b border-stone-100 mb-3">
+                        <span class="font-bold text-sm text-slate-800">סיום משימה: מתמטיקה 📐</span>
+                        <span class="text-xs bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">בזמן ✓</span>
+                    </div>
+
+                    <div class="space-y-3 text-xs">
+                        <div>
+                            <label class="font-bold text-slate-700 block mb-1">📌 תרגילים מאתגרים שנתקלת בהם:</label>
+                            <div class="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 font-medium">
+                                עמ' 82 תרגיל 5 סעיף ג' (חקירה עם פרמטר a)
+                            </div>
+                        </div>
+
+                        <div class="p-3 bg-purple-50 rounded-xl border border-purple-100 text-[11px] text-purple-900 leading-relaxed">
+                            💡 <strong>לאן זה הולך?</strong> התרגיל נשמר ישירות בבנק השאלות של מבחן המתכונת הקרוב שלך.
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                במקום לפתור שוב 50 תרגילים קלים – פותרים מחדש את 8 התרגילים המאתגרים ומשפרים ציון!
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 6: לו"ז וזמנים (Schedule & Smart Windows) -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="6">
+            <div>
+                <span class="text-xs font-bold text-amber-600 uppercase tracking-wider bg-amber-50 px-3 py-1 rounded-full border border-amber-200">לשונית "לו"ז וזמנים" (Schedule)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">סיום בי"ס, פעילויות עוגן וחישוב חלונות למידה</h2>
+                <p class="text-slate-600 text-xs mt-1">האלגוריתם האמיתי (`calculateSmartWindows`) שלוקח בחשבון את שגרת השבוע.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 my-auto py-2 items-center">
+                <div class="lg:col-span-7 space-y-3 text-xs">
+                    <div class="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+                        <div class="font-bold text-slate-800 text-sm mb-1">🏫 שעת סיום בי"ס יומית (ראשון עד שישי)</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            קביעת שעת סיום לכל יום (למשל: יום א' ב-13:30, יום ג' ב-15:45). המערכת מוסיפה אוטומטית <strong>45 דקות התרעננות</strong> והגעה הביתה.
+                        </p>
+                    </div>
+
+                    <div class="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+                        <div class="font-bold text-slate-800 text-sm mb-1">⚓ עוגנים קבועים (חוגים, אימונים, שיעורים פרטיים)</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            הזנת פעילויות קבועות עם שעת התחלה וסיום. האלגוריתם שומר <strong>30 דקות התארגנות</strong> לפני ואחרי כל עוגן.
+                        </p>
+                    </div>
+
+                    <div class="bg-white p-3.5 rounded-xl border border-stone-200 shadow-xs">
+                        <div class="font-bold text-slate-800 text-sm mb-1">🔍 זיהוי חלונות למידה (מינימום 45 דק')</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            המערכת מזהה חלונות זמן פנויים עד השעה 22:00. אם היום עמוס מדי, קופצת התרעה: <em>"⚠️ יום צפוף. אין חלון רציף של 45 דק'."</em>
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Visual representation of Schedule Day Card -->
+                <div class="lg:col-span-5 bg-stone-100 p-4 rounded-3xl border border-stone-300 shadow-sm text-xs">
+                    <div class="flex justify-between items-center pb-2 border-b border-stone-200 mb-3">
+                        <span class="font-bold text-sm text-slate-800">יום שלישי</span>
+                        <span class="bg-white px-2 py-0.5 rounded-md font-bold text-slate-600 border border-stone-200">סיום ב-14:30</span>
+                    </div>
+
+                    <div class="space-y-2">
+                        <div class="bg-white p-2.5 rounded-xl border border-stone-200 flex justify-between items-center">
+                            <span class="font-bold text-slate-700">⚽ אימון כדורגל</span>
+                            <span class="bg-stone-50 px-2 py-0.5 rounded text-[11px] text-slate-500 font-medium">18:00 עד 19:30</span>
+                        </div>
+
+                        <!-- Computed Window -->
+                        <div class="bg-purple-50 p-3 rounded-2xl border border-purple-200 mt-2">
+                            <div class="text-[11px] font-bold text-purple-900 mb-1">✨ המלצה לחלון למידה:</div>
+                            <div class="bg-white p-2 rounded-xl flex justify-between items-center border border-purple-100">
+                                <span class="font-bold text-purple-700">מ-15:45 עד 17:30</span>
+                                <span class="text-[10px] text-purple-500">זמן פנוי לפני אימון כדורגל</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                במקום לתהות "מתי אספיק ללמוד היום" – המערכת חושפת בדיוק את הזמנים הפנויים.
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 7: הכנה למבחנים ובגרויות (Exam Prep)     -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="7">
+            <div>
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full border border-purple-200">לשונית "הכנה למבחנים" (Exam Prep)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">ספירה לאחור, מפגשי למידה, ביטולים וחוברת PDF</h2>
+                <p class="text-slate-600 text-xs mt-1">מודול ייעודי לקראת מתכונות ובגרויות עם כלים מוחשיים.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 my-auto py-3">
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">⏳</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">ספירה לאחור חיה</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        תצוגת ימים מדויקת לכל מבחן ("עוד 14 ימים", "מחר!"). המבחנים ממוינים אוטומטית לפי הקרבה שלהם.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">🎯</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">תכנון מפגשי למידה</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        קביעת שעות יעד וכמות מפגשים לקראת המבחן (למשל: 6 שעות המחולקות ל-3 מפגשים) עם סנכרון ללוח הזמנים.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4 border-rose-100">
+                    <div class="text-2xl mb-1.5">🛑</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">הגבלת ביטולים (עד 3)</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        מנגנון משמעת אמיתי: המערכת עוקבת אחרי ביטולי מפגשים ומציגה תגית: <code>ביטולים: X/3</code> כדי למנוע דחיינות.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4 border-purple-200 bg-purple-50/20">
+                    <div class="text-2xl mb-1.5">📄</div>
+                    <h3 class="font-bold text-sm text-purple-900 mb-1">חוברת הכנה A4 / PDF</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        בלחיצת כפתור אחת מפיקים קובץ מודפס ומעוצב A4 של כל שאלות ההכנה והחומר הרלוונטי למבחן.
+                    </p>
+                </div>
+            </div>
+
+            <!-- Real Exam Card Mockup -->
+            <div class="bg-white p-4 rounded-2xl border border-stone-200 flex items-center justify-between flex-wrap gap-3 text-xs">
+                <div class="flex items-center gap-3">
+                    <span class="text-2xl">📝</span>
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm">מתכונת במתמטיקה (5 יח"ל)</div>
+                        <div class="text-slate-500">24/05/2026 • תוכננו 3 מפגשים (6 שעות)</div>
+                    </div>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="bg-rose-100 text-rose-700 px-2 py-0.5 rounded font-bold">ביטולים: 1/3</span>
+                    <span class="bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-lg font-bold border border-indigo-200">📅 הוספה ליומן</span>
+                    <span class="bg-purple-50 text-purple-700 px-2.5 py-1 rounded-lg font-bold border border-purple-200">📄 הפקת חוברת A4</span>
+                    <span class="bg-emerald-50 text-emerald-700 px-2.5 py-1 rounded-lg font-bold border border-emerald-200">הזנת ציון</span>
+                </div>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 8: יומן שיעורים בכיתה (Lesson Log)       -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="8">
+            <div>
+                <span class="text-xs font-bold text-sky-600 uppercase tracking-wider bg-sky-50 px-3 py-1 rounded-full border border-sky-200">לשונית "יומן שיעורים" (Lesson Log)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">תיעוד מהיר של כל מה שנלמד בכיתה 📚</h2>
+                <p class="text-slate-600 text-xs mt-1">ריכוז מסודר לפי תאריכים ומקצועות של כל החומר שנלמד השנה.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 my-auto py-3 items-center">
+                <div class="space-y-3 text-xs">
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">📅 סדר כרונולוגי לפי תאריכים ומקצועות</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            כל שיעור מתועד עם התאריך המדויק, המקצוע הרלוונטי (צבע ואמוג'י) וכותרת הנושא שנלמד.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">🔗 חיבור ישיר לשיעורי הבית</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            היומן מקושר למשימת שיעורי הבית: התלמיד/ה רואה תגית: <em>"מתוך משימה: ..."</em> ויכול/ה לעבור מיד למטלה הקשורה לנושא.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">🔍 סינון מהיר לפי מקצוע</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            ניתן לסנן לפי מקצוע בלחיצה אחת, ולראות ברצף את כל השיעורים שהיו בהיסטוריה, בלשון או בפיזיקה לאורך השנה.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Mockup of Lesson Log card -->
+                <div class="bg-white border border-stone-200 rounded-3xl p-5 shadow-sm space-y-3 text-xs">
+                    <div class="flex items-center justify-between pb-2 border-b border-stone-100">
+                        <span class="text-xs text-slate-400 font-bold">12/05/2026 • יום שלישי</span>
+                        <span class="bg-indigo-600 text-white font-bold px-2 py-0.5 rounded-md text-[11px]">📐 מתמטיקה</span>
+                    </div>
+                    <div class="font-bold text-slate-800 text-base">אינטגרלים של פונקציה רציונלית</div>
+                    <p class="text-slate-600 leading-relaxed">
+                        נלמד פירוק לשברים חלקיים ופתרון דוגמאות בגרות 2021.
+                    </p>
+                    <div class="bg-stone-50 p-2.5 rounded-xl border border-stone-200 text-purple-700 font-medium text-[11px] flex items-center gap-1.5">
+                        <span>📝</span> <span>מתוך משימה: שיעורי בית עמ' 94 תר' 1-6</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                לא צריך לחפש במחברות של חברים – כל נושאי השנה מרוכזים וזמינים תמיד בנייד.
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 9: החברות שלי – סוציאל (Social Tab 👑)   -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="9">
+            <div>
+                <span class="text-xs font-bold text-amber-600 uppercase tracking-wider bg-amber-50 px-3 py-1 rounded-full border border-amber-200">לשונית "חברות 👑" (Social)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">טבלת אלופות, מלכות הרצף ושיתוף בוואטסאפ</h2>
+                <p class="text-slate-600 text-xs mt-1">איך האפליקציה מחברת חברות ללמידה משותפת ומדרבנת.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-5 my-auto py-2">
+                <!-- טבלת אלופות ניקוד -->
+                <div class="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs relative overflow-hidden text-xs">
+                    <h3 class="font-black text-base text-slate-800 mb-3 flex items-center gap-2">
+                        <span>🏆</span> טבלת אלופות (ניקוד)
+                    </h3>
+                    <div class="space-y-3">
+                        <div class="p-3 rounded-xl bg-purple-50/70 border border-purple-200 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xl">🥇</span>
+                                <div>
+                                    <div class="font-bold text-purple-900">נועה לוי <span class="bg-purple-600 text-white text-[10px] px-1.5 py-0.2 rounded-full">אני</span></div>
+                                    <div class="text-[10px] text-slate-400" dir="ltr">@noa_study</div>
+                                </div>
+                            </div>
+                            <div class="font-black text-sm bg-white px-3 py-1 rounded-lg border border-purple-100">245 נק'</div>
+                        </div>
+
+                        <div class="p-3 rounded-xl bg-stone-50 border border-stone-200 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xl">🥈</span>
+                                <div>
+                                    <div class="font-bold text-slate-800">מיה כהן</div>
+                                    <div class="text-[10px] text-slate-400" dir="ltr">@maya_c</div>
+                                </div>
+                            </div>
+                            <div class="font-black text-sm bg-white px-3 py-1 rounded-lg border border-stone-100">210 נק'</div>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-[11px] text-purple-700 font-bold">
+                        מד פער גרפי שמציג: "רחוקה ב-35 נקודות מהמקום הראשון"
+                    </div>
+                </div>
+
+                <!-- מלכות הרצף -->
+                <div class="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs relative overflow-hidden text-xs">
+                    <h3 class="font-black text-base text-slate-800 mb-3 flex items-center gap-2">
+                        <span>🔥</span> מלכות הרצף (Task Streak)
+                    </h3>
+                    <div class="space-y-3">
+                        <div class="p-3 rounded-xl bg-rose-50/70 border border-rose-200 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xl">👑</span>
+                                <div>
+                                    <div class="font-bold text-rose-900">רוני שליו</div>
+                                    <div class="text-[10px] text-slate-400" dir="ltr">@roni_s</div>
+                                </div>
+                            </div>
+                            <div class="font-black text-sm bg-white px-3 py-1 rounded-lg border border-rose-100 text-rose-600">19 ימים 🔥</div>
+                        </div>
+
+                        <div class="p-3 rounded-xl bg-stone-50 border border-stone-200 flex items-center justify-between">
+                            <div class="flex items-center gap-3">
+                                <span class="text-xl">🥈</span>
+                                <div>
+                                    <div class="font-bold text-slate-800">נועה לוי (אני)</div>
+                                    <div class="text-[10px] text-slate-400" dir="ltr">@noa_study</div>
+                                </div>
+                            </div>
+                            <div class="font-black text-sm bg-white px-3 py-1 rounded-lg border border-stone-100">14 ימים</div>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-[11px] text-slate-500 font-medium">
+                        שמירה על הרצף היומי מעודדת את כולן לא להישבר ולא לוותר.
+                    </div>
+                </div>
+            </div>
+
+            <!-- WhatsApp Share Button Feature -->
+            <div class="p-3 bg-emerald-50 rounded-2xl border border-emerald-200 flex items-center justify-between text-xs">
+                <div class="flex items-center gap-2">
+                    <span class="text-xl">💬</span>
+                    <span class="font-bold text-emerald-900">שיתוף שיעורי בית בוואטסאפ עם חברות:</span>
+                    <span class="text-emerald-700">בלחיצת כפתור מייצרים קישור ישיר ל-wa.me ושולחים לחברה בקבוצה.</span>
+                </div>
+                <span class="bg-emerald-600 text-white font-bold px-2.5 py-1 rounded-lg text-[11px]">למידה שיתופית</span>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 10: אוטומציית וואטסאפ ודוחות הורים       -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="10">
+            <div>
+                <span class="text-xs font-bold text-emerald-600 uppercase tracking-wider bg-emerald-50 px-3 py-1 rounded-full border border-emerald-200">הגדרות וואטסאפ (Settings & WhatsApp)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">תזכורות לתלמידה ודוח שבועי אוטומטי להורים</h2>
+                <p class="text-slate-600 text-xs mt-1">המנגנון שמייצר שלום בית, שקט נפשי וחיזוק חיובי מבוסס WhatsApp.</p>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 my-auto py-2 items-center">
+                <div class="lg:col-span-6 space-y-3 text-xs">
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">📱 מספר הטלפון של התלמיד/ה</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            הגדרת מספר נייד אישי עם כפתור: <em>"⚡ שליחת בדיקה למספר שלי"</em> – לוודא שהתזכורות מגיעות ישירות לנייד לפני חלון למידה.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4">
+                        <div class="font-bold text-slate-800 text-sm mb-1">👨‍👩‍👧 מספרי הטלפון של ההורים (אמא ואבא)</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            תמיכה בשני מספרי הורים נפרדים לצד כפתור: <em>"📊 שליחת דוח שבועי להורים עכשיו"</em> לבדיקה מיידית.
+                        </p>
+                    </div>
+
+                    <div class="feature-card p-4 border-emerald-200 bg-emerald-50/30">
+                        <div class="font-bold text-emerald-950 text-sm mb-1">🗓️ שליחה אוטומטית בכל מוצאי שבת</div>
+                        <p class="text-slate-600 leading-relaxed">
+                            תיבת סימון רשמית: המערכת מסכמת אוטומטית את משימות השבוע, שעות הלמידה וההתמדה ושולחת לשני ההורים בימי שבת בערב.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- Realistic WhatsApp Message Preview -->
+                <div class="lg:col-span-6 bg-[#efeae2] p-4 rounded-3xl border border-stone-300 shadow-md font-sans text-xs">
+                    <div class="flex items-center gap-2.5 pb-2.5 border-b border-stone-300">
+                        <div class="w-8 h-8 rounded-full bg-emerald-600 text-white flex items-center justify-center font-bold text-sm">
+                            ST
+                        </div>
+                        <div>
+                            <div class="font-bold text-slate-800">StudyStreak Pro 🤖</div>
+                            <div class="text-[10px] text-emerald-700">סיכום שבועי רשמי</div>
+                        </div>
+                    </div>
+
+                    <div class="mt-3 bg-white p-3.5 rounded-2xl rounded-tr-none shadow-xs border border-stone-200 text-slate-800 leading-relaxed">
+                        <strong>שבוע נהדר עבר על נועה! 🌟</strong><br><br>
+                        ✅ <strong>משימות שהושלמו:</strong> 7 משימות<br>
+                        🔥 <strong>רצף למידה נוכחי:</strong> 14 ימים ברציפות!<br>
+                        📚 <strong>מקצוע מוביל:</strong> מתמטיקה (4 שעות תרגול)<br>
+                        🏆 <strong>נקודות השבוע:</strong> 18 נקודות<br><br>
+                        <em>שבוע מוצלח ופורה! שבוע טוב ❤️</em>
+                        <span class="text-slate-400 text-[10px] block text-left mt-1">מוצ"ש, 21:00 ✓✓</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                במקום לנדנד ולשאול "למדת כבר?" – ההורים מקבלים דוח מסודר ומפרגנים לתלמיד/ה!
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 11: אנליטיקה ופילוח שעות שיא (Analytics) -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="11">
+            <div>
+                <span class="text-xs font-bold text-sky-600 uppercase tracking-wider bg-sky-50 px-3 py-1 rounded-full border border-sky-200">לשונית "סטטיסטיקה ודוחות" (Analytics)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">ניתוח שעות שיא, אחוזי עמידה בזמנים וציונים</h2>
+                <p class="text-slate-600 text-xs mt-1">פילוח מדויק מתוך שעות היממה (`hourBuckets`) ומעקב השתפרות.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-auto py-2">
+                <!-- 5 Hour Buckets from code -->
+                <div class="feature-card p-4">
+                    <div class="font-bold text-slate-800 text-sm mb-2">⏰ 5 חלונות היממה ושעת שיא (Peak)</div>
+                    <div class="space-y-1.5 text-xs">
+                        <div class="flex justify-between"><span>🌅 בוקר (06:00-12:00)</span><span class="font-bold text-slate-700">15%</span></div>
+                        <div class="flex justify-between bg-purple-50 p-1 rounded font-bold text-purple-900"><span>☀️ צהריים (12:00-17:00)</span><span>45% (שעת שיא!)</span></div>
+                        <div class="flex justify-between"><span>🌆 ערב (17:00-21:00)</span><span class="font-bold text-slate-700">30%</span></div>
+                        <div class="flex justify-between"><span>🌙 לילה (21:00-02:00)</span><span class="font-bold text-slate-700">10%</span></div>
+                        <div class="flex justify-between text-slate-400"><span>🦉 לפנות בוקר (02:00-06:00)</span><span>0%</span></div>
+                    </div>
+                </div>
+
+                <!-- On-Time Percentage -->
+                <div class="feature-card p-4 text-center flex flex-col justify-between">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm mb-1">מדד עמידה בזמנים</div>
+                        <p class="text-[11px] text-slate-500">אחוז המשימות שהוגשו לפני שעת היעד</p>
+                    </div>
+                    <div class="my-3">
+                        <div class="text-4xl font-black text-emerald-600">92%</div>
+                        <div class="text-xs text-emerald-800 font-bold mt-1">עמידה גבוהה בזמנים!</div>
+                    </div>
+                    <div class="text-[10px] text-slate-400 bg-stone-50 p-2 rounded-xl border border-stone-100">
+                        איחורים מתועדים עם סיבת האיחור להפקת לקחים
+                    </div>
+                </div>
+
+                <!-- Exam Average & Month Filter -->
+                <div class="feature-card p-4 flex flex-col justify-between">
+                    <div>
+                        <div class="font-bold text-slate-800 text-sm mb-1">ממוצע מבחנים וסינון</div>
+                        <p class="text-[11px] text-slate-500">פילוח לפי 30 ימים אחרונים או חודשים</p>
+                    </div>
+                    <div class="my-3 text-center">
+                        <div class="text-3xl font-black text-purple-700">89.5</div>
+                        <div class="text-xs text-purple-900 font-bold mt-1">ממוצע ציונים כולל</div>
+                    </div>
+                    <div class="text-[10px] text-slate-500 leading-relaxed">
+                        מעקב רציף לפי מקצועות מאפשר לזהות בדיוק איפה צריך להשקיע יותר שעות.
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                תמונת מראה ברורה מבוססת נתונים שמסייעת לתלמיד/ה להבין מתי הם הכי מרוכזים.
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 12: פרופיל, דרגות וארון התגים            -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="12">
+            <div>
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full border border-purple-200">לשונית "פרופיל ותגים" (Profile)</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">סולם הדרגות, תרשים עוגה וארון התגים 🏅</h2>
+                <p class="text-slate-600 text-xs mt-1">מערכת הגיימיפיקציה האמיתית שמניעה להמשיך ולהתמיד.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 my-auto py-2">
+                <!-- User Level Hierarchy from helpers.js -->
+                <div class="feature-card p-4">
+                    <h3 class="font-bold text-slate-800 text-sm mb-2 text-center">👑 סולם הדרגות (לפי נקודות)</h3>
+                    <div class="space-y-1.5 text-xs">
+                        <div class="flex justify-between p-1.5 rounded-lg bg-stone-50">
+                            <span>🌱 תלמידה מתחילה</span>
+                            <span class="text-slate-400 font-bold">עד 50 נק'</span>
+                        </div>
+                        <div class="flex justify-between p-1.5 rounded-lg bg-stone-50">
+                            <span>🚀 צוערת בגרויות</span>
+                            <span class="text-slate-400 font-bold">51-150 נק'</span>
+                        </div>
+                        <div class="flex justify-between p-1.5 rounded-lg bg-purple-50 border border-purple-200 font-bold text-purple-900">
+                            <span>🕵️‍♀️ סיירת למידה</span>
+                            <span class="text-purple-700 font-bold">151-300 נק'</span>
+                        </div>
+                        <div class="flex justify-between p-1.5 rounded-lg bg-stone-50">
+                            <span>👑 מאסטר בלמידה</span>
+                            <span class="text-slate-400 font-bold">301-600 נק'</span>
+                        </div>
+                        <div class="flex justify-between p-1.5 rounded-lg bg-stone-50">
+                            <span>🦸‍♀️ אגדת מיונים</span>
+                            <span class="text-slate-400 font-bold">601-1000 נק'</span>
+                        </div>
+                        <div class="flex justify-between p-1.5 rounded-lg bg-stone-50">
+                            <span>🎓 פרופסורית (Top 1%)</span>
+                            <span class="text-slate-400 font-bold">1000+ נק'</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chart.js Subject Pie Chart -->
+                <div class="feature-card p-4 text-center flex flex-col justify-between">
+                    <h3 class="font-bold text-slate-800 text-sm mb-1">התפלגות למידה לפי מקצוע 📊</h3>
+                    <p class="text-[11px] text-slate-400 mb-2">תרשים מבוסס Chart.js שמוצג בפרופיל</p>
+                    <div class="w-24 h-24 mx-auto rounded-full border-8 border-purple-500 border-t-sky-400 border-l-amber-400 my-2 flex items-center justify-center text-xs font-bold text-slate-700">
+                        תרשים
+                    </div>
+                    <div class="flex justify-around text-[10px] text-slate-600 font-bold mt-2">
+                        <span class="text-purple-600">● מתמטיקה</span>
+                        <span class="text-sky-500">● היסטוריה</span>
+                        <span class="text-amber-500">● לשון</span>
+                    </div>
+                </div>
+
+                <!-- ארון התגים הרשמי מהקוד -->
+                <div class="feature-card p-4">
+                    <h3 class="font-bold text-slate-800 text-sm mb-2 text-center">🏅 ארון התגים (Badges)</h3>
+                    <div class="space-y-2 text-xs">
+                        <div class="p-2 bg-stone-50 rounded-xl border border-stone-200 flex items-center gap-2.5">
+                            <span class="text-xl">🏆</span>
+                            <div>
+                                <div class="font-bold text-slate-800">מצטיינת מבחנים</div>
+                                <div class="text-[10px] text-slate-500">השגת 4 ציונים של 90 ומעלה במבחנים</div>
+                            </div>
+                        </div>
+
+                        <div class="p-2 bg-stone-50 rounded-xl border border-stone-200 flex items-center gap-2.5">
+                            <span class="text-xl">⚡</span>
+                            <div>
+                                <div class="font-bold text-slate-800">טורבו</div>
+                                <div class="text-[10px] text-slate-500">השגת 20 נקודות בשבוע אחד</div>
+                            </div>
+                        </div>
+
+                        <div class="p-2 bg-stone-50 rounded-xl border border-stone-200 flex items-center gap-2.5">
+                            <span class="text-xl">⏱️</span>
+                            <div>
+                                <div class="font-bold text-slate-800">חסינת איחורים</div>
+                                <div class="text-[10px] text-slate-500">רצף של 14 ימים רצופים ללא איחור</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="text-xs text-slate-400 text-center">
+                התגים והרמות מוענקים אוטומטית בקוד ברגע שהתלמיד/ה עומדים ביעד!
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 13: ארכיטקטורה וסנכרון ענן (Tech Stack)  -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="13">
+            <div>
+                <span class="text-xs font-bold text-purple-600 uppercase tracking-wider bg-purple-50 px-3 py-1 rounded-full border border-purple-200">טכנולוגיה ואמינות</span>
+                <h2 class="text-3xl font-black text-slate-900 mt-2">אפליקציית PWA, סנכרון Firebase ועבודה אופליין</h2>
+                <p class="text-slate-600 text-xs mt-1">מערכת מתקדמת שנבנתה לפעול בצורה חלקה בכל מקום ובכל מצב.</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 my-auto py-3">
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">📱</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">PWA (ללא חנות)</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        התקנה ישירה מהדפדפן על מסך הבית באייפון ובאנדרואיד. תמיכה מלאה ב-Standalone ומסך מלא.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">☁️</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">סנכרון Firebase חי</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        שימוש ב-Cloud Firestore עם Snapshot Listener. מעדכנים משימה בלפטופ – והיא מעודכנת מיד בנייד.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">⚡</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">Instant Splash Screen</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        מסך פתיחה שעולה ב-0.05 שניות ומעניק תחושה של אפליקציית Native חלקה ומהירה ללא השהיות.
+                    </p>
+                </div>
+
+                <div class="feature-card p-4">
+                    <div class="text-2xl mb-1.5">🛡️</div>
+                    <h3 class="font-bold text-sm text-slate-800 mb-1">שרידות אופליין ושחזור</h3>
+                    <p class="text-xs text-slate-600 leading-relaxed">
+                        סנכרון דו-כיווני עם LocalStorage ומנגנון <code>healCompletedFromHistory</code> המונע אובדן נתונים.
+                    </p>
+                </div>
+            </div>
+
+            <div class="p-3 bg-slate-900 text-slate-300 rounded-2xl flex items-center justify-between text-xs font-mono">
+                <div class="flex items-center gap-2">
+                    <span class="text-emerald-400 font-bold">קוד ומודולריות:</span>
+                    <span>React 18 • Tailwind CSS • Chart.js • Firebase SDK • WhatsApp Service • Service Worker</span>
+                </div>
+                <span class="text-purple-400 font-bold">PWA Production Ready</span>
+            </div>
+        </section>
+
+        <!-- ============================================== -->
+        <!-- SLIDE 14: הצוות וקריאה לפעולה (About & Q&A)     -->
+        <!-- ============================================== -->
+        <section class="slide" data-slide="14">
+            <div class="flex items-center justify-between border-b border-stone-200 pb-3">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-purple-600 text-white flex items-center justify-center text-xl font-bold">
+                        🚀
+                    </div>
+                    <div>
+                        <span class="text-lg font-black text-slate-900">StudyStreak Pro</span>
+                        <span class="text-xs text-slate-500 block">עתיד הלמידה לבגרויות</span>
+                    </div>
+                </div>
+                <span class="px-3 py-1 bg-emerald-50 text-emerald-700 text-xs font-bold rounded-full border border-emerald-200">
+                    זמין ופתוח לשימוש ✨
+                </span>
+            </div>
+
+            <div class="my-auto text-center py-4">
+                <h2 class="text-3xl lg:text-4xl font-black text-slate-900 leading-tight mb-2">
+                    תודה רבה! הזמן לשאלות והתנסות חיה 🎤
+                </h2>
+                <p class="text-sm lg:text-base text-slate-600 max-w-lg mx-auto mb-6">
+                    מערכת שנולדה מתוך הבנת הקושי של תלמידי תיכון, ונועדה להעניק שליטה, שקט וביטחון עצמי.
+                </p>
+
+                <!-- Creators Card Detail -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 max-w-xl mx-auto text-right mb-6">
+                    <div class="p-4 bg-purple-50/60 rounded-2xl border border-purple-200">
+                        <div class="font-bold text-sm text-purple-900 mb-1">שלי וידמן ששון</div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            הובילה וביצעה את הפיתוח המלא, ארכיטקטורת הקוד, מנוע חלונות הזמן, אינטגרציית הוואטסאפ והשדרוג השוטף של האפליקציה.
+                        </p>
+                    </div>
+
+                    <div class="p-4 bg-sky-50/60 rounded-2xl border border-sky-200">
+                        <div class="font-bold text-sm text-sky-900 mb-1">ענבר נתן</div>
+                        <p class="text-xs text-slate-600 leading-relaxed">
+                            שותפה לרעיון הראשוני ולהגדרת הכיוון, וסייעה בגיבוש הרעיון והקונספט המקורי יחד עם שלי בתחילת הדרך.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="flex justify-center items-center gap-4">
+                    <a href="https://github.com/shellywsas/tryingTOstudy" target="_blank" class="px-6 py-3 bg-purple-600 hover:bg-purple-700 text-white font-bold rounded-2xl shadow-md transition-all text-sm flex items-center gap-2">
+                        <span>🐙</span> הפרויקט ב-GitHub
+                    </a>
+                    <button onclick="toggleNotes()" class="px-6 py-3 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold rounded-2xl shadow-xs transition-all text-sm flex items-center gap-2">
+                        <span>🎙️</span> פתח הערות למרצה (N)
+                    </button>
+                </div>
+            </div>
+
+            <div class="flex items-center justify-between pt-3 border-t border-stone-200 text-xs text-slate-500">
+                <div class="font-bold text-slate-700">
+                    מוזמנים להתנסות באפליקציה עכשיו!
+                </div>
+                <div class="text-slate-400">
+                    StudyStreak Pro • פותח ע"י שלי וידמן ששון וענבר נתן
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- ============================================== -->
+    <!-- SPEAKER NOTES DRAWER                           -->
+    <!-- ============================================== -->
+    <aside id="notes-panel">
+        <div class="flex items-center justify-between pb-3 border-b border-slate-700 mb-3">
+            <div class="flex items-center gap-2 font-bold text-sm text-purple-300">
+                <span>🎙️</span>
+                <span>הערות למרצה (מה להגיד בעל פה)</span>
+            </div>
+            <button onclick="toggleNotes()" class="text-slate-400 hover:text-white text-xs px-2 py-1 rounded bg-slate-800">
+                סגור ✕
+            </button>
+        </div>
+        <div id="notes-content" class="text-xs text-slate-200 leading-relaxed space-y-2">
+            <!-- Dynamically populated per slide -->
+        </div>
+    </aside>
+
+    <!-- ============================================== -->
+    <!-- OVERVIEW GRID MODAL                            -->
+    <!-- ============================================== -->
+    <div id="overview-modal">
+        <div class="flex items-center justify-between max-w-6xl mx-auto w-full mb-6 pb-4 border-b border-slate-700 text-white">
+            <h3 class="text-xl font-bold flex items-center gap-2">
+                <span>📑</span> מבט על – כל שקופיות המצגת (14 שקופיות)
+            </h3>
+            <button onclick="toggleOverview()" class="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-xl text-sm font-bold">
+                חזרה להצגה (Esc)
+            </button>
+        </div>
+        <div id="overview-grid" class="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-6xl mx-auto w-full">
+            <!-- Injected dynamically by JS -->
+        </div>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- BOTTOM CONTROLS BAR                            -->
+    <!-- ============================================== -->
+    <footer id="controls-bar" class="fixed bottom-0 inset-x-0 h-[64px] bg-slate-900/90 backdrop-blur-xl border-t border-slate-800 z-50 flex items-center justify-between px-6 text-white text-sm">
+        <div class="flex items-center gap-2">
+            <button onclick="prevSlide()" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 active:scale-95 text-slate-200 rounded-xl font-bold flex items-center gap-1.5 transition-all">
+                <span>➔</span> הקודם
+            </button>
+            <button onclick="nextSlide()" class="px-3.5 py-1.5 bg-purple-600 hover:bg-purple-500 active:scale-95 text-white rounded-xl font-bold flex items-center gap-1.5 transition-all shadow-md shadow-purple-900/50">
+                הבא <span>⬅</span>
+            </button>
+            <span id="slide-counter" class="text-xs font-bold text-slate-400 mx-2">
+                1 / 14
+            </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <button onclick="toggleNotes()" id="btn-notes" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all">
+                <span>🎙️</span> הערות דובר <kbd class="bg-slate-700 px-1 py-0.5 rounded text-[10px]">N</kbd>
+            </button>
+            <button onclick="toggleOverview()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all">
+                <span>📑</span> מבט על <kbd class="bg-slate-700 px-1 py-0.5 rounded text-[10px]">O</kbd>
+            </button>
+            <button onclick="toggleFullscreen()" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold flex items-center gap-1.5 transition-all">
+                <span>⛶</span> מסך מלא <kbd class="bg-slate-700 px-1 py-0.5 rounded text-[10px]">F</kbd>
+            </button>
+        </div>
+    </footer>
+
+    <!-- ============================================== -->
+    <!-- PRESENTATION LOGIC SCRIPT                      -->
+    <!-- ============================================== -->
+    <script>
+        const speakerNotes = {
+            1: `
+                <p><strong>פתיחה והצגת הפרויקט:</strong> "שלום לכולם! ברוכים הבאים להרצאה על <strong>StudyStreak Pro</strong> – אפליקציה שנועדה לתת מענה מקיף וחכם לאחד האתגרים הכי גדולים של תלמידי תיכון: עונת הבגרויות."</p>
+                <p><strong>הצוות המפתח:</strong> "את הרעיון הראשוני והכיוון גיבשו יחד <strong>ענבר נתן ושלי וידמן ששון</strong>. משם, <strong>שלי</strong> המשיכה את כל תהליך הפיתוח המלא, הארכיטקטורה, כתיבת הקוד והשיפורים המתמידים עד לקבלת מוצר שלם ועובד."</p>
+            `,
+            2: `
+                <p><strong>הצגת הבעיה האמיתית:</strong> "בואו נסתכל על מה שקורה בשטח. תלמיד תיכון מתמודד עם עומס של 7-8 מקצועות במקביל. יש שיעורי בית, מבחנים וחוגים. מה שקורה זה דחיינות ואיבוד שליטה."</p>
+                <p><strong>המתח בבית:</strong> "בבית, ההורים שואלים כל הזמן 'למדת כבר?', וזה מייצר מתחים. אפליקציות רגילות הן סתם רשימות משעממות שלא מבינות את הלו"ז של תלמיד ישראלי."</p>
+            `,
+            3: `
+                <p><strong>מסך הבית (Dashboard):</strong> "הנה מה שהמשתמש רואה מיד בפתיחת האפליקציה: 4 מדדים מובילים למעלה – מד משימות (Task Streak) שמודד רצף ימי למידה, נקודות השבוע שמתאפסות במוצ"ש, סה"כ נקודות מצטבר, ותרגילים בארכיון."</p>
+                <p><strong>המשימות הקרובות:</strong> "מתחת מוצגות עד 4 המשימות הדחופות ביותר עם תגיות מקצוע צבעוניות, ספירה לאחור חיה ('נותרו שעתיים!'), וכפתור סיום מהיר."</p>
+            `,
+            4: `
+                <p><strong>ניהול משימות ומועדים:</strong> "איך נוצרת משימה? לכל מקצוע יש חוקי הגשה מובנים. למשל: משימה ביום שני במתמטיקה מוגדרת אוטומטית להגשה בחמישי ב-22:00 בלי שצריך להקליד תאריכים ידנית."</p>
+                <p><strong>משמעת וקנסות:</strong> "סיימת בזמן? קיבלת נקודות! איחרת? יורד קנס של 2 נקודות ויש לתעד את סיבת האיחור. אפילו הוספנו כפתור 'ויתרתי על המשימה' במינוס נקודה כדי לעודד כנות ואחריות."</p>
+            `,
+            5: `
+                <p><strong>גולת כותרת – סימון תרגילים קשים:</strong> "זה אחד הפיצ'רים הכי מיוחדים באפליקציה: כשמסמנים שסיימנו משימת שיעורי בית, נשאלת שאלה פשוטה – 'היו תרגילים ספציפיים שהיו לך קשים?'."</p>
+                <p><strong>הערך:</strong> "התלמידה רושמת למשל 'עמ' 82 תר' 5'. התרגיל נשמר אוטומטית בבנק ייעודי. כשתגיע המתכונת, לא צריך לנחש על מה לחזור – כל השאלות הקשות של כל השנה מרוכזות במקום אחד!"</p>
+            `,
+            6: `
+                <p><strong>לו"ז וזמנים (Schedule):</strong> "איך מחשבים מתי ללמוד? התלמיד מזין שעת סיום בי"ס (למשל 14:30), והמערכת מוסיפה 45 דק' התרעננות והגעה הביתה."</p>
+                <p><strong>עוגנים:</strong> "מזינים פעילויות עוגן (חוג, אימון, תנועת נוער). האלגוריתם שומר 30 דקות לפני ואחרי כל עוגן, ומציג בדיוק את חלונות הזמן הפנויים (מינימום 45 דק') ללמידה."</p>
+            `,
+            7: `
+                <p><strong>מודול הכנה למבחנים:</strong> "לקראת מבחן בגרות, מגדירים שעות יעד ומפגשי למידה. המערכת מגבילה ביטולים (עד 3 ביטולים בלבד!) כדי למנוע מריחת זמן."</p>
+                <p><strong>חוברת A4 וציונים:</strong> "בלחיצה אחת ניתן לייצר חוברת הכנה מודפסת A4 ב-PDF, ובסיום המבחן מזינים את הציון לשקלול הממוצע הכללי."</p>
+            `,
+            8: `
+                <p><strong>יומן שיעורים בכיתה:</strong> "לשונית ייעודית שמרכזת את כל השיעורים שנלמדו השנה בכיתה לפי תאריכים ומקצועות, עם קישור ישיר לשיעורי הבית שניתנו באותו שיעור."</p>
+            `,
+            9: `
+                <p><strong>החברות שלי (Social):</strong> "הלשונית הסוציאלית כוללת שתי טבלאות מרכזיות: טבלת אלופות לפי ניקוד שבוע ומד פער, וטבלת 'מלכות הרצף' שמראה מי שומרת על הסטריק הכי ארוך."</p>
+                <p><strong>שיתוף:</strong> "בלחיצת כפתור אחת אפשר לשתף שיעורי בית בוואטסאפ עם חברות, ולהוסיף חברות למעקב לפי שם משתמש."</p>
+            `,
+            10: `
+                <p><strong>וואטסאפ ושלום בית:</strong> "איך מחברים את ההורים? בהגדרות מזינים את הטלפון של התלמידה לתזכורות אישיות, ואת הטלפונים של ההורים (אמא ואבא)."</p>
+                <p><strong>דוח שבועי במוצ"ש:</strong> "בכל מוצאי שבת, המערכת שולחת אוטומטית לשני ההורים סיכום מלא בוואטסאפ: כמה משימות הושלמו, מה הסטריק וכמה שעות נלמדו. ההורים מעודכנים ורגועים."</p>
+            `,
+            11: `
+                <p><strong>אנליטיקה ופילוח שעות שיא:</strong> "המערכת מחלקת את היממה ל-5 חלונות (בוקר, צהריים, ערב, לילה, לפנות בוקר 🦉) ומזהה עבור התלמידה את שעת השיא שלה – מתי היא הכי יעילה."</p>
+                <p><strong>מדדים:</strong> "בנוסף מוצגים אחוז עמידה בזמנים מול איחורים, ממוצע ציונים ופילוח לפי חודשים."</p>
+            `,
+            12: `
+                <p><strong>פרופיל אישי, רמות ותגים:</strong> "סולם הדרגות האמיתי שלנו: מתחילה 🌱, צוערת בגרויות 🚀, סיירת למידה 🕵️‍♀️, מאסטר 👑, אגדת מיונים 🦸‍♀️, ופרופסורית 🎓."</p>
+                <p><strong>תגים אוטומטיים:</strong> "התגים מוענקים בקוד: 'מצטיינת מבחנים' ל-4 ציוני 90+, 'טורבו' ל-20 נק' שבועיות, ו'חסינת איחורים' ל-14 ימי רצף."</p>
+            `,
+            13: `
+                <p><strong>טכנולוגיה ואמינות:</strong> "StudyStreak Pro פותחה כ-PWA מודרני: עובדת על כל מכשיר, נטענת ב-0.05 שניות (Instant Splash Screen), מסתנכרנת בזמן אמת ב-Firebase Firestore, וממשיכה לעבוד גם באופליין ללא אינטרנט."</p>
+            `,
+            14: `
+                <p><strong>סיכום וסגירה:</strong> "תודה רבה לכולם! הפרויקט פותח בגאווה ע"י שלי וידמן ששון בעזרת ענבר נתן. הוא זמין ופתוח ב-GitHub, ואתם מוזמנים להתנסות בו ולשאול שאלות!"</p>
+            `
+        };
+
+        let currentSlide = 1;
+        const totalSlides = 14;
+        const slides = document.querySelectorAll('.slide');
+        const progressBar = document.getElementById('progress-bar');
+        const slideCounter = document.getElementById('slide-counter');
+        const notesPanel = document.getElementById('notes-panel');
+        const notesContent = document.getElementById('notes-content');
+        const overviewModal = document.getElementById('overview-modal');
+        const overviewGrid = document.getElementById('overview-grid');
+
+        function showSlide(index) {
+            if (index < 1) index = 1;
+            if (index > totalSlides) index = totalSlides;
+            
+            currentSlide = index;
+            
+            slides.forEach(slide => {
+                const sNum = parseInt(slide.getAttribute('data-slide'));
+                slide.classList.toggle('active', sNum === currentSlide);
+            });
+
+            const pct = (currentSlide / totalSlides) * 100;
+            progressBar.style.width = `${pct}%`;
+            slideCounter.innerText = `${currentSlide} / ${totalSlides}`;
+
+            notesContent.innerHTML = speakerNotes[currentSlide] || '<p>אין הערות מיוחדות לשקופית זו.</p>';
+            window.location.hash = `slide-${currentSlide}`;
+            updateOverviewActive();
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides) showSlide(currentSlide + 1);
+        }
+
+        function prevSlide() {
+            if (currentSlide > 1) showSlide(currentSlide - 1);
+        }
+
+        function toggleNotes() {
+            notesPanel.classList.toggle('open');
+        }
+
+        function toggleOverview() {
+            overviewModal.classList.toggle('open');
+            if (overviewModal.classList.contains('open')) renderOverview();
+        }
+
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(err => console.log(err));
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+
+        function renderOverview() {
+            overviewGrid.innerHTML = '';
+            slides.forEach(slide => {
+                const num = parseInt(slide.getAttribute('data-slide'));
+                const title = slide.querySelector('h1, h2')?.innerText.replace(/\n/g, ' ') || `שקופית ${num}`;
+                const card = document.createElement('div');
+                card.className = `overview-card ${num === currentSlide ? 'active-card' : ''}`;
+                card.innerHTML = `
+                    <div class="flex justify-between items-center text-xs text-purple-600 font-black">
+                        <span>שקופית ${num}</span>
+                        <span class="text-[10px] text-slate-400">16:9</span>
+                    </div>
+                    <div class="text-xs font-bold text-slate-800 line-clamp-2 my-2">${title}</div>
+                    <div class="text-[10px] text-slate-400">לחץ למעבר ➔</div>
+                `;
+                card.onclick = () => {
+                    showSlide(num);
+                    overviewModal.classList.remove('open');
+                };
+                overviewGrid.appendChild(card);
+            });
+        }
+
+        function updateOverviewActive() {
+            const cards = overviewGrid.querySelectorAll('.overview-card');
+            cards.forEach((card, idx) => {
+                card.classList.toggle('active-card', (idx + 1) === currentSlide);
+            });
+        }
+
+        window.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && overviewModal.classList.contains('open')) {
+                toggleOverview();
+                return;
+            }
+
+            if (e.key === 'ArrowLeft' || e.key === 'PageDown' || e.key === ' ') {
+                nextSlide();
+            } else if (e.key === 'ArrowRight' || e.key === 'PageUp') {
+                prevSlide();
+            } else if (e.key === 'n' || e.key === 'N' || e.key === 'מ') {
+                toggleNotes();
+            } else if (e.key === 'o' || e.key === 'O' || e.key === 'ם') {
+                toggleOverview();
+            } else if (e.key === 'f' || e.key === 'F' || e.key === 'כ') {
+                toggleFullscreen();
+            } else if (e.key === 'Home') {
+                showSlide(1);
+            } else if (e.key === 'End') {
+                showSlide(totalSlides);
+            }
+        });
+
+        let touchStartX = 0;
+        let touchEndX = 0;
+        document.addEventListener('touchstart', (e) => {
+            touchStartX = e.changedTouches[0].screenX;
+        }, false);
+        document.addEventListener('touchend', (e) => {
+            touchEndX = e.changedTouches[0].screenX;
+            const diff = touchEndX - touchStartX;
+            if (Math.abs(diff) > 50) {
+                if (diff < 0) nextSlide();
+                else prevSlide();
+            }
+        }, false);
+
+        window.addEventListener('DOMContentLoaded', () => {
+            const hash = window.location.hash;
+            if (hash && hash.startsWith('#slide-')) {
+                const s = parseInt(hash.replace('#slide-', ''));
+                if (!isNaN(s)) {
+                    showSlide(s);
+                    return;
+                }
+            }
+            showSlide(1);
+        });
+    </script>
+</body>
+</html>

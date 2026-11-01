@@ -176,13 +176,40 @@
         </div>
     </div>
 
+    <!-- Immediate Crown State Calibration -->
+    <script>
+    (function() {
+        try {
+            const k = 'studyStreakData_DB_v7';
+            const raw = localStorage.getItem(k);
+            if (raw) {
+                const data = JSON.parse(raw);
+                if (data && data.users) {
+                    Object.keys(data.users).forEach(u => {
+                        const usr = data.users[u];
+                        if (usr && Array.isArray(usr.badges)) {
+                            usr.badges.forEach(b => {
+                                if (b && b.id === 'b_weekly_champ') {
+                                    if (u === 'שליי' || usr.name === 'שלי') b.count = Math.max(Number(b.count) || 0, 5);
+                                    if (u.includes('ענבר') || (usr.name && usr.name.includes('ענבר'))) b.count = Math.max(Number(b.count) || 0, 4);
+                                }
+                            });
+                        }
+                    });
+                    localStorage.setItem(k, JSON.stringify(data));
+                }
+            }
+        } catch(e) {}
+    })();
+    </script>
+
     <!-- Modular Scripts -->
-    <script src="js/firebase-config.js?v=20261030_v10"></script>
-    <script src="js/helpers.js?v=20261030_v7"></script>
-    <script src="js/sync-helpers.js?v=20261028_2"></script>
+    <script src="js/firebase-config.js?v=20261101_v1"></script>
+    <script src="js/helpers.js?v=20261101_v1"></script>
+    <script src="js/sync-helpers.js?v=20261101_v1"></script>
     <script src="js/whatsapp-service.js?v=20261010_1"></script>
     <script src="js/file-storage.js?v=20261004_2"></script>
     <script type="text/babel" src="js/icons.jsx?v=20261004_2"></script>
-    <script type="text/babel" src="js/app.jsx?v=20261030_v10"></script>
+    <script type="text/babel" src="js/app.jsx?v=20261101_v1"></script>
 </body>
 </html>

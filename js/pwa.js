@@ -11,6 +11,11 @@ document.addEventListener('DOMContentLoaded', setupPWA);
 
 // Register Service Worker for Background Notifications & Lock-Screen Push
 if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+        console.log('StudyStreak Service Worker controller changed - auto reloading');
+        window.location.reload();
+    });
+
     window.addEventListener('load', () => {
         navigator.serviceWorker.register('sw.js')
             .then(reg => {
