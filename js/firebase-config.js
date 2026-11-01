@@ -22,12 +22,7 @@ try {
         } catch (e) {
             console.warn('Firestore settings warning:', e);
         }
-        // Enable offline persistence with multi-tab support if available
-        if (db && db.enablePersistence) {
-            db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-                console.warn('Firestore offline persistence warning:', err.code);
-            });
-        }
+        // Direct online WebChannel streaming (zero IndexedDB deadlocks on mobile)
     }
 } catch (err) {
     console.warn('Firebase initialization failed (offline mode active):', err);

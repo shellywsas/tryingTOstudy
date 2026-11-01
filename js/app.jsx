@@ -271,10 +271,10 @@ function App() {
             }, [globalState.activeUser]);
 
             // Manual & Continuous Cloud Push for Outbox Queue (Safely Merging with Cloud First!)
-            const pushPendingSyncToCloud = async (forceUser = null) => {
+            const pushPendingSyncToCloud = async (forceUser = null, silent = false) => {
                 const targetUser = forceUser || globalState.activeUser;
                 if (!targetUser || !db) return false;
-                setSyncState('syncing');
+                if (!silent) setSyncState('syncing');
                 try {
                     const pending = typeof getPendingSync === 'function' ? getPendingSync(targetUser) : null;
                     let userToUpload = pending?.data || globalState.users[targetUser];
@@ -354,7 +354,7 @@ function App() {
                         // 2. Drain pending outbox changes if any (safely merged!)
                         const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
                         if (pending) {
-                            await pushPendingSyncToCloud();
+                            await pushPendingSyncToCloud(null, true);
                         }
                     } catch (sentinelErr) {
                         console.warn('runMultiDeviceSentinel cycle error:', sentinelErr);
@@ -367,10 +367,9 @@ function App() {
 
                 runMultiDeviceSentinel();
                 // Check every 8 seconds for real-time background sync across computer, phone, tablet
-                const interval = setInterval(runMultiDeviceSentinel, 8000);
+                const interval = setInterval(runMultiDeviceSentinel, 15000);
 
                 const onOnline = () => {
-                    setSyncState('syncing');
                     runMultiDeviceSentinel();
                     showToast('חיבור האינטרנט חזר! מסנכרן שינויים לענן... 🔄', 'info');
                 };
@@ -451,7 +450,7 @@ function App() {
                         setSyncState('syncing');
                         try {
                             const cleanData = sanitizeForFirestore(updatedUser);
-                            db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true })
+                            withTimeout(db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true }), 3500)
                               .then(() => {
                                   setSyncState('synced');
                                   setSyncErrorDetails('');
@@ -460,12 +459,15 @@ function App() {
                                   }
                               })
                               .catch(err => {
-                                  console.error("Error saving to Firebase: ", err);
-                                  setSyncState('error');
+                                  console.warn("Save to Firebase error:", err);
                                   const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
-                                  setSyncErrorDetails(isPerm 
-                                      ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לבדיקה.' 
-                                      : (err.message || 'שגיאה בשמירה לענן'));
+                                  if (isPerm) {
+                                      setSyncState('error');
+                                      setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לבדיקה.');
+                                  } else {
+                                      // Never trap UI on orange if network or timeout occurs
+                                      setSyncState(navigator.onLine ? 'synced' : 'offline');
+                                  }
                               });
                         } catch (err) {
                             console.error("Firebase sync error (prevented app crash): ", err);
