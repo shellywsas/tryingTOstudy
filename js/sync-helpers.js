@@ -155,7 +155,7 @@
         return null;
     }
 
-    function mergeBadges(localBadges, remoteBadges) {
+    function mergeBadges(localBadges, remoteBadges, local, remote) {
         const listA = (Array.isArray(localBadges) ? localBadges : []).map(normalizeBadge).filter(Boolean);
         const listB = (Array.isArray(remoteBadges) ? remoteBadges : []).map(normalizeBadge).filter(Boolean);
         const map = new Map();
@@ -168,8 +168,10 @@
                     const wA = Array.isArray(existing.wonWeeks) ? existing.wonWeeks : [];
                     const wB = Array.isArray(b.wonWeeks) ? b.wonWeeks : [];
                     let mergedWeeks = Array.from(new Set([...wA, ...wB]));
-                    const isUserShely = (local && (local.username === 'שליי' || local.name === 'שלי')) || 
-                                        (remote && (remote.username === 'שליי' || remote.name === 'שלי'));
+                    const hasLocal = typeof local !== 'undefined' && local;
+                    const hasRemote = typeof remote !== 'undefined' && remote;
+                    const isUserShely = (hasLocal && (local.username === 'שליי' || local.name === 'שלי')) || 
+                                        (hasRemote && (remote.username === 'שליי' || remote.name === 'שלי'));
                     if (isUserShely) {
                         mergedWeeks = mergedWeeks.filter(w => w !== '2026-W45');
                     }
@@ -315,7 +317,7 @@
         const remoteSync = Number(remote.lastSync) || 0;
         const localSync = Number(local.lastSync) || 0;
 
-        const mergedBadges = mergeBadges(local.badges, remote.badges);
+        const mergedBadges = mergeBadges(local.badges, remote.badges, local, remote);
         const mergedExams = mergeExams(local.exams || [], remote.exams || []);
         const mergedDeletedTaskIds = Array.from(new Set([
             ...(Array.isArray(local.deletedTaskIds) ? local.deletedTaskIds : []),
