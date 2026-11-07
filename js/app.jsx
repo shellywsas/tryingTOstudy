@@ -670,59 +670,64 @@ function App() {
                 } catch(e) {}
             }, []);
 
-            // Real-Time Weekly Crowning and Midnight Reset with 30s Sentinel
+            // Real-Time Weekly Crowning & Sunday 00:00 Reset (strictly Sunday 00:00:00.000 / Saturday Midnight)
             useEffect(() => {
                 if (!activeUserData || !globalState.activeUser) return;
 
-                const checkCrowningAndMidnightReset = () => {
+                const checkCrowningAndMidnightReset = async () => {
                     const now = Date.now();
-                    const lastSat22 = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : (now - (7 * 86400000));
-                    const nextSat22 = typeof getNextSaturday22PM === 'function' ? getNextSaturday22PM(now) : (now + (7 * 86400000));
-                    const nextSatMidnight = typeof getNextSaturdayMidnight === 'function' ? getNextSaturdayMidnight(now) : (nextSat22 + (2 * 3600000));
+                    const weekStart = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(now) : (now - (now % 86400000));
+                    const nextSunday00AM = typeof getNextWeekReset === 'function' ? getNextWeekReset(now) : (weekStart + (7 * 86400000));
 
-                    // Target crowning at Saturday 22:00
-                    const targetCrowning = activeUserData.nextWeeklyCrowning || activeUserData.nextWeeklyReset || lastSat22;
-                    let targetReset = activeUserData.nextWeeklyReset || nextSatMidnight;
+                    // Target reset is strictly Sunday 00:00:00 (end of Saturday night)
+                    let targetReset = Number(activeUserData.nextWeeklyReset) || nextSunday00AM;
+                    // Heal any legacy 22:00 timestamp to true Sunday 00:00:00
                     if (targetReset && new Date(targetReset).getHours() === 22) {
                         targetReset = targetReset + (2 * 3600000);
                     }
 
-                    const crowningWeekKey = typeof getWeekIdentifier === 'function' ? getWeekIdentifier(new Date(lastSat22)) : '2026-W44';
+                    const completedWeekEnd = weekStart; // Sunday 00:00 of the week that just completed
+                    const completedWeekStart = completedWeekEnd - (7 * 86400000); // Preceding Sunday 00:00
+                    const crowningWeekKey = typeof getWeekIdentifier === 'function' ? getWeekIdentifier(new Date(completedWeekStart + (2 * 86400000))) : '2026-W45';
 
-                    // PHASE 1: At Saturday 22:00 -> Crown Single Official Champion via Shared Cloud Registry
-                    if (now >= targetCrowning) {
+                    // 1. Process Crowning & Reset once past Saturday 23:59:59.999 (Sunday 00:00)
+                    if (now >= targetReset) {
                         const existingOfficialWin = weeklyChampionsMap[crowningWeekKey];
                         const currentChampBadge = (activeUserData.badges || []).find(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
                         const userWonWeeks = Array.isArray(currentChampBadge?.wonWeeks) ? currentChampBadge.wonWeeks : [];
                         const userAlreadyHasThisWeek = userWonWeeks.includes(crowningWeekKey);
                         const celebratedKey = 'studystreak_celebrated_' + crowningWeekKey + '_' + (globalState.activeUser || '');
 
-                        const completedWeekEnd = targetCrowning <= now ? targetCrowning : lastSat22;
-                        const completedWeekStart = completedWeekEnd - (7 * 86400000);
-                        const midnightAfterCrowning = completedWeekEnd + (2 * 3600000);
-                        const isAlsoPastMidnight = now >= midnightAfterCrowning;
-                        const newWeekPointsAfter22 = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
+                        const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
+                        const userCompletedPts = Math.max(userHistoricalPts, Number(activeUserData.lastWeekPoints) || 0);
 
-                        if (!existingOfficialWin && (activeUserData.lastCrownedWeekEnd || 0) < targetCrowning) {
-                            // First online client crowns the definitive winner
-                            const pointsAfter22 = now > completedWeekEnd ? calculatePointsInWindow(activeUserData, completedWeekEnd, now) : 0;
-                            const currentPointsUpTo22 = Math.max(0, (activeUserData.weeklyPoints || 0) - pointsAfter22);
-                            const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
-                            const userWeeklyPts = Math.max(currentPointsUpTo22, userHistoricalPts);
+                        // If not yet crowned in cloud registry, fetch ALL friends directly from Firestore to ensure 100% fair crowning
+                        if (!existingOfficialWin && (activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) {
+                            let allFriendsData = [];
+                            if (typeof db !== 'undefined' && db && Array.isArray(activeUserData.friends) && activeUserData.friends.length > 0) {
+                                try {
+                                    const snaps = await Promise.all(
+                                        activeUserData.friends.map(f => f && f.username ? db.collection("users").doc(f.username).get().catch(() => null) : Promise.resolve(null))
+                                    );
+                                    allFriendsData = snaps.filter(s => s && s.exists).map(s => ({ ...s.data(), username: s.id }));
+                                } catch (e) {
+                                    console.warn('Friends fetch for crowning warning:', e);
+                                }
+                            }
+                            if (allFriendsData.length === 0) {
+                                allFriendsData = Object.values(liveFriends || {});
+                            }
 
                             let topUsername = globalState.activeUser;
                             let topName = activeUserData.name || globalState.activeUser;
-                            let topPts = userWeeklyPts;
+                            let topPts = userCompletedPts;
 
-                            const friendsArr = Object.values(liveFriends || {});
-                            friendsArr.forEach(f => {
-                                const fAfter22 = now > completedWeekEnd ? calculatePointsInWindow(f, completedWeekEnd, now) : 0;
-                                const fCurrentUpTo22 = Math.max(0, (f.weeklyPoints || 0) - fAfter22);
+                            allFriendsData.forEach(f => {
                                 const fHistPts = calculatePointsInWindow(f, completedWeekStart, completedWeekEnd);
-                                const fPts = Math.max(fCurrentUpTo22, f.crownedWeekPoints || 0, fHistPts);
+                                const fPts = Math.max(fHistPts, Number(f.weeklyPoints) || 0, Number(f.crownedWeekPoints) || 0, Number(f.lastWeekPoints) || 0);
                                 if (fPts > topPts) {
                                     topPts = fPts;
-                                    topUsername = f.username || f.id;
+                                    topUsername = f.username || f.name || f.id;
                                     topName = f.name || f.username;
                                 }
                             });
@@ -762,19 +767,22 @@ function App() {
                                     updatedBadges.push(newBadgeObj);
                                 }
 
+                                const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
+
                                 updateUserData(prev => ({
                                     ...prev,
                                     lastCrownedWeekEnd: completedWeekEnd,
-                                    crownedWeekPoints: existingOfficialWin.points || prev.weeklyPoints,
-                                    nextWeeklyCrowning: nextSat22,
-                                    weeklyPoints: isAlsoPastMidnight ? newWeekPointsAfter22 : prev.weeklyPoints,
-                                    nextWeeklyReset: isAlsoPastMidnight ? nextSatMidnight : midnightAfterCrowning,
+                                    crownedWeekPoints: existingOfficialWin.points || userCompletedPts,
+                                    lastWeekPoints: userCompletedPts,
+                                    weeklyPoints: pointsEarnedSinceSunday00AM,
+                                    nextWeeklyCrowning: nextSunday00AM,
+                                    nextWeeklyReset: nextSunday00AM,
                                     badges: updatedBadges
                                 }));
 
                                 if (!sessionStorage.getItem(celebratedKey)) {
                                     sessionStorage.setItem(celebratedKey, 'true');
-                                    showToast(`👑 מזל טוב! השעה 22:00 והוכתרת לאלופת השבוע עם ${existingOfficialWin.points} נקודות! 👑`, 'success');
+                                    showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${existingOfficialWin.points} נקודות! 👑`, 'success');
                                     setCrowningCelebrationModal({
                                         winnerName: activeUserData.name || 'אלופה',
                                         points: existingOfficialWin.points,
@@ -784,7 +792,7 @@ function App() {
                                 }
                                 return;
                             } else if (!isMeWinner && userAlreadyHasThisWeek) {
-                                // If user erroneously had this week, strip it so counts remain 100% exact
+                                // If user erroneously had this week, strip it cleanly so counts remain 100% exact
                                 const sanitizedWonWeeks = userWonWeeks.filter(w => w !== crowningWeekKey);
                                 let updatedBadges = [...(activeUserData.badges || [])].map(b => (typeof b === 'string' ? { id: b, earnedAt: new Date().toISOString() } : { ...b }));
                                 const idx = updatedBadges.findIndex(b => b.id === 'b_weekly_champ');
@@ -793,26 +801,35 @@ function App() {
                                         ...updatedBadges[idx],
                                         count: sanitizedWonWeeks.length,
                                         wonWeeks: sanitizedWonWeeks,
-                                        lastWonWeek: sanitizedWonWeeks[sanitizedWonWeeks.length - 1]
+                                        lastWonWeek: sanitizedWonWeeks[sanitizedWonWeeks.length - 1] || '2026-W44'
                                     };
-                                    updateUserData(prev => ({ ...prev, badges: updatedBadges }));
                                 }
+                                const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
+                                updateUserData(prev => ({
+                                    ...prev,
+                                    badges: updatedBadges,
+                                    lastWeekPoints: userCompletedPts,
+                                    crownedWeekPoints: userCompletedPts,
+                                    weeklyPoints: pointsEarnedSinceSunday00AM,
+                                    nextWeeklyCrowning: nextSunday00AM,
+                                    nextWeeklyReset: nextSunday00AM,
+                                    lastCrownedWeekEnd: completedWeekEnd
+                                }));
+                                return;
                             }
                         }
-                    }
 
-                    // PHASE 2: At Saturday 00:00 (Midnight) -> Reset points occurred up to 22:00 that week
-                    if (now >= targetReset) {
-                        const cutoff22PM = typeof getLastSaturday22PM === 'function' ? getLastSaturday22PM(now) : (targetReset - (2 * 3600000));
-                        const pointsEarnedSince22PM = calculatePointsInWindow(activeUserData, cutoff22PM, now);
-
+                        // Complete Sunday 00:00 Points Reset: points earned before Sunday 00:00 belong to completed week
+                        const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
                         updateUserData(prev => ({
                             ...prev,
-                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, prev.weeklyPoints || 0),
-                            lastWeekPoints: prev.crownedWeekPoints || prev.weeklyPoints || 0,
-                            weeklyPoints: pointsEarnedSince22PM,
-                            nextWeeklyCrowning: nextSat22,
-                            nextWeeklyReset: nextSatMidnight
+                            highestWeeklyPoints: Math.max(prev.highestWeeklyPoints || 0, userCompletedPts),
+                            lastWeekPoints: userCompletedPts,
+                            crownedWeekPoints: userCompletedPts,
+                            weeklyPoints: pointsEarnedSinceSunday00AM,
+                            nextWeeklyCrowning: nextSunday00AM,
+                            nextWeeklyReset: nextSunday00AM,
+                            lastCrownedWeekEnd: completedWeekEnd
                         }));
                         return;
                     }
@@ -821,7 +838,7 @@ function App() {
                 checkCrowningAndMidnightReset();
                 const crowningTimerId = setInterval(checkCrowningAndMidnightReset, 30 * 1000);
                 return () => clearInterval(crowningTimerId);
-            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd, Object.keys(liveFriends || {}).length]);
 
 
             useEffect(() => {
@@ -1376,31 +1393,36 @@ function App() {
             };
 
             const handleSendParentWeeklyReportWhatsApp = (silent = false) => {
-                const currentWeek = getWeekIdentifier();
+                const now = new Date();
+                const currentWeek = getWeekIdentifier(now);
                 const nowMs = Date.now();
 
-                // 1. Guard against duplicate sending when called automatically or rapidly
+                // 1. Strict Hermetic Guard: Exactly ONE parent weekly summary per week!
                 if (window.__parentWeeklyReportSending) {
-                    console.log('[WhatsApp Report] Already sending in-flight, skipping.');
+                    console.log('[WhatsApp Report] Already sending in-flight, skipping duplicate dispatch.');
                     return;
                 }
 
+                const lastSentWeek = activeUserData?.lastWeeklyReportSentWeek;
                 const lastSentTime = Number(activeUserData?.lastWeeklyReportSentTime) || 0;
                 const hoursSinceLastSent = (nowMs - lastSentTime) / (1000 * 60 * 60);
 
-                // If automated (silent), strictly enforce single send per week + 72h minimum cooldown
-                if (silent) {
-                    if (activeUserData?.lastWeeklyReportSentWeek === currentWeek || hoursSinceLastSent < 72) {
-                        console.log('[WhatsApp Report] Weekly report already sent for this week or within 72h cooldown, skipping.');
-                        return;
+                const localSentKey = 'studystreak_weekly_report_sent_' + currentWeek;
+                let localAlreadySent = false;
+                try {
+                    if (localStorage.getItem(localSentKey) || sessionStorage.getItem(localSentKey)) {
+                        localAlreadySent = true;
                     }
-                    try {
-                        const localSentKey = 'studystreak_weekly_report_sent_' + (activeUserData?.name || 'user') + '_' + currentWeek;
-                        if (localStorage.getItem(localSentKey)) {
-                            console.log('[WhatsApp Report] LocalStorage indicates already sent for week', currentWeek, 'skipping.');
-                            return;
-                        }
-                    } catch (e) {}
+                } catch (e) {}
+
+                const alreadySent = (lastSentWeek === currentWeek) || localAlreadySent || (hoursSinceLastSent < 96);
+
+                if (alreadySent) {
+                    console.log('[WhatsApp Report] Weekly report already sent for week', currentWeek, 'skipping duplicate send.');
+                    if (!silent) {
+                        showToast('דוח סיכום שבועי כבר נשלח השבוע להורים (מוגדר לשלוח רק דוח סיכום 1 בשבוע) 📨', 'info');
+                    }
+                    return;
                 }
 
                 const p1 = activeUserData?.parentPhoneNumber?.trim();
@@ -1420,14 +1442,14 @@ function App() {
                     return;
                 }
 
-                // Lock immediately in-memory and in localStorage
+                // Lock immediately across memory, sessionStorage and localStorage before any network request
                 window.__parentWeeklyReportSending = true;
                 try {
-                    const localSentKey = 'studystreak_weekly_report_sent_' + (activeUserData?.name || 'user') + '_' + currentWeek;
                     localStorage.setItem(localSentKey, String(nowMs));
+                    sessionStorage.setItem(localSentKey, String(nowMs));
                 } catch (e) {}
 
-                // Immediately update state and cloud before triggering network calls
+                // Immediately persist sent markers to state and cloud so tasks/points updates won't re-trigger
                 updateUserData(prev => ({
                     ...prev,
                     lastWeeklyReportSentWeek: currentWeek,
@@ -1436,10 +1458,10 @@ function App() {
 
                 const messageText = WhatsAppService.generateParentReportText(activeUserData.name || 'שלי', reportData);
 
-                // Check recipient preference: Send to primary parent only or both
+                // Deduplicate recipients cleanly to guarantee no duplicate numbers
                 const recipients = (activeUserData?.sendReportToPrimaryParentOnly)
                     ? [p1 || p2].filter(Boolean)
-                    : [p1, p2].filter(Boolean);
+                    : Array.from(new Set([p1, p2].filter(Boolean)));
 
                 Promise.allSettled(recipients.map(phone => {
                     return WhatsAppService.sendMessage({
@@ -1450,12 +1472,12 @@ function App() {
                 })).finally(() => {
                     setTimeout(() => {
                         window.__parentWeeklyReportSending = false;
-                    }, 20000);
+                    }, 30000);
                 });
 
                 if (!silent) {
                     if (activeUserData?.whatsappGateway?.instanceId) {
-                        showToast(`דוח שבועי נשלח אוטומטית לוואטסאפ של ${recipients.length > 1 ? 'שני ההורים' : 'ההורה'}! 📨🚀`, 'success');
+                        showToast(`דוח סיכום שבועי נשלח אוטומטית לוואטסאפ של ${recipients.length > 1 ? 'שני ההורים' : 'ההורה'}! 📨🚀`, 'success');
                     } else {
                         showToast(`נפתח וואטסאפ לשליחת הדוח השבועי 📲`, 'info');
                     }
@@ -1542,20 +1564,20 @@ function App() {
                     const hour = now.getHours();
                     const currentWeek = getWeekIdentifier(now);
 
-                    // 1. שליחת דוח הורים במוצאי שבת (החל מ-19:00) או בראשון בבוקר - מוגן בהרמטיות מפני שליחה כפולה
+                    // 1. שליחת דוח הורים במוצאי שבת (החל מ-19:00) או בראשון בבוקר - בדיוק הודעת סיכום אחת בלבד!
                     const isSaturdayEveningOrSunday = (day === 6 && hour >= 19) || (day === 0 && hour < 14);
-                    const alreadySentThisWeek = activeUserData.lastWeeklyReportSentWeek === currentWeek;
+                    const alreadySentThisWeek = (activeUserData.lastWeeklyReportSentWeek === currentWeek);
                     const lastSentTime = Number(activeUserData.lastWeeklyReportSentTime) || 0;
                     const hoursSinceLastSent = (now.getTime() - lastSentTime) / (1000 * 60 * 60);
                     const autoSendEnabled = activeUserData.autoSendParentReport !== false;
 
+                    const localSentKey = 'studystreak_weekly_report_sent_' + currentWeek;
                     let localAlreadySent = false;
                     try {
-                        const localSentKey = 'studystreak_weekly_report_sent_' + (activeUserData.name || 'user') + '_' + currentWeek;
-                        if (localStorage.getItem(localSentKey)) localAlreadySent = true;
+                        if (localStorage.getItem(localSentKey) || sessionStorage.getItem(localSentKey)) localAlreadySent = true;
                     } catch (e) {}
 
-                    if (isSaturdayEveningOrSunday && !alreadySentThisWeek && !localAlreadySent && hoursSinceLastSent >= 72 && autoSendEnabled) {
+                    if (isSaturdayEveningOrSunday && !alreadySentThisWeek && !localAlreadySent && hoursSinceLastSent >= 96 && autoSendEnabled) {
                         const hasParent = activeUserData.parentPhoneNumber || activeUserData.parentPhoneNumber2;
                         if (hasParent && !window.__parentWeeklyReportSending) {
                             console.log('Sending automatic Saturday evening parent report via WhatsApp...');

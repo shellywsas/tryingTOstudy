@@ -101,24 +101,25 @@
         return Array.from(byId.values());
     }
 
-    function getLastSaturday22PM(now) {
+    function getCurrentWeekStart(now) {
         const nowDate = now instanceof Date ? now : new Date(now || Date.now());
         const d = nowDate.getDay(); // 0 = Sun, ..., 6 = Sat
-        const target = new Date(nowDate);
-        if (d === 6) {
-            if (nowDate.getHours() < 22) {
-                target.setDate(nowDate.getDate() - 7);
-                target.setHours(22, 0, 0, 0);
-                return target.getTime();
-            } else {
-                target.setHours(22, 0, 0, 0);
-                return target.getTime();
-            }
-        }
-        const daysBack = d + 1;
-        target.setDate(nowDate.getDate() - daysBack);
-        target.setHours(22, 0, 0, 0);
-        return target.getTime();
+        const sunday = new Date(nowDate);
+        sunday.setDate(nowDate.getDate() - d);
+        sunday.setHours(0, 0, 0, 0);
+        return sunday.getTime();
+    }
+
+    function getNextWeekReset(now) {
+        const weekStart = getCurrentWeekStart(now);
+        const nextSunday = new Date(weekStart);
+        nextSunday.setDate(nextSunday.getDate() + 7);
+        nextSunday.setHours(0, 0, 0, 0);
+        return nextSunday.getTime();
+    }
+
+    function getLastSaturday22PM(now) {
+        return getCurrentWeekStart(now);
     }
 
     function normalizeBadge(b) {
@@ -741,6 +742,8 @@
         taskLooksCompleted,
         isTaskSubmittedOnTime,
         isAutoHistoryId,
+        getCurrentWeekStart,
+        getNextWeekReset,
         getLastSaturday22PM,
         normalizeBadge,
         mergeBadges,
@@ -763,6 +766,8 @@
     root.restoreOnDueEdit = restoreOnDueEdit;
     root.taskLooksCompleted = taskLooksCompleted;
     root.isTaskSubmittedOnTime = isTaskSubmittedOnTime;
+    root.getCurrentWeekStart = getCurrentWeekStart;
+    root.getNextWeekReset = getNextWeekReset;
     root.getLastSaturday22PM = getLastSaturday22PM;
     root.normalizeBadge = normalizeBadge;
     root.mergeBadges = mergeBadges;
