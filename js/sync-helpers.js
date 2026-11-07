@@ -122,6 +122,32 @@
         return getCurrentWeekStart(now);
     }
 
+    function getEffectiveWeeklyPoints(userData, nowInput) {
+        if (!userData) return 0;
+        const now = typeof nowInput === 'number' ? nowInput : (nowInput instanceof Date ? nowInput.getTime() : Date.now());
+        const weekStart = getCurrentWeekStart(now);
+        
+        const hist = Array.isArray(userData.pointsHistory) ? userData.pointsHistory : [];
+        const histSum = hist.filter(h => {
+            if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
+            const t = new Date(h.date).getTime();
+            return !isNaN(t) && t >= weekStart && t <= now;
+        }).reduce((sum, h) => sum + (h.points || 0), 0);
+        
+        const tasks = Array.isArray(userData.tasks) ? userData.tasks : [];
+        const taskSum = tasks.filter(t => {
+            if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
+            const tTime = new Date(t.completedAt).getTime();
+            return !isNaN(tTime) && tTime >= weekStart && tTime <= now;
+        }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
+        
+        const actualThisWeek = Math.max(histSum, taskSum);
+        if (actualThisWeek === 0) {
+            return 0;
+        }
+        return actualThisWeek;
+    }
+
     function normalizeBadge(b) {
         if (!b) return null;
         if (typeof b === 'string') return { id: b, earnedAt: new Date().toISOString() };
@@ -141,7 +167,12 @@
                 if (b.id === 'b_weekly_champ') {
                     const wA = Array.isArray(existing.wonWeeks) ? existing.wonWeeks : [];
                     const wB = Array.isArray(b.wonWeeks) ? b.wonWeeks : [];
-                    const mergedWeeks = Array.from(new Set([...wA, ...wB]));
+                    let mergedWeeks = Array.from(new Set([...wA, ...wB]));
+                    const isUserShely = (local && (local.username === 'שליי' || local.name === 'שלי')) || 
+                                        (remote && (remote.username === 'שליי' || remote.name === 'שלי'));
+                    if (isUserShely) {
+                        mergedWeeks = mergedWeeks.filter(w => w !== '2026-W45');
+                    }
                     const safeCount = mergedWeeks.length > 0 ? mergedWeeks.length : Math.max(existing.count || 1, b.count || 1);
                     map.set(b.id, {
                         ...existing,
@@ -353,9 +384,34 @@
             mergedNextWeeklyCrowning = Number(remote.nextWeeklyCrowning) || Number(local.nextWeeklyCrowning) || 0;
         } else {
             // Both devices are on the same week reset target
-            mergedWeeklyPoints = Math.max(Number(local.weeklyPoints) || 0, Number(remote.weeklyPoints) || 0);
-            mergedNextWeeklyReset = localReset || Math.max(Number(local.nextWeeklyReset) || 0, Number(remote.nextWeeklyReset) || 0);
+            const localSyncTime = Number(local.lastSync) || 0;
+            const remoteSyncTime = Number(remote.lastSync) || 0;
+            if (Number(remote.weeklyPoints) === 0 && remoteSyncTime >= localSyncTime) {
+                mergedWeeklyPoints = 0;
+            } else if (Number(local.weeklyPoints) === 0 && localSyncTime > remoteSyncTime) {
+                mergedWeeklyPoints = 0;
+            } else {
+                mergedWeeklyPoints = Math.max(Number(local.weeklyPoints) || 0, Number(remote.weeklyPoints) || 0);
+            }
+            const currentWeekStart = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(Date.now()) : 0;
+            const nextSunday00AM = typeof getNextWeekReset === 'function' ? getNextWeekReset(Date.now()) : (currentWeekStart + (7 * 86400000));
+            mergedNextWeeklyReset = localReset || nextSunday00AM;
             mergedNextWeeklyCrowning = Math.max(Number(local.nextWeeklyCrowning) || 0, Number(remote.nextWeeklyCrowning) || 0);
+        }
+
+        // Hermetic Boundary Invariant: If week reset/crowning completed for Sunday 00:00, ensure weeklyPoints is 0 if no points earned this week
+        const nowForSync = Date.now();
+        const currentWeekStart = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(nowForSync) : 0;
+        const resetDone = (local.lastCrownedWeekEnd && local.lastCrownedWeekEnd >= currentWeekStart) || 
+                          (remote.lastCrownedWeekEnd && remote.lastCrownedWeekEnd >= currentWeekStart) ||
+                          (Number(remote.weeklyPoints) === 0 && Number(remote.lastWeekPoints) > 0);
+        if (resetDone) {
+            const effCalculated = typeof getEffectiveWeeklyPoints === 'function'
+                ? getEffectiveWeeklyPoints({ ...local, ...remote, tasks: mergedTasks, pointsHistory: mergedPointsHistory }, nowForSync)
+                : null;
+            if (effCalculated !== null && (effCalculated === 0 || mergedWeeklyPoints > effCalculated)) {
+                mergedWeeklyPoints = effCalculated;
+            }
         }
 
         // WhatsApp Automation Invariants: Never wipe out sent markers from stale tabs/devices
@@ -582,7 +638,19 @@
             return updated;
         });
 
-        // Preserve weeklyPoints - weekly crowning and points reset are handled safely in weekly reset cycle
+        // Strict boundary: clamp weekly points to points earned in the current week (since Sunday 00:00)
+        const nowForHeal = Date.now();
+        const curWeekStart = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(nowForHeal) : 0;
+        const crowningOrResetDone = (user.lastCrownedWeekEnd && user.lastCrownedWeekEnd >= curWeekStart) || (Number(user.lastWeekPoints) > 0 && user.nextWeeklyReset && nowForHeal < user.nextWeeklyReset);
+        const effHealed = typeof getEffectiveWeeklyPoints === 'function'
+            ? getEffectiveWeeklyPoints({ ...user, tasks, pointsHistory: newHist }, nowForHeal)
+            : null;
+        if (effHealed !== null && (effHealed === 0 || weeklyPoints > effHealed)) {
+            if (crowningOrResetDone) {
+                weeklyPoints = effHealed;
+                changed = true;
+            }
+        }
 
         const isShely = (user.username && (user.username === 'שליי' || user.username === 'שלי')) || 
                 (user.name && (user.name === 'שלי' || user.name === 'שליי')) || 
@@ -614,27 +682,20 @@
 
                 if (isShely) {
                     const baseWeeksShely = ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
-                    let futureWeeks = wonWeeks.filter(w => w > '2026-W44');
-                    if (futureWeeks.length === 0 && hasFutureTimestamp && (bObj.count || 0) > 5) {
-                        for (let i = 5; i < bObj.count; i++) futureWeeks.push("2026-W" + (44 + (i - 4)));
-                    }
+                    let futureWeeks = wonWeeks.filter(w => w > '2026-W44' && w !== '2026-W45');
                     const finalWeeks = Array.from(new Set([...baseWeeksShely, ...futureWeeks]));
                     bObj.wonWeeks = finalWeeks;
                     bObj.count = finalWeeks.length;
-                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1];
+                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1] || '2026-W44';
                     badges[champBadgeIdx] = bObj;
                     changed = true;
                 } else if (isInbar) {
-                    const baseWeeksInbar = ['2026-W36', '2026-W39', '2026-W41', '2026-W43'];
-                    // Strip accidental 2026-W44 if present from morning race condition
-                    let futureWeeks = wonWeeks.filter(w => w > '2026-W44');
-                    if (futureWeeks.length === 0 && hasFutureTimestamp && (bObj.count || 0) > 4) {
-                        for (let i = 4; i < bObj.count; i++) futureWeeks.push("2026-W" + (44 + (i - 3)));
-                    }
+                    const baseWeeksInbar = ['2026-W36', '2026-W39', '2026-W41', '2026-W43', '2026-W45'];
+                    let futureWeeks = wonWeeks.filter(w => w > '2026-W45');
                     const finalWeeks = Array.from(new Set([...baseWeeksInbar, ...futureWeeks]));
                     bObj.wonWeeks = finalWeeks;
                     bObj.count = finalWeeks.length;
-                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1];
+                    bObj.lastWonWeek = finalWeeks[finalWeeks.length - 1] || '2026-W45';
                     badges[champBadgeIdx] = bObj;
                     changed = true;
                 }
@@ -745,6 +806,7 @@
         getCurrentWeekStart,
         getNextWeekReset,
         getLastSaturday22PM,
+        getEffectiveWeeklyPoints,
         normalizeBadge,
         mergeBadges,
         markPendingSync,
@@ -769,6 +831,7 @@
     root.getCurrentWeekStart = getCurrentWeekStart;
     root.getNextWeekReset = getNextWeekReset;
     root.getLastSaturday22PM = getLastSaturday22PM;
+    root.getEffectiveWeeklyPoints = getEffectiveWeeklyPoints;
     root.normalizeBadge = normalizeBadge;
     root.mergeBadges = mergeBadges;
     root.markPendingSync = markPendingSync;

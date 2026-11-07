@@ -55,24 +55,31 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
             if (!userData) return 0;
             const now = typeof nowInput === 'number' ? nowInput : (nowInput instanceof Date ? nowInput.getTime() : Date.now());
             const weekStart = getCurrentWeekStart(now);
-            const targetReset = Number(userData.nextWeeklyReset) || 0;
-            // If user's nextWeeklyReset is missing or in the past, calculate active points since Sunday 00:00
-            if (!targetReset || now >= targetReset) {
-                const hist = userData.pointsHistory || [];
-                const histSum = hist.filter(h => {
-                    if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
-                    const t = new Date(h.date).getTime();
-                    return !isNaN(t) && t >= weekStart && t <= now;
-                }).reduce((sum, h) => sum + (h.points || 0), 0);
-                const tasks = userData.tasks || [];
-                const taskSum = tasks.filter(t => {
-                    if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
-                    const tTime = new Date(t.completedAt).getTime();
-                    return !isNaN(tTime) && tTime >= weekStart && tTime <= now;
-                }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
-                return Math.max(histSum, taskSum);
+            
+            // Calculate active points earned strictly since Sunday 00:00:00 of the current week.
+            // Any tasks or points completed before Sunday 00:00:00 belong to the previous week!
+            const hist = Array.isArray(userData.pointsHistory) ? userData.pointsHistory : [];
+            const histSum = hist.filter(h => {
+                if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
+                const t = new Date(h.date).getTime();
+                return !isNaN(t) && t >= weekStart && t <= now;
+            }).reduce((sum, h) => sum + (h.points || 0), 0);
+            
+            const tasks = Array.isArray(userData.tasks) ? userData.tasks : [];
+            const taskSum = tasks.filter(t => {
+                if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
+                const tTime = new Date(t.completedAt).getTime();
+                return !isNaN(tTime) && tTime >= weekStart && tTime <= now;
+            }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
+            
+            const actualThisWeek = Math.max(histSum, taskSum);
+            
+            // If user has not earned any points in the current week window, weekly points is strictly 0.
+            // We never allow stale points from before Sunday 00:00:00 to leak into the new week.
+            if (actualThisWeek === 0) {
+                return 0;
             }
-            return Number(userData.weeklyPoints) || 0;
+            return actualThisWeek;
         };
 
         if (typeof window !== 'undefined') {

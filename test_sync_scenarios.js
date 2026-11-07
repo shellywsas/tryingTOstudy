@@ -1,4 +1,5 @@
 const assert = require('assert');
+const helpers = require('./js/helpers.js');
 const sync = require('./js/sync-helpers.js');
 
 console.log('Running StudyStreak Sync Tests...');
@@ -184,7 +185,7 @@ console.log('Running StudyStreak Sync Tests...');
     };
     const healedInbar = sync.healCompletedFromHistory(staleInbar);
     const champInbar = healedInbar.badges.find(b => b.id === 'b_weekly_champ');
-    assert.strictEqual(champInbar.count, 4, 'Inbar must be healed to 4 crowns!');
+    assert.strictEqual(champInbar.count, 5, 'Inbar must be healed to 5 crowns (including 2026-W45)!');
     console.log('[PASS] Scenario 5: Stale weekly champ badges correctly healed!');
 }
 
@@ -219,19 +220,19 @@ console.log('Running StudyStreak Sync Tests...');
     console.log('[PASS] Scenario 6: Stale device does not resurrect pre-reset weekly points!');
 }
 
-// SCENARIO 7: Future Crown Win Preservation (Week 45+)
-// Shely wins her 6th crown on Saturday Nov 7, 2026. Healing must preserve 6 crowns!
+// SCENARIO 7: Future Crown Win Preservation (Week 46+)
+// If Shely wins a future week (e.g. Week 46), healing must preserve 6 crowns!
 {
-    const shelyWeek45 = {
+    const shelyWeek46 = {
         name: 'שלי',
         username: 'שליי',
         tasks: [],
-        badges: [{ id: 'b_weekly_champ', count: 6, lastWonAt: '2026-11-07T22:00:00.000Z' }]
+        badges: [{ id: 'b_weekly_champ', count: 6, wonWeeks: ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44', '2026-W46'], lastWonAt: '2026-11-15T00:00:00.000Z' }]
     };
-    const healed = sync.healCompletedFromHistory(shelyWeek45);
+    const healed = sync.healCompletedFromHistory(shelyWeek46);
     const champ = healed.badges.find(b => b.id === 'b_weekly_champ');
-    assert.strictEqual(champ.count, 6, 'Future 6th crown must be preserved and NOT capped at 5!');
-    console.log('[PASS] Scenario 7: Future crown wins (6+) are preserved and not capped!');
+    assert.strictEqual(champ.count, 6, 'Future 6th crown (Week 46) must be preserved!');
+    console.log('[PASS] Scenario 7: Future crown wins (Week 46+) are preserved and not capped!');
 }
 
 // SCENARIO 8: Streak Invariant (No Lifetime Task Inflation)
@@ -249,6 +250,36 @@ console.log('Running StudyStreak Sync Tests...');
     assert.strictEqual(healed.taskStreak, 50, 'Shely active streak must be 50, not 67!');
     assert.strictEqual(healed.longestStreak, 50, 'Shely longest streak must be 50, not 67!');
     console.log('[PASS] Scenario 8: Erroneous streak of 67 is healed back to 50!');
+}
+
+// SCENARIO 9: Saturday Midnight / Sunday 00:00 Weekly Boundary Invariant
+// Any tasks completed on Saturday (including 22:15 Saturday) belong to the completed week.
+// On Sunday 00:00+, getEffectiveWeeklyPoints must return strictly 0 if no tasks completed since Sunday 00:00!
+{
+    const nowSunday = new Date('2026-11-08T01:15:00.000+02:00').getTime(); // Sunday 01:15 Israel time
+    const shelySunday = {
+        name: 'שלי',
+        username: 'שליי',
+        weeklyPoints: 3, // stale cached weekly points
+        lastWeekPoints: 9,
+        lastCrownedWeekEnd: new Date('2026-11-08T00:00:00+02:00').getTime(),
+        nextWeeklyReset: new Date('2026-11-15T00:00:00+02:00').getTime(),
+        tasks: [
+            { id: 't1', title: 'Friday task', completed: true, completedAt: '2026-11-06T15:25:00.000Z', pointsEarned: 3 },
+            { id: 't2', title: 'Saturday night task', completed: true, completedAt: '2026-11-07T20:15:00.000Z', pointsEarned: 3 }
+        ],
+        pointsHistory: [
+            { id: 'ph1', points: 3, date: '2026-11-06T15:25:00.000Z' },
+            { id: 'ph2', points: 3, date: '2026-11-07T20:15:00.000Z' }
+        ]
+    };
+    const eff = helpers.getEffectiveWeeklyPoints(shelySunday, nowSunday);
+    assert.strictEqual(eff, 0, 'Effective weekly points on Sunday morning must be 0 when tasks were done before Sunday 00:00!');
+
+    // Healing must also reset weeklyPoints to 0!
+    const healed = sync.healCompletedFromHistory(shelySunday);
+    assert.strictEqual(healed.weeklyPoints, 0, 'Healed weekly points must be 0!');
+    console.log('[PASS] Scenario 9: Saturday tasks stay in previous week; Sunday starts at 0 points!');
 }
 
 console.log('ALL TESTS PASSED SUCCESSFULLY! 🚀');

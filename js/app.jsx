@@ -690,8 +690,12 @@ function App() {
                     const completedWeekStart = completedWeekEnd - (7 * 86400000); // Preceding Sunday 00:00
                     const crowningWeekKey = typeof getWeekIdentifier === 'function' ? getWeekIdentifier(new Date(completedWeekStart + (2 * 86400000))) : '2026-W45';
 
-                    // 1. Process Crowning & Reset once past Saturday 23:59:59.999 (Sunday 00:00)
-                    if (now >= targetReset) {
+                    const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
+                    const hasStaleWeeklyPoints = (Number(activeUserData.weeklyPoints) || 0) > pointsEarnedSinceSunday00AM;
+                    const needsCrowningOrReset = (now >= targetReset) || ((activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) || hasStaleWeeklyPoints;
+
+                    // 1. Process Crowning & Reset once past Saturday 23:59:59.999 (Sunday 00:00) or if reset is needed
+                    if (needsCrowningOrReset) {
                         const existingOfficialWin = weeklyChampionsMap[crowningWeekKey];
                         const currentChampBadge = (activeUserData.badges || []).find(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
                         const userWonWeeks = Array.isArray(currentChampBadge?.wonWeeks) ? currentChampBadge.wonWeeks : [];
@@ -6000,7 +6004,7 @@ function App() {
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => { setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
-                                        <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{activeUserData.weeklyPoints}</div>
+                                        <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
                                         {(() => {
                                             const now = new Date();
                                             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -8257,7 +8261,7 @@ function App() {
                                         </button>
                                         
                                         <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>{ setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
-                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.weeklyPoints}</div>
+                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
                                         </button>
