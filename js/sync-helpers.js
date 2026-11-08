@@ -45,7 +45,10 @@
         if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
         if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(incomingT) ? false : (incomingT.autoPenaltyApplied || false) };
         if (localDone && incomingDone) {
-            const preferLocal = (localT.pointsEarned || 0) >= (incomingT.pointsEarned || 0);
+            const localMins = Number(localT.studyDurationMinutes) || 0;
+            const incomingMins = Number(incomingT.studyDurationMinutes) || 0;
+            const preferLocal = (localT.pointsEarned || 0) > (incomingT.pointsEarned || 0) || 
+                                ((localT.pointsEarned || 0) === (incomingT.pointsEarned || 0) && localMins >= incomingMins);
             const base = preferLocal ? { ...incomingT, ...localT } : { ...localT, ...incomingT };
             const onTime = isTaskSubmittedOnTime(base) || isTaskSubmittedOnTime(localT) || isTaskSubmittedOnTime(incomingT);
             return {

@@ -124,7 +124,7 @@ function App() {
 
 
             // Utility: wrap promise with strict timeout so tablet/mobile never hangs
-            const withTimeout = (promise, ms = 4000) => {
+            const withTimeout = (promise, ms = 15000) => {
                 return Promise.race([
                     promise,
                     new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout (' + ms + 'ms)')), ms))
@@ -150,10 +150,10 @@ function App() {
                     let docSnap = null;
                     try {
                         // Force read directly from server with strict timeout, bypassing stale client cache
-                        docSnap = await withTimeout(userRef.get({ source: 'server' }), 3500);
+                        docSnap = await withTimeout(userRef.get({ source: 'server' }), 15000);
                     } catch (e) {
                         try {
-                            docSnap = await withTimeout(userRef.get(), 2500);
+                            docSnap = await withTimeout(userRef.get(), 15000);
                         } catch (e2) {}
                     }
                     if (docSnap && docSnap.exists) {
@@ -178,7 +178,10 @@ function App() {
                             const healedDone = (healed.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
                             const remoteHist = (remoteData.pointsHistory || []).length;
                             const healedHist = (healed.pointsHistory || []).length;
-                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (remoteData.taskStreak || 0)) {
+                            const localNewer = (currentUserData?.lastSync || 0) > (remoteData?.lastSync || 0);
+                            const tasksDiffer = JSON.stringify((currentUserData || {}).tasks || []) !== JSON.stringify(remoteData.tasks || []);
+                            const histDiffer = JSON.stringify((currentUserData || {}).pointsHistory || []) !== JSON.stringify(remoteData.pointsHistory || []);
+                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (remoteData.taskStreak || 0) || (localNewer && (tasksDiffer || histDiffer))) {
                                 try {
                                     const clean = sanitizeForFirestore({ ...healed, lastSync: Date.now() });
                                     userRef.set(clean, { merge: true });
@@ -286,7 +289,7 @@ function App() {
                     // CRITICAL: Fetch current server document and merge with pending data before saving
                     // This guarantees we NEVER overwrite recent progress from another device!
                     try {
-                        const remoteDoc = await withTimeout(db.collection("users").doc(targetUser).get(), 3500);
+                        const remoteDoc = await withTimeout(db.collection("users").doc(targetUser).get(), 15000);
                         if (remoteDoc.exists) {
                             const remoteData = remoteDoc.data();
                             userToUpload = typeof mergeUserData === 'function'
