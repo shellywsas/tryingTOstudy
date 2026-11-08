@@ -448,7 +448,7 @@
             longestStreak: mergedLongestStreak,
             currentStreakStart: mergedStreakStart,
             currentStreakEmojis: mergedStreakEmojis,
-            totalPoints: mergedTotalPoints,
+            totalPoints: Math.max(mergedTotalPoints, (mergedPointsHistory || []).filter(h => h && !h.canceled && (h.points || 0) > 0).reduce((sum, h) => sum + (h.points || 0), 0)),
             weeklyPoints: mergedWeeklyPoints,
             lastCrownedWeekEnd: mergedLastCrownedWeekEnd || base.lastCrownedWeekEnd,
             crownedWeekPoints: mergedCrownedWeekPoints || base.crownedWeekPoints,
@@ -639,6 +639,13 @@
 
             return updated;
         });
+
+        // Total points self-healing: totalPoints must never be less than the net sum of positive pointsHistory
+        const histPosSum = newHist.filter(h => h && !h.canceled && (h.points || 0) > 0).reduce((sum, h) => sum + (h.points || 0), 0);
+        if (histPosSum > totalPoints) {
+            totalPoints = histPosSum;
+            changed = true;
+        }
 
         // Strict boundary: clamp weekly points to points earned in the current week (since Sunday 00:00)
         const nowForHeal = Date.now();

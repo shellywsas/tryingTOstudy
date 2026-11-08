@@ -5351,7 +5351,7 @@ function App() {
                                                             </div>
                                                             <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
                                                                 <div className="text-[10px] text-stone-400 font-bold">השבוע</div>
-                                                                <div className="font-black text-purple-600 text-sm">{u.weeklyPoints || 0} ⚡</div>
+                                                                <div className="font-black text-purple-600 text-sm">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(u) : (u.weeklyPoints || 0)} ⚡</div>
                                                             </div>
                                                             <div className="bg-stone-50 p-2 rounded-xl border border-stone-100">
                                                                 <div className="text-[10px] text-stone-400 font-bold">סה"כ נק'</div>
@@ -10023,7 +10023,7 @@ function App() {
                                     </div>
                                     <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
                                         <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">השבוע</div>
-                                        <div className="text-purple-600 font-black text-lg">{liveData.weeklyPoints !== undefined ? liveData.weeklyPoints : (activeFriend.weeklyPoints || 0)} ⚡</div>
+                                        <div className="text-purple-600 font-black text-lg">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(liveData.weeklyPoints !== undefined ? liveData : activeFriend) : (liveData.weeklyPoints !== undefined ? liveData.weeklyPoints : (activeFriend.weeklyPoints || 0))} ⚡</div>
                                     </div>
                                     <div className="bg-stone-50/80 p-2.5 rounded-2xl border border-stone-100 text-center">
                                         <div className="text-[10px] font-bold text-stone-400 mb-0.5 uppercase tracking-wide">סה"כ נק'</div>
