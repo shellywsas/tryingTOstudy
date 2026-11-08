@@ -282,4 +282,161 @@ console.log('Running StudyStreak Sync Tests...');
     console.log('[PASS] Scenario 9: Saturday tasks stay in previous week; Sunday starts at 0 points!');
 }
 
+// SCENARIO 10: Task Duration & Details Edit Cross-Device Sync
+// Computer had task completed with 52 minutes (0.87h).
+// User on Phone edited it to 67 minutes (1.12h) and updated title.
+// Merge must preserve the newer 67 minutes and Phone's title.
+{
+    const compTask = {
+        id: 't_edit_1',
+        title: 'Original Title',
+        completed: true,
+        completedAt: '2026-11-08T18:00:00.000Z',
+        pointsEarned: 3,
+        studyDurationMinutes: 52,
+        studyDurationHours: 0.87,
+        studyTimeRange: "52 דקות",
+        updatedAt: 1000
+    };
+    const phoneTask = {
+        id: 't_edit_1',
+        title: 'Updated on Phone',
+        completed: true,
+        completedAt: '2026-11-08T18:00:00.000Z',
+        pointsEarned: 3,
+        studyDurationMinutes: 67,
+        studyDurationHours: 1.12,
+        studyTimeRange: "שעה ו-7 דק'",
+        updatedAt: 2000
+    };
+    const userComp = { name: 'שלי', username: 'שליי', lastSync: 1000, tasks: [compTask] };
+    const userPhone = { name: 'שלי', username: 'שליי', lastSync: 2000, tasks: [phoneTask] };
+    const merged = sync.mergeUserData(userComp, userPhone);
+    const t = merged.tasks.find(x => x.id === 't_edit_1');
+    assert.strictEqual(t.studyDurationMinutes, 67, 'Newer 67 minutes must win!');
+    assert.strictEqual(t.studyDurationHours, 1.12, 'Newer 1.12h must win!');
+    assert.strictEqual(t.title, 'Updated on Phone', 'Newer title must win!');
+    console.log('[PASS] Scenario 10: Edited task duration (67 mins vs 52 mins) successfully wins via updatedAt!');
+}
+
+// SCENARIO 11: Task Edited Downwards (e.g. 60m down to 40m)
+// If user corrected an overreported duration from 60 mins to 40 mins on Phone,
+// the newer edit must NOT be ignored in favor of the larger number.
+{
+    const olderLarge = {
+        id: 't_down_1',
+        title: 'Homework',
+        completed: true,
+        completedAt: '2026-11-08T18:00:00.000Z',
+        pointsEarned: 2,
+        studyDurationMinutes: 60,
+        studyDurationHours: 1.0,
+        updatedAt: 1000
+    };
+    const newerCorrected = {
+        id: 't_down_1',
+        title: 'Homework',
+        completed: true,
+        completedAt: '2026-11-08T18:00:00.000Z',
+        pointsEarned: 2,
+        studyDurationMinutes: 40,
+        studyDurationHours: 0.67,
+        updatedAt: 3000
+    };
+    const userA = { name: 'שלי', username: 'שליי', lastSync: 1000, tasks: [olderLarge] };
+    const userB = { name: 'שלי', username: 'שליי', lastSync: 3000, tasks: [newerCorrected] };
+    const merged = sync.mergeUserData(userA, userB);
+    const t = merged.tasks.find(x => x.id === 't_down_1');
+    assert.strictEqual(t.studyDurationMinutes, 40, 'Newer corrected duration (40m) must win over older 60m!');
+    console.log('[PASS] Scenario 11: Downwards duration edit (40m vs 60m) successfully wins via updatedAt!');
+}
+
+// SCENARIO 12: Subject Additions & Edits Cross-Device Sync
+{
+    const user1 = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 1000,
+        subjects: [
+            { id: 's1', name: 'מתמטיקה', color: 'blue', updatedAt: 500 },
+            { id: 's2', name: 'אנגלית', color: 'red', updatedAt: 500 }
+        ]
+    };
+    const user2 = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 2000,
+        subjects: [
+            { id: 's1', name: 'מתמטיקה 5 יח"ל', color: 'purple', updatedAt: 1500 },
+            { id: 's3', name: 'פיזיקה', color: 'green', updatedAt: 1500 }
+        ]
+    };
+    const merged = sync.mergeUserData(user1, user2);
+    assert.strictEqual(merged.subjects.length, 3, 'All 3 unique subjects must be preserved!');
+    const s1 = merged.subjects.find(s => s.id === 's1');
+    assert.strictEqual(s1.name, 'מתמטיקה 5 יח"ל', 'Newer subject edit must win!');
+    assert.strictEqual(s1.color, 'purple', 'Newer subject color must win!');
+    console.log('[PASS] Scenario 12: Subjects merged losslessly and newer subject edits preserved!');
+}
+
+// SCENARIO 13: Deleted Subject Invariant
+{
+    const userWithSub = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 1000,
+        subjects: [{ id: 's_del', name: 'היסטוריה' }]
+    };
+    const userDeletedSub = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 2000,
+        subjects: [],
+        deletedSubjectIds: ['s_del']
+    };
+    const merged = sync.mergeUserData(userWithSub, userDeletedSub);
+    const s = merged.subjects.find(x => x.id === 's_del');
+    assert.strictEqual(s, undefined, 'Deleted subject must NOT be resurrected!');
+    assert.ok(merged.deletedSubjectIds.includes('s_del'), 'deletedSubjectIds must be preserved!');
+    console.log('[PASS] Scenario 13: Deleted subject is not resurrected by stale device!');
+}
+
+// SCENARIO 14: Deleted Exam Invariant
+{
+    const userWithExam = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 1000,
+        exams: [{ id: 'ex_del', examName: 'מבחן ישן' }]
+    };
+    const userDeletedExam = {
+        name: 'שלי',
+        username: 'שליי',
+        lastSync: 2000,
+        exams: [],
+        deletedExamIds: ['ex_del']
+    };
+    const merged = sync.mergeUserData(userWithExam, userDeletedExam);
+    const e = merged.exams.find(x => x.id === 'ex_del');
+    assert.strictEqual(e, undefined, 'Deleted exam must NOT be resurrected!');
+    assert.ok(merged.deletedExamIds.includes('ex_del'), 'deletedExamIds must be preserved!');
+    console.log('[PASS] Scenario 14: Deleted exam is not resurrected by stale device!');
+}
+
+// SCENARIO 15: Study Duration Hours/Minutes Self-Healing
+{
+    const userMismatchedDuration = {
+        name: 'שלי',
+        username: 'שליי',
+        tasks: [
+            { id: 't_heal_dur', completed: true, studyDurationMinutes: 90, studyDurationHours: null, studyTimeRange: null }
+        ]
+    };
+    const healed = sync.healCompletedFromHistory(userMismatchedDuration);
+    const t = healed.tasks[0];
+    assert.strictEqual(t.studyDurationHours, 1.5, 'studyDurationHours must be auto-computed as 1.5h!');
+    assert.strictEqual(t.studyTimeRange, "1 שע' ו-30 דק'", 'studyTimeRange must be formatted properly!');
+    console.log('[PASS] Scenario 15: Task study duration hours and minutes healed into 100% lockstep!');
+}
+
 console.log('ALL TESTS PASSED SUCCESSFULLY! 🚀');

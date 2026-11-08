@@ -131,16 +131,20 @@ function App() {
                 ]);
             };
 
-            // Watchdog: NEVER allow syncState to stay on 'syncing' for more than 4 seconds
+            // Watchdog: If state is syncing, verify outbox status before resetting
             useEffect(() => {
                 if (syncState === 'syncing') {
                     const timer = setTimeout(() => {
-                        console.warn('Syncing watchdog timeout reached (4s) - auto resetting sync state to synced');
-                        setSyncState(navigator.onLine ? 'synced' : 'offline');
-                    }, 4000);
+                        const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
+                        if (pending) {
+                            console.warn('Syncing watchdog: pending outbox items exist');
+                        } else {
+                            setSyncState(navigator.onLine ? 'synced' : 'offline');
+                        }
+                    }, 8000);
                     return () => clearTimeout(timer);
                 }
-            }, [syncState]);
+            }, [syncState, globalState.activeUser]);
 
             // Active server-direct pull to guarantee real-time cross-device sync without WebSocket latency
             const forceSyncFromServer = async (silent = true) => {
@@ -173,15 +177,16 @@ function App() {
                                 if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
                             }
 
-                            // If local had completed tasks or points that remote was missing, write back to Firestore immediately
+                            // If local had completed tasks, points, or ANY edited fields (tasks, subjects, exams) that remote was missing, write back to Firestore immediately
                             const remoteDone = (remoteData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
                             const healedDone = (healed.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
                             const remoteHist = (remoteData.pointsHistory || []).length;
                             const healedHist = (healed.pointsHistory || []).length;
                             const localNewer = (currentUserData?.lastSync || 0) > (remoteData?.lastSync || 0);
-                            const tasksDiffer = JSON.stringify((currentUserData || {}).tasks || []) !== JSON.stringify(remoteData.tasks || []);
-                            const histDiffer = JSON.stringify((currentUserData || {}).pointsHistory || []) !== JSON.stringify(remoteData.pointsHistory || []);
-                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (remoteData.taskStreak || 0) || (localNewer && (tasksDiffer || histDiffer))) {
+                            const remoteClean = sanitizeForFirestore(remoteData);
+                            const healedClean = sanitizeForFirestore(healed);
+                            const hasAnyDivergence = JSON.stringify(remoteClean) !== JSON.stringify(healedClean);
+                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (remoteData.taskStreak || 0) || (hasAnyDivergence && localNewer)) {
                                 try {
                                     const clean = sanitizeForFirestore({ ...healed, lastSync: Date.now() });
                                     userRef.set(clean, { merge: true });
@@ -239,12 +244,16 @@ function App() {
                                 if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
                             }
 
-                            // If local had completed tasks or points that liveData was missing, write back to Firestore immediately
+                            // If local had completed tasks, points, or ANY edited fields that liveData was missing, write back to Firestore immediately
                             const remoteDone = (liveData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
                             const healedDone = (healed.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
                             const remoteHist = (liveData.pointsHistory || []).length;
                             const healedHist = (healed.pointsHistory || []).length;
-                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (liveData.taskStreak || 0)) {
+                            const localNewer = (currentUserData?.lastSync || 0) > (liveData?.lastSync || 0);
+                            const liveClean = sanitizeForFirestore(liveData);
+                            const healedClean = sanitizeForFirestore(healed);
+                            const hasAnyDivergence = JSON.stringify(liveClean) !== JSON.stringify(healedClean);
+                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (liveData.taskStreak || 0) || (hasAnyDivergence && localNewer)) {
                                 try {
                                     const clean = sanitizeForFirestore({ ...healed, lastSync: Date.now() });
                                     userRef.set(clean, { merge: true });
@@ -315,7 +324,7 @@ function App() {
                         };
                     }
                     const cleanData = sanitizeForFirestore(userToUpload);
-                    await withTimeout(db.collection("users").doc(targetUser).set(cleanData, { merge: true }), 4000);
+                    await withTimeout(db.collection("users").doc(targetUser).set(cleanData, { merge: true }), 15000);
                     if (typeof clearPendingSync === 'function') {
                         clearPendingSync(targetUser);
                     }
@@ -329,25 +338,27 @@ function App() {
                         setSyncState('error');
                         setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied)');
                     } else {
-                        setSyncState(navigator.onLine ? 'synced' : 'offline');
+                        setSyncState('error');
+                        setSyncErrorDetails('שגיאה בהעלאת נתונים לענן: ' + (err.message || 'החיבור התנתק או פג הזמן'));
                     }
                     return false;
                 }
             };
 
-            // Multi-Device Continuous Sentinel Guard (Active poll every 8s + Instant wake on Visibility/Focus/Online)
+            // Multi-Device Continuous Sentinel Guard (Active poll every 12s + Instant wake on Visibility/Focus/Online)
             useEffect(() => {
                 if (!globalState.activeUser) return;
 
-                const runMultiDeviceSentinel = async () => {
-                    if (!navigator.onLine) {
+                const runMultiDeviceSentinel = async (isManual = false) => {
+                    if (typeof navigator !== 'undefined' && !navigator.onLine) {
                         setSyncState('offline');
-                        return;
+                        setSyncErrorDetails('אין חיבור לאינטרנט במכשיר זה');
+                        return false;
                     }
                     if (!db) {
                         setSyncState('error');
-                        setSyncErrorDetails('Firebase לא אותחל');
-                        return;
+                        setSyncErrorDetails('מסד הנתונים בענן (Firebase) לא אותחל');
+                        return false;
                     }
 
                     try {
@@ -357,20 +368,36 @@ function App() {
                         // 2. Drain pending outbox changes if any (safely merged!)
                         const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
                         if (pending) {
-                            await pushPendingSyncToCloud(null, true);
+                            const pushed = await pushPendingSyncToCloud(null, true);
+                            if (!pushed) {
+                                setSyncState('syncing');
+                                setSyncErrorDetails('ישנם שינויים מקומיים שממתינים לשמירה בענן');
+                                return false;
+                            }
                         }
+                        
+                        // 3. Confirm clean sync state
+                        const checkPendingAgain = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
+                        if (!checkPendingAgain) {
+                            setSyncState('synced');
+                            setSyncErrorDetails('');
+                        } else {
+                            setSyncState('syncing');
+                            setSyncErrorDetails('ישנם שינויים מקומיים שממתינים לשמירה בענן');
+                        }
+                        return true;
                     } catch (sentinelErr) {
                         console.warn('runMultiDeviceSentinel cycle error:', sentinelErr);
-                    } finally {
-                        if (syncState === 'syncing') {
-                            setSyncState(navigator.onLine ? 'synced' : 'offline');
-                        }
+                        setSyncState('error');
+                        setSyncErrorDetails(sentinelErr.message || 'שגיאה בתקשורת מול שרת הענן');
+                        return false;
                     }
                 };
 
+                window.__runMultiDeviceSentinel = runMultiDeviceSentinel;
                 runMultiDeviceSentinel();
-                // Check every 8 seconds for real-time background sync across computer, phone, tablet
-                const interval = setInterval(runMultiDeviceSentinel, 15000);
+                // Check every 12 seconds for real-time background sync across computer, phone, tablet
+                const interval = setInterval(runMultiDeviceSentinel, 12000);
 
                 const onOnline = () => {
                     runMultiDeviceSentinel();
@@ -454,7 +481,7 @@ function App() {
                     if (db) {
                         try {
                             const cleanData = sanitizeForFirestore(updatedUser);
-                            withTimeout(db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true }), 3500)
+                            withTimeout(db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true }), 15000)
                               .then(() => {
                                   setSyncState('synced');
                                   setSyncErrorDetails('');
@@ -469,8 +496,8 @@ function App() {
                                       setSyncState('error');
                                       setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לבדיקה.');
                                   } else {
-                                      // Never trap UI on orange if network or timeout occurs
-                                      setSyncState(navigator.onLine ? 'synced' : 'offline');
+                                      setSyncState(navigator.onLine ? 'syncing' : 'offline');
+                                      setSyncErrorDetails('השינוי נשמר במכשיר וממתין לסנכרון מול שרת הענן');
                                   }
                               });
                         } catch (err) {
@@ -1956,9 +1983,9 @@ function App() {
                 const trimmed = (newNotes || '').trim();
                 updateUserData(prev => ({
                     ...prev,
-                    tasks: (prev.tasks || []).map(t => t.id === taskId ? { ...t, notes: trimmed } : t)
+                    tasks: (prev.tasks || []).map(t => t.id === taskId ? { ...t, notes: trimmed, updatedAt: Date.now() } : t)
                 }));
-                setViewingNotesTask(prev => prev && prev.id === taskId ? { ...prev, notes: trimmed } : prev);
+                setViewingNotesTask(prev => prev && prev.id === taskId ? { ...prev, notes: trimmed, updatedAt: Date.now() } : prev);
                 setIsEditingNotesModal(false);
                 showToast('התכנון וההערות נשמרו בהצלחה! ✨', 'success');
             };
@@ -2777,7 +2804,8 @@ function App() {
                             studyDurationHours: hoursExact,
                             studyTimeRange: formattedDuration,
                             givenDate: actualGivenDate,
-                            attachments: attachments
+                            attachments: attachments,
+                            updatedAt: Date.now()
                         };
 
                         const historyLog = {
@@ -2831,7 +2859,8 @@ function App() {
                             dueDate: null,
                             autoPenaltyApplied: false,
                             whatsappRemindersEnabled: false,
-                            attachments: attachments
+                            attachments: attachments,
+                            updatedAt: Date.now()
                         };
 
                         updateUserData(prev => ({ ...prev, tasks: [pendingPractice, ...(prev.tasks || [])] }));
@@ -2855,7 +2884,8 @@ function App() {
                         understandingRating: null,
                         pointsEarned: 0,
                         givenDate: actualGivenDate,
-                        attachments: attachments
+                        attachments: attachments,
+                        updatedAt: Date.now()
                     };
                     
                     updateUserData(prev => checkAndAwardBadges({ 
@@ -2874,7 +2904,8 @@ function App() {
                         givenDate: actualGivenDate,
                         autoPenaltyApplied: false,
                         whatsappRemindersEnabled: taskData.whatsappRemindersEnabled !== false,
-                        attachments: attachments
+                        attachments: attachments,
+                        updatedAt: Date.now()
                     };
                     updateUserData(prev => ({ ...prev, tasks: [newTask, ...prev.tasks] }));
                     setTaskFormAttachments([]);
@@ -3086,7 +3117,8 @@ function App() {
                         studyDurationMinutes: durationInfo?.studyDurationMinutes || t.studyDurationMinutes || null,
                         studyTimeRange: durationInfo?.studyTimeRange || t.studyTimeRange || null,
                         studyTimeStart: durationInfo?.studyTimeStart || t.studyTimeStart || null,
-                        studyTimeEnd: durationInfo?.studyTimeEnd || t.studyTimeEnd || null
+                        studyTimeEnd: durationInfo?.studyTimeEnd || t.studyTimeEnd || null,
+                        updatedAt: Date.now()
                     } : t);
 
                     const updatedExams = (prev.exams || []).map(ex => {
@@ -3165,7 +3197,7 @@ function App() {
 
                     return {
                         ...prev,
-                        tasks: prev.tasks.map(t => t.id === taskToGiveUp.id ? { ...t, completed: true, givenUp: true, completedAt: now.toISOString(), pointsEarned: -10 } : t),
+                        tasks: prev.tasks.map(t => t.id === taskToGiveUp.id ? { ...t, completed: true, givenUp: true, completedAt: now.toISOString(), pointsEarned: -10, updatedAt: Date.now() } : t),
                         totalPoints: prev.totalPoints - 10,
                         weeklyPoints: prev.weeklyPoints - 10,
                         taskStreak: 0,
@@ -3241,6 +3273,7 @@ function App() {
                                 dueDate: newDueDate || t.dueDate || '',
                                 dueTime: newDueTime || t.dueTime || '',
                                 attachments: editTaskAttachments || t.attachments || [],
+                                updatedAt: Date.now()
                             };
                             if (newStartTime) {
                                 updated.startTime = newStartTime;
@@ -3376,7 +3409,7 @@ function App() {
 
                 updateUserData(prev => {
                     const updatedExams = prev.exams.map(ex => 
-                        ex.id === activeExamForGrade.id ? { ...ex, grade } : ex
+                        ex.id === activeExamForGrade.id ? { ...ex, grade, updatedAt: Date.now() } : ex
                     );
                     
                     const sub = prev.subjects.find(s => s.id === activeExamForGrade.subjectId);
@@ -3419,14 +3452,14 @@ function App() {
 
 
             const handleSaveSubject = (subData) => {
-                const subToSave = { ...subData, rules: tempRules };
+                const subToSave = { ...subData, rules: tempRules, updatedAt: Date.now() };
                 updateUserData(prev => {
                     const currentSubjects = prev.subjects || [];
                     const exists = subToSave.id ? currentSubjects.find(s => s.id === subToSave.id) : null;
                     if (exists) {
-                        return { ...prev, subjects: currentSubjects.map(s => s.id === subToSave.id ? { ...s, ...subToSave } : s) };
+                        return { ...prev, subjects: currentSubjects.map(s => s.id === subToSave.id ? { ...s, ...subToSave, updatedAt: Date.now() } : s) };
                     } else {
-                        return { ...prev, subjects: [...currentSubjects, { ...subToSave, id: subToSave.id || ('s_' + Date.now()) }] };
+                        return { ...prev, subjects: [...currentSubjects, { ...subToSave, id: subToSave.id || ('s_' + Date.now()), updatedAt: Date.now() }] };
                     }
                 });
                 toggleModal('subject', false);
@@ -3436,7 +3469,11 @@ function App() {
 
 
             const handleDeleteSubject = (id) => {
-                updateUserData(prev => ({ ...prev, subjects: prev.subjects.filter(s => s.id !== id) }));
+                updateUserData(prev => ({ 
+                    ...prev, 
+                    subjects: (prev.subjects || []).filter(s => s.id !== id),
+                    deletedSubjectIds: Array.from(new Set([...(prev.deletedSubjectIds || []), id]))
+                }));
                 showToast('מקצוע נמחק', 'success');
             };
 
@@ -4051,7 +4088,8 @@ function App() {
                             startTime: ses.startTime,
                             dueTime: ses.endTime,
                             autoPenaltyApplied: false,
-                            whatsappRemindersEnabled: true
+                            whatsappRemindersEnabled: true,
+                            updatedAt: Date.now()
                         };
                     });
 
@@ -4087,7 +4125,8 @@ function App() {
                             targetHours: examPlannerData.hours, 
                             sessionsCount: examPlannerData.sessions.length, 
                             completedSessionsCount: 0,
-                            cancellations: 0 
+                            cancellations: 0,
+                            updatedAt: Date.now()
                         }]
                     };
                 });
@@ -4116,7 +4155,8 @@ function App() {
                     targetHours: 0,
                     sessionsCount: 0,
                     completedSessionsCount: 0,
-                    cancellations: 0
+                    cancellations: 0,
+                    updatedAt: Date.now()
                 };
                 
                 updateUserData(prev => ({
@@ -4279,7 +4319,7 @@ function App() {
             const handleToggleArchiveExam = (examId, shouldArchive) => {
                 updateUserData(prev => ({
                     ...prev,
-                    exams: (prev.exams || []).map(e => e.id === examId ? { ...e, isArchived: shouldArchive } : e)
+                    exams: (prev.exams || []).map(e => e.id === examId ? { ...e, isArchived: shouldArchive, updatedAt: Date.now() } : e)
                 }));
                 showToast(shouldArchive ? 'המבחן הועבר לארכיון בהצלחה 📦' : 'המבחן הוחזר למבחנים קרובים 🗓️', 'success');
             };
@@ -5910,13 +5950,24 @@ function App() {
                                     <div className="flex items-center gap-2">
                                         <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
                                         <button
-                                            onClick={() => setIsSyncDiagnosticsOpen(true)}
-                                            className={`w-2.5 h-2.5 rounded-full transition-all cursor-pointer shrink-0 ${
-                                                syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' :
-                                                syncState === 'syncing' ? 'bg-amber-500 animate-pulse' :
-                                                syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]'
+                                            onClick={() => {
+                                                if (typeof window.__runMultiDeviceSentinel === 'function') {
+                                                    window.__runMultiDeviceSentinel(true);
+                                                }
+                                                setIsSyncDiagnosticsOpen(true);
+                                            }}
+                                            className={`w-3 h-3 rounded-full transition-all cursor-pointer shrink-0 ${
+                                                syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:scale-125' :
+                                                syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse hover:scale-125' :
+                                                syncState === 'offline' ? 'bg-stone-400 hover:scale-125' : 
+                                                'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce hover:scale-125'
                                             }`}
-                                            title={syncState === 'synced' ? 'מסונכרן לענן' : syncState === 'syncing' ? 'מסנכרן...' : 'סטטוס סנכרון'}
+                                            title={
+                                                syncState === 'synced' ? 'סנכרון ענן פעיל ב-100% 🟢 (לחצי לבדיקה)' :
+                                                syncState === 'syncing' ? 'סנכרון מתבצע כעת... 🟡 (לחצי לפרטים)' :
+                                                syncState === 'offline' ? 'מצב לא מקוון ⚪ (לחצי לפרטים)' :
+                                                'תקלת סנכרון זוהתה! 🔴 (לחצי לבדיקה ותיקון)'
+                                            }
                                         />
                                     </div>
                                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -5962,13 +6013,24 @@ function App() {
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
                             <button
-                                onClick={() => setIsSyncDiagnosticsOpen(true)}
-                                className={`w-2.5 h-2.5 rounded-full transition-all active:scale-95 cursor-pointer shrink-0 ${
-                                    syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.6)]' :
-                                    syncState === 'syncing' ? 'bg-amber-500 animate-pulse' :
-                                    syncState === 'offline' ? 'bg-stone-400' : 'bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.6)]'
+                                onClick={() => {
+                                    if (typeof window.__runMultiDeviceSentinel === 'function') {
+                                        window.__runMultiDeviceSentinel(true);
+                                    }
+                                    setIsSyncDiagnosticsOpen(true);
+                                }}
+                                className={`w-3 h-3 rounded-full transition-all active:scale-95 cursor-pointer shrink-0 ${
+                                    syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]' :
+                                    syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse' :
+                                    syncState === 'offline' ? 'bg-stone-400' : 
+                                    'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce'
                                 }`}
-                                title={syncState === 'synced' ? 'מסונכרן לענן' : syncState === 'syncing' ? 'מסנכרן...' : 'סטטוס סנכרון'}
+                                title={
+                                    syncState === 'synced' ? 'סנכרון ענן פעיל ב-100% 🟢 (לחצי לבדיקה)' :
+                                    syncState === 'syncing' ? 'סנכרון מתבצע כעת... 🟡 (לחצי לפרטים)' :
+                                    syncState === 'offline' ? 'מצב לא מקוון ⚪ (לחצי לפרטים)' :
+                                    'תקלת סנכרון זוהתה! 🔴 (לחצי לבדיקה ותיקון)'
+                                }
                             />
                         </div>
                         <div className="flex gap-2 items-center">
@@ -10848,7 +10910,7 @@ function App() {
                                 const updatedAttachments = attachments.filter((_, i) => i !== activeIndex);
                                 updateUserData(prev => ({
                                     ...prev,
-                                    tasks: prev.tasks.map(t => t.id === task.id ? { ...t, attachments: updatedAttachments } : t)
+                                    tasks: prev.tasks.map(t => t.id === task.id ? { ...t, attachments: updatedAttachments, updatedAt: Date.now() } : t)
                                 }));
                                 if (updatedAttachments.length === 0) {
                                     setViewingAttachment(null);
@@ -11864,43 +11926,113 @@ function App() {
                                     }`}>
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="font-black text-sm">
-                                                {syncState === 'synced' ? '✅ הסנכרון פועל בצורה מושלמת' :
+                                                {syncState === 'synced' ? '✅ הסנכרון פועל ב-100% בין הטלפון למחשב' :
                                                  syncState === 'syncing' ? '⏳ סנכרון מתבצע כעת מול הענן...' :
-                                                 syncState === 'offline' ? '📴 עבודה במצב מקומי (Offline)' :
-                                                 '⚠️ שגיאת הרשאות ענן (Firebase Permission Denied)'}
+                                                 syncState === 'offline' ? '📴 עבודה במצב לא מקוון (Offline)' :
+                                                 '⚠️ זוהתה בעיה בסנכרון מול שרת הענן'}
                                             </span>
-                                            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/80 border">
-                                                {syncState.toUpperCase()}
+                                            <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/90 border shadow-xs">
+                                                {syncState === 'synced' ? 'סונכרן 🟢' :
+                                                 syncState === 'syncing' ? 'בסנכרון 🟡' :
+                                                 syncState === 'offline' ? 'לא מקוון ⚪' : 'שגיאה 🔴'}
                                             </span>
                                         </div>
-                                        <p className="text-xs leading-relaxed opacity-90">
-                                            {syncState === 'synced' ? 'כל השינויים, המשימות והנקודות שמורים ומסונכרנים אוטומטית לענן וזמינים גם בטלפון וגם במחשב.' :
-                                             syncState === 'syncing' ? 'מעביר נתונים עדכניים לענן ומושך שינויים ממכשירים אחרים...' :
+                                        <p className="text-xs leading-relaxed opacity-95">
+                                            {syncState === 'synced' ? 'כל המשימות, שעות הלמידה, המקצועות והנקודות שמורים ומסונכרנים אוטומטית לענן וזמינים בזמן אמת גם בטלפון וגם במחשב.' :
+                                             syncState === 'syncing' ? 'שינויים שבוצעו במכשיר זה נשלחים כעת לענן או מתבצעת משיכת עדכונים ממכשיר אחר.' :
                                              syncState === 'offline' ? 'הדפדפן אינו מחובר כרגע לאינטרנט. כל המידע והשינויים שלך נשמרים בזיכרון המקומי ויסונכרנו אוטומטית ברגע שהחיבור יחזור!' :
-                                             'כל המידע שלך שמור ומאובטח במכשיר! השגיאה נובעת מסיום 30 ימי הטסט ב-Firebase. כדי לאפשר סנכרון דו-כיווני בין הטלפון למחשב, יש לעדכן את החוקים ב-Firebase Console.'}
+                                             'נמצא קושי בתקשורת מול הענן. המידע שלך שמור ומאובטח במכשיר. לחצי על "סנכרן ובדוק הכל עכשיו" לתיקון מהיר.'}
                                         </p>
                                         {syncErrorDetails && (
-                                            <div className="mt-2.5 p-2 bg-white/90 rounded-xl text-[11px] font-mono text-stone-600 border border-stone-200 overflow-x-auto text-left" dir="ltr">
+                                            <div className="mt-2.5 p-2.5 bg-white/95 rounded-xl text-xs font-medium text-rose-800 border border-rose-200 leading-normal" dir="rtl">
+                                                <span className="font-bold block mb-1">פירוט הבדיקה:</span>
                                                 {syncErrorDetails}
                                             </div>
                                         )}
                                     </div>
 
+                                    {/* דוח רכיבי בדיקת בריאות וסנכרון בזמן אמת */}
+                                    <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2.5 text-xs text-stone-700">
+                                        <div className="font-bold text-stone-900 text-xs mb-1.5 flex items-center justify-between">
+                                            <span className="flex items-center gap-1.5">
+                                                <span>📋</span> בדיקת רכיבי מערכת וסנכרון בזמן אמת
+                                            </span>
+                                            <span className="text-[10px] text-stone-500 font-normal">מתעדכן אוטומטית</span>
+                                        </div>
+                                        <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
+                                            <span className="text-stone-600">חיבור לרשת האינטרנט:</span>
+                                            <span className="font-bold flex items-center gap-1">
+                                                {typeof navigator !== 'undefined' && navigator.onLine 
+                                                    ? <span className="text-emerald-700">🟢 מחובר ותקין</span> 
+                                                    : <span className="text-rose-600">🔴 אין חיבור רשת</span>}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
+                                            <span className="text-stone-600">שרת ענן (Firebase Firestore):</span>
+                                            <span className="font-bold flex items-center gap-1">
+                                                {db 
+                                                    ? (syncState === 'error' && syncErrorDetails ? <span className="text-rose-600">⚠️ שגיאת גישה לענן</span> : <span className="text-emerald-700">🟢 מחובר וזמין בזמן אמת</span>) 
+                                                    : <span className="text-rose-600">🔴 שרת לא אותחל</span>}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
+                                            <span className="text-stone-600">תור שינויים ממתינים (Outbox):</span>
+                                            <span className="font-bold flex items-center gap-1">
+                                                {(typeof getPendingSync === 'function' && getPendingSync(globalState.activeUser))
+                                                    ? <span className="text-amber-600 font-extrabold">🟡 יש שינוי ממתין לשליחה</span>
+                                                    : <span className="text-emerald-700">🟢 הכל שמור בענן (0 ממתינים)</span>}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
+                                            <span className="text-stone-600">שעות למידה שבועיות ונקודות:</span>
+                                            <span className="font-bold text-stone-800">
+                                                {activeUserData ? `${activeUserData.weeklyPoints || 0} נק' שבועיות | ${(() => {
+                                                    const ws = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(Date.now()) : 0;
+                                                    const wt = (activeUserData.tasks || []).filter(t => t && t.completed && !t.givenUp && t.completedAt && new Date(t.completedAt).getTime() >= ws && t.studyDurationHours);
+                                                    const h = wt.reduce((s, t) => s + (Number(t.studyDurationHours) || 0), 0);
+                                                    return Math.round(h * 10) / 10;
+                                                })()} שע' למידה` : '-'}
+                                            </span>
+                                        </div>
+                                        <div className="flex items-center justify-between py-1">
+                                            <span className="text-stone-600">סנכרון רציף טלפון ↔ מחשב:</span>
+                                            <span className="font-bold">
+                                                {syncState === 'synced' 
+                                                    ? <span className="text-emerald-700">🟢 מסונכרן ב-100%</span> 
+                                                    : <span className="text-amber-700">⚠️ ממתין לעדכון סופי</span>}
+                                            </span>
+                                        </div>
+                                    </div>
+
                                     <button
                                         onClick={async () => {
-                                            showToast('מושך ומסנכרן נתונים עדכניים מהענן... 🔄', 'info');
+                                            showToast('מבצע בדיקת סנכרון דו-כיוונית מלאה מול הענן... 🔄', 'info');
                                             setSyncState('syncing');
                                             try {
+                                                const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
+                                                if (pending) {
+                                                    await pushPendingSyncToCloud(null, true);
+                                                }
                                                 await forceSyncFromServer(false);
-                                                showToast('הנתונים סונכרנו בהצלחה מהענן! ✅', 'success');
+                                                if (typeof window.__runMultiDeviceSentinel === 'function') {
+                                                    const ok = await window.__runMultiDeviceSentinel(true);
+                                                    if (ok) {
+                                                        showToast('כל הנתונים נבדקו ומסונכרנים ב-100% בין כל המכשירים! 🟢', 'success');
+                                                    } else {
+                                                        showToast('סנכרון בוצע - קיימת הערה בבדיקה', 'warning');
+                                                    }
+                                                } else {
+                                                    setSyncState('synced');
+                                                    showToast('הנתונים סונכרנו בהצלחה מהענן! ✅', 'success');
+                                                }
                                             } catch (e) {
-                                                showToast('סנכרון הסתיים (נשמר במכשיר)', 'info');
-                                            } finally {
-                                                setSyncState('synced');
+                                                setSyncState('error');
+                                                setSyncErrorDetails(e.message || 'שגיאה בביצוע סנכרון');
+                                                showToast('שגיאה בסנכרון: ' + (e.message || ''), 'error');
                                             }
                                         }}
-                                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
-                                        <span>🔄</span> סנכרן ומשוך עכשיו מהענן
+                                        className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer">
+                                        <span>🔄</span> סנכרן ובדוק הכל עכשיו (בדיקה דו-כיוונית מלאה)
                                     </button>
                                     <button
                                         onClick={() => {

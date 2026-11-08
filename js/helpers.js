@@ -497,7 +497,8 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                         examId: examId,
                         subjectId: newSubjectId || t.subjectId,
                         title: retTitle,
-                        lessonTopic: targetName ? `הכנה למבחן: ${targetName}` : t.lessonTopic
+                        lessonTopic: targetName ? `הכנה למבחן: ${targetName}` : t.lessonTopic,
+                        updatedAt: Date.now()
                     };
                 });
                 return { updatedTasks: updated, updatedCount: 0 };
@@ -612,7 +613,8 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 let updatedTask = {
                     ...t,
                     examId: examId,
-                    subjectId: newSubjectId || t.subjectId
+                    subjectId: newSubjectId || t.subjectId,
+                    updatedAt: Date.now()
                 };
 
                 if (targetName && oldName && oldName !== targetName) {

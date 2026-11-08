@@ -45,10 +45,18 @@
         if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
         if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(incomingT) ? false : (incomingT.autoPenaltyApplied || false) };
         if (localDone && incomingDone) {
-            const localMins = Number(localT.studyDurationMinutes) || 0;
-            const incomingMins = Number(incomingT.studyDurationMinutes) || 0;
-            const preferLocal = (localT.pointsEarned || 0) > (incomingT.pointsEarned || 0) || 
-                                ((localT.pointsEarned || 0) === (incomingT.pointsEarned || 0) && localMins >= incomingMins);
+            const localMod = localT.updatedAt || localT.lastModified || (localT.completedAt ? new Date(localT.completedAt).getTime() : 0) || localT.createdAt || 0;
+            const incomingMod = incomingT.updatedAt || incomingT.lastModified || (incomingT.completedAt ? new Date(incomingT.completedAt).getTime() : 0) || incomingT.createdAt || 0;
+            let preferLocal;
+            if (localMod !== incomingMod) {
+                // The version edited or updated more recently wins
+                preferLocal = localMod > incomingMod;
+            } else {
+                const localMins = Number(localT.studyDurationMinutes) || 0;
+                const incomingMins = Number(incomingT.studyDurationMinutes) || 0;
+                preferLocal = (localT.pointsEarned || 0) > (incomingT.pointsEarned || 0) || 
+                              ((localT.pointsEarned || 0) === (incomingT.pointsEarned || 0) && localMins >= incomingMins);
+            }
             const base = preferLocal ? { ...incomingT, ...localT } : { ...localT, ...incomingT };
             const onTime = isTaskSubmittedOnTime(base) || isTaskSubmittedOnTime(localT) || isTaskSubmittedOnTime(incomingT);
             return {
@@ -62,9 +70,10 @@
         return incomingMod >= localMod ? { ...localT, ...incomingT } : { ...incomingT, ...localT };
     }
 
-    function mergeExams(localExams, remoteExams) {
-        const local = Array.isArray(localExams) ? localExams : [];
-        const remote = Array.isArray(remoteExams) ? remoteExams : [];
+    function mergeExams(localExams, remoteExams, deletedExamIds = []) {
+        const delSet = new Set(Array.isArray(deletedExamIds) ? deletedExamIds : []);
+        const local = (Array.isArray(localExams) ? localExams : []).filter(e => e && e.id && !delSet.has(e.id));
+        const remote = (Array.isArray(remoteExams) ? remoteExams : []).filter(e => e && e.id && !delSet.has(e.id));
         const byId = new Map();
         for (const e of remote) {
             if (e && e.id) byId.set(e.id, e);
@@ -78,6 +87,28 @@
                 const localUpdated = e.updatedAt || e.lastModified || 0;
                 const remoteUpdated = r.updatedAt || r.lastModified || 0;
                 byId.set(e.id, localUpdated >= remoteUpdated ? { ...r, ...e } : { ...e, ...r });
+            }
+        }
+        return Array.from(byId.values());
+    }
+
+    function mergeSubjects(localSubs, remoteSubs, deletedSubjectIds = []) {
+        const delSet = new Set(Array.isArray(deletedSubjectIds) ? deletedSubjectIds : []);
+        const local = (Array.isArray(localSubs) ? localSubs : []).filter(s => s && s.id && !delSet.has(s.id));
+        const remote = (Array.isArray(remoteSubs) ? remoteSubs : []).filter(s => s && s.id && !delSet.has(s.id));
+        const byId = new Map();
+        for (const s of remote) {
+            if (s && s.id) byId.set(s.id, s);
+        }
+        for (const s of local) {
+            if (!s || !s.id) continue;
+            if (!byId.has(s.id)) {
+                byId.set(s.id, s);
+            } else {
+                const r = byId.get(s.id);
+                const localUpdated = s.updatedAt || s.lastModified || 0;
+                const remoteUpdated = r.updatedAt || r.lastModified || 0;
+                byId.set(s.id, localUpdated >= remoteUpdated ? { ...r, ...s } : { ...s, ...r });
             }
         }
         return Array.from(byId.values());
@@ -321,7 +352,6 @@
         const localSync = Number(local.lastSync) || 0;
 
         const mergedBadges = mergeBadges(local.badges, remote.badges, local, remote);
-        const mergedExams = mergeExams(local.exams || [], remote.exams || []);
         const mergedDeletedTaskIds = Array.from(new Set([
             ...(Array.isArray(local.deletedTaskIds) ? local.deletedTaskIds : []),
             ...(Array.isArray(remote.deletedTaskIds) ? remote.deletedTaskIds : [])
@@ -330,6 +360,12 @@
             ...(Array.isArray(local.deletedExamIds) ? local.deletedExamIds : []),
             ...(Array.isArray(remote.deletedExamIds) ? remote.deletedExamIds : [])
         ]));
+        const mergedDeletedSubjectIds = Array.from(new Set([
+            ...(Array.isArray(local.deletedSubjectIds) ? local.deletedSubjectIds : []),
+            ...(Array.isArray(remote.deletedSubjectIds) ? remote.deletedSubjectIds : [])
+        ]));
+        const mergedExams = mergeExams(local.exams || [], remote.exams || [], mergedDeletedExamIds);
+        const mergedSubjects = mergeSubjects(local.subjects || [], remote.subjects || [], mergedDeletedSubjectIds);
 
         const mergedPointsHistory = mergePointsHistory(local.pointsHistory, remote.pointsHistory);
         const mergedTasks = mergeTasks(local.tasks || [], remote.tasks || [], mergedPointsHistory, mergedDeletedTaskIds);
@@ -444,6 +480,7 @@
 
         const result = {
             ...base,
+            subjects: mergedSubjects,
             tasks: mergedTasks,
             pointsHistory: mergedPointsHistory,
             streakHistory: mergedStreakHistory,
@@ -464,6 +501,7 @@
             exams: mergedExams,
             deletedTaskIds: mergedDeletedTaskIds,
             deletedExamIds: mergedDeletedExamIds,
+            deletedSubjectIds: mergedDeletedSubjectIds,
             lastSync: Math.max(localSync, remoteSync, Date.now())
         };
 
@@ -522,6 +560,25 @@
 
             if (isDone && !updated.completed) {
                 updated.completed = true;
+                changed = true;
+            }
+
+            // Cross-device duration consistency: keep studyDurationMinutes and studyDurationHours in lockstep
+            if (updated.studyDurationMinutes && (!updated.studyDurationHours || !updated.studyTimeRange)) {
+                updated.studyDurationHours = parseFloat((updated.studyDurationMinutes / 60).toFixed(2));
+                const h = Math.floor(updated.studyDurationMinutes / 60);
+                const m = updated.studyDurationMinutes % 60;
+                updated.studyTimeRange = (h > 0 && m > 0)
+                    ? `${h} שע' ו-${m} דק'`
+                    : (h === 1 ? 'שעה' : (h === 2 ? 'שעתיים' : (h > 0 ? `${h} שעות` : `${m} דקות`)));
+                changed = true;
+            } else if (updated.studyDurationHours && !updated.studyDurationMinutes) {
+                updated.studyDurationMinutes = Math.round(updated.studyDurationHours * 60);
+                const h = Math.floor(updated.studyDurationMinutes / 60);
+                const m = updated.studyDurationMinutes % 60;
+                updated.studyTimeRange = (h > 0 && m > 0)
+                    ? `${h} שע' ו-${m} דק'`
+                    : (h === 1 ? 'שעה' : (h === 2 ? 'שעתיים' : (h > 0 ? `${h} שעות` : `${m} דקות`)));
                 changed = true;
             }
 
@@ -805,6 +862,7 @@
     const api = {
         mergeTasks,
         mergeExams,
+        mergeSubjects,
         applyRemoteUser,
         mergeUserData,
         mergePointsHistory,
@@ -831,6 +889,7 @@
     }
     root.mergeTasks = mergeTasks;
     root.mergeExams = mergeExams;
+    root.mergeSubjects = mergeSubjects;
     root.applyRemoteUser = applyRemoteUser;
     root.mergeUserData = mergeUserData;
     root.mergePointsHistory = mergePointsHistory;
