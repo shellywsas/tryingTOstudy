@@ -282,7 +282,7 @@ const FileStorage = (() => {
                 const batch = db.batch();
                 for (let i = 0; i < totalChunks; i++) {
                     const chunkData = item.dataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                    const chunkRef = db.collection('task_attachments').doc(${item.id}_c);
+                    const chunkRef = db.collection('task_attachments').doc(`${item.id}_c${i}`);
                     batch.set(chunkRef, {
                         attachmentId: item.id,
                         chunkIndex: i,
