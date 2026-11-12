@@ -116,8 +116,15 @@
 
     function mergeTasks(localTasks, incomingTasks, pointsHistory, deletedTaskIds = []) {
         const deletedSet = new Set(Array.isArray(deletedTaskIds) ? deletedTaskIds : []);
-        const local = (Array.isArray(localTasks) ? localTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
-        const incoming = (Array.isArray(incomingTasks) ? incomingTasks : []).filter(t => t && t.id && !deletedSet.has(t.id));
+        const isExcluded = (t) => {
+            if (!t || !t.id) return true;
+            if (deletedSet.has(t.id)) return true;
+            if (String(t.id).startsWith('t_live_verify_')) return true;
+            if (t.title && (t.title.includes('לבדיקת סנכרון חי') || t.title.includes('בדיקת סנכרון'))) return true;
+            return false;
+        };
+        const local = (Array.isArray(localTasks) ? localTasks : []).filter(t => !isExcluded(t));
+        const incoming = (Array.isArray(incomingTasks) ? incomingTasks : []).filter(t => !isExcluded(t));
         const byId = new Map();
         for (const t of local) {
             if (t && t.id) byId.set(t.id, t);
@@ -405,12 +412,20 @@
 
         const nowMs = Date.now();
         const GRACE_PERIOD_MS = 5 * 60 * 1000;
+        const streakStartMs = (local.currentStreakStart || remote.currentStreakStart) 
+            ? new Date(local.currentStreakStart || remote.currentStreakStart).getTime() 
+            : 0;
+
         const hasOverdueTask = (mergedTasks || []).some(t => {
             if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession) return false;
+            // Tasks that already processed a streak break must not keep breaking future streaks
+            if (t.streakBreakProcessed) return false;
             if (!t.dueDate) return false;
             const timeStr = t.dueTime || '23:59:59';
             const dueTime = new Date(`${t.dueDate}T${timeStr}`).getTime();
             if (isNaN(dueTime)) return false;
+            // If an active streak exists, only overdue tasks due AFTER this streak started can break it
+            if (streakStartMs && dueTime < streakStartMs) return false;
             return nowMs > (dueTime + GRACE_PERIOD_MS);
         });
 
