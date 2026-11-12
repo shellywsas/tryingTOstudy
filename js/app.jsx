@@ -2089,58 +2089,131 @@ function App() {
 
             const pieChartRef = useRef(null);
             const chartInstance = useRef(null);
+
+            const profileSubjectStats = useMemo(() => {
+                if (!activeUserData || !Array.isArray(activeUserData.tasks)) return { list: [], totalTasks: 0, totalMinutes: 0 };
+                const counts = {};
+                const durations = {};
+                let totalTasks = 0;
+                let totalMinutes = 0;
+                
+                (activeUserData.tasks || []).forEach(t => {
+                    if (t && t.completed && !t.givenUp) {
+                        totalTasks++;
+                        const sid = t.subjectId || 'other';
+                        counts[sid] = (counts[sid] || 0) + 1;
+                        const mins = Number(t.studyDurationMinutes) || (Number(t.studyDurationHours) ? Math.round(Number(t.studyDurationHours) * 60) : 0);
+                        durations[sid] = (durations[sid] || 0) + mins;
+                        totalMinutes += mins;
+                    }
+                });
+                
+                const subjects = activeUserData.subjects || [];
+                const list = Object.keys(counts).map(sid => {
+                    const sub = subjects.find(s => s && s.id === sid);
+                    const count = counts[sid];
+                    const pct = totalTasks > 0 ? Math.round((count / totalTasks) * 100) : 0;
+                    const mins = durations[sid] || 0;
+                    const hoursStr = mins >= 60 ? `${(mins / 60).toFixed(1)} שע'` : (mins > 0 ? `${mins} דק'` : null);
+                    return {
+                        id: sid,
+                        name: sub ? sub.name : 'כללי',
+                        emoji: sub ? (sub.emoji || '📚') : '📚',
+                        color: sub ? (sub.color || '#a8a29e') : '#a8a29e',
+                        count,
+                        percentage: pct,
+                        hoursStr
+                    };
+                }).sort((a, b) => b.count - a.count);
+                
+                return { list, totalTasks, totalMinutes };
+            }, [activeUserData?.tasks, activeUserData?.subjects]);
             
             useEffect(() => {
-                if (activeTab === 'profile' && pieChartRef.current && activeUserData) {
-                    const ctx = pieChartRef.current.getContext('2d');
+                if (activeTab !== 'profile' || !activeUserData) return;
+
+                const timer = setTimeout(() => {
+                    if (!pieChartRef.current) return;
+                    const canvas = pieChartRef.current;
                     
-                    const subjectCounts = {};
-                    activeUserData.tasks.forEach(t => {
-                        if (t.completed && !t.givenUp) {
-                            subjectCounts[t.subjectId] = (subjectCounts[t.subjectId] || 0) + 1;
+                    // Safely clean up any existing Chart instance on this canvas
+                    try {
+                        if (typeof Chart !== 'undefined' && Chart.getChart) {
+                            const existing = Chart.getChart(canvas);
+                            if (existing) existing.destroy();
                         }
-                    });
-                    
-                    const labels = [];
-                    const data = [];
-                    const backgroundColor = [];
-                    
-                    Object.keys(subjectCounts).forEach(subId => {
-                        const sub = activeUserData.subjects.find(s => s.id === subId);
-                        labels.push(sub ? `${sub.emoji} ${sub.name}` : 'כללי');
-                        data.push(subjectCounts[subId]);
-                        backgroundColor.push(sub ? sub.color : '#a8a29e');
-                    });
-                    
-                    if (chartInstance.current) chartInstance.current.destroy();
-                    
-                    if (data.length > 0) {
+                    } catch (e) {}
+
+                    if (chartInstance.current) {
+                        try { chartInstance.current.destroy(); } catch (e) {}
+                        chartInstance.current = null;
+                    }
+
+                    const { list } = profileSubjectStats;
+                    if (!list || list.length === 0 || typeof Chart === 'undefined') return;
+
+                    const labels = list.map(s => `${s.emoji} ${s.name}`);
+                    const data = list.map(s => s.count);
+                    const backgroundColor = list.map(s => s.color);
+
+                    try {
+                        const ctx = canvas.getContext('2d');
+                        const isMobile = typeof window !== 'undefined' && window.innerWidth < 640;
                         chartInstance.current = new Chart(ctx, {
-                            type: 'pie',
+                            type: 'doughnut',
                             data: {
                                 labels: labels,
                                 datasets: [{
                                     data: data,
                                     backgroundColor: backgroundColor,
                                     borderWidth: 2,
-                                    borderColor: '#ffffff'
+                                    borderColor: '#ffffff',
+                                    hoverOffset: 6
                                 }]
                             },
                             options: {
                                 responsive: true,
                                 maintainAspectRatio: false,
+                                cutout: '62%',
                                 plugins: {
-                                    legend: { position: 'right', rtl: true, labels: { font: { family: 'Heebo' } } }
+                                    legend: {
+                                        display: !isMobile,
+                                        position: 'right',
+                                        rtl: true,
+                                        labels: {
+                                            font: { family: 'Heebo', size: 12 },
+                                            padding: 10,
+                                            boxWidth: 12,
+                                            boxHeight: 12
+                                        }
+                                    },
+                                    tooltip: {
+                                        rtl: true,
+                                        callbacks: {
+                                            label: (context) => {
+                                                const val = context.raw || 0;
+                                                const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                                                const pct = total > 0 ? Math.round((val / total) * 100) : 0;
+                                                return ` ${val} משימות (${pct}%)`;
+                                            }
+                                        }
+                                    }
                                 }
                             }
                         });
+                    } catch (chartErr) {
+                        console.warn('Profile doughnut chart render error:', chartErr);
                     }
-                }
-                
+                }, 80);
+
                 return () => {
-                    if (chartInstance.current) chartInstance.current.destroy();
+                    clearTimeout(timer);
+                    if (chartInstance.current) {
+                        try { chartInstance.current.destroy(); } catch (e) {}
+                        chartInstance.current = null;
+                    }
                 };
-            }, [activeTab, activeUserData?.tasks, activeUserData?.subjects]);
+            }, [activeTab, profileSubjectStats]);
 
 
             // Admin Panel State & Helpers
@@ -8298,30 +8371,104 @@ function App() {
                                         </div>
                                     </div>
                                     
-                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 relative z-10">
-                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95" onClick={()=>{ setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
-                                            <div className="text-4xl font-black text-emerald-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.totalPoints}</div>
+                                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8 relative z-10">
+                                        <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95 shadow-xs" onClick={()=>{ setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
+                                            <div className="text-3xl md:text-4xl font-black text-emerald-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.totalPoints || 0}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">סה"כ נקודות</div>
+                                            <div className="text-[10px] text-stone-400 mt-1 font-medium">פירוט היסטוריה</div>
                                         </button>
                                         
-                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95" onClick={()=>{ setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
-                                            <div className="text-4xl font-black text-purple-500 mb-2 group-hover:scale-105 transition-transform" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
+                                        <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95 shadow-xs" onClick={()=>{ setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
+                                            <div className="text-3xl md:text-4xl font-black text-purple-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
                                         </button>
                                         
-                                        <button className="bg-stone-50 border border-stone-200 p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-rose-50 hover:border-rose-200 active:scale-[0.98]" onClick={()=>toggleModal('streakHistory', true)}>
-                                            <div className="text-4xl font-black text-rose-500 mb-2 group-hover:scale-110 transition-transform flex items-center gap-2" dir="ltr">{activeUserData.longestStreak} <span className="text-2xl drop-shadow-sm">🔥</span></div>
-                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">שיא רצף נוכחי</div>
+                                        <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-amber-50 hover:border-amber-200 active:scale-95 shadow-xs" onClick={()=>toggleModal('streakHistory', true)}>
+                                            <div className="text-3xl md:text-4xl font-black text-amber-500 mb-1 md:mb-2 group-hover:scale-110 transition-transform flex items-center gap-1.5" dir="ltr">
+                                                <span>{activeUserData.taskStreak || 0}</span>
+                                                <span className="text-2xl drop-shadow-sm">🔥</span>
+                                            </div>
+                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">רצף פעיל</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-medium">לחצי להיסטוריה</div>
+                                        </button>
+
+                                        <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-rose-50 hover:border-rose-200 active:scale-95 shadow-xs" onClick={()=>toggleModal('streakHistory', true)}>
+                                            <div className="text-3xl md:text-4xl font-black text-rose-500 mb-1 md:mb-2 group-hover:scale-110 transition-transform flex items-center gap-1.5" dir="ltr">
+                                                <span>{activeUserData.longestStreak || 0}</span>
+                                                <span className="text-2xl drop-shadow-sm">🏆</span>
+                                            </div>
+                                            <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">שיא רצף</div>
+                                            <div className="text-[10px] text-stone-400 mt-1 font-medium">כל הזמנים</div>
                                         </button>
                                     </div>
                                     
-                                    <div className="bg-white p-6 rounded-3xl border border-stone-100 shadow-sm relative z-10 mb-8">
-                                        <h3 className="font-bold text-lg mb-4 text-stone-800">התפלגות למידה לפי מקצוע 📊</h3>
-                                        <div className="h-64 w-full">
-                                            <canvas ref={pieChartRef}></canvas>
+                                    <div className="bg-white p-6 md:p-8 rounded-3xl border border-stone-100 shadow-sm relative z-10 mb-8">
+                                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-6 border-b border-stone-100 pb-4">
+                                            <div>
+                                                <h3 className="font-extrabold text-xl text-stone-800 flex items-center gap-2">
+                                                    <span>התפלגות למידה לפי מקצוע</span>
+                                                    <span className="text-xl">📊</span>
+                                                </h3>
+                                                <p className="text-xs text-stone-500 font-medium mt-1">
+                                                    סה"כ {profileSubjectStats.totalTasks} משימות שהושלמו בהצלחה
+                                                </p>
+                                            </div>
+                                            {profileSubjectStats.totalTasks > 0 && (
+                                                <span className="self-start sm:self-auto bg-purple-50 text-purple-700 border border-purple-200 px-3 py-1 rounded-full text-xs font-bold">
+                                                    {profileSubjectStats.list.length} מקצועות פעילים
+                                                </span>
+                                            )}
                                         </div>
+
+                                        {profileSubjectStats.totalTasks === 0 ? (
+                                            <div className="text-center py-12 px-4 bg-stone-50 rounded-2xl border border-dashed border-stone-200">
+                                                <div className="text-4xl mb-3">📚</div>
+                                                <div className="font-bold text-stone-700 text-sm">עדיין לא הושלמו משימות במערכת</div>
+                                                <p className="text-xs text-stone-400 mt-1">סמני משימות כ"בוצע" בלוח המשימות כדי לראות כאן את גרף ההתפלגות והסטטיסטיקות!</p>
+                                            </div>
+                                        ) : (
+                                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center">
+                                                {/* Visual Doughnut Chart */}
+                                                <div className="lg:col-span-5 flex items-center justify-center">
+                                                    <div className="relative w-full max-w-[280px] h-[240px] flex items-center justify-center">
+                                                        <canvas ref={pieChartRef}></canvas>
+                                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none text-center">
+                                                            <span className="text-2xl font-black text-stone-800 tracking-tight">{profileSubjectStats.totalTasks}</span>
+                                                            <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">משימות</span>
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                {/* Subject Breakdown Bars & Cards */}
+                                                <div className="lg:col-span-7 space-y-3">
+                                                    {profileSubjectStats.list.map(item => (
+                                                        <div key={item.id} className="bg-stone-50/80 hover:bg-stone-50 p-3 rounded-2xl border border-stone-200/70 transition-all">
+                                                            <div className="flex items-center justify-between mb-1.5 text-xs font-bold">
+                                                                <span className="flex items-center gap-1.5 text-stone-800">
+                                                                    <span>{item.emoji}</span>
+                                                                    <span>{item.name}</span>
+                                                                </span>
+                                                                <span className="text-stone-500 font-extrabold flex items-center gap-2">
+                                                                    {item.hoursStr && <span className="text-[11px] text-stone-400 font-semibold">{item.hoursStr} •</span>}
+                                                                    <span className="text-stone-700">{item.count} משימות</span>
+                                                                    <span className="text-purple-600 bg-purple-100/70 px-1.5 py-0.5 rounded-md text-[10px]">{item.percentage}%</span>
+                                                                </span>
+                                                            </div>
+                                                            <div className="w-full h-2 bg-stone-200/80 rounded-full overflow-hidden">
+                                                                <div 
+                                                                    className="h-full rounded-full transition-all duration-500 ease-out" 
+                                                                    style={{ 
+                                                                        width: `${item.percentage}%`, 
+                                                                        backgroundColor: item.color || '#a855f7' 
+                                                                    }} 
+                                                                />
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
                                     </div>
 
 
