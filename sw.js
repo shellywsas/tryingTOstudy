@@ -1,7 +1,7 @@
 /**
  * StudyStreak Pro - Service Worker for Background Notifications & PWA
  */
-const CACHE_NAME = 'studystreak-v20261108_6';
+const CACHE_NAME = 'studystreak-v20261113_5';
  
 self.addEventListener('install', (event) => {
     self.skipWaiting();
@@ -115,6 +115,13 @@ self.addEventListener('message', (event) => {
 
 // Required by Google Chrome Android for WebAPK installation
 self.addEventListener('fetch', (event) => {
+    // Always fetch latest scripts and html directly from network
+    if (event.request.mode === 'navigate' || event.request.destination === 'script' || event.request.destination === 'document') {
+        event.respondWith(
+            fetch(event.request).catch(() => caches.match(event.request))
+        );
+        return;
+    }
     event.respondWith(
         fetch(event.request).catch(() => caches.match(event.request))
     );
