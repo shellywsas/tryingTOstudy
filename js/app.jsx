@@ -874,16 +874,18 @@ function App() {
                             const dueDate = new Date(`${task.dueDate}T${timeStr}`);
                             if (isNaN(dueDate.getTime())) return task;
 
+                            // An uncompleted task that already broke a streak must never break future streaks again
+                            if (task.streakBreakProcessed) return task;
+
                             const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
-                            const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 86400000);
+                            // If an active streak exists, only a task due AFTER this streak started can break it
+                            const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 5 * 60 * 1000);
 
                             if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS)) {
-                                if ((healedPrev.taskStreak || 0) > 0 || !task.streakBreakProcessed) {
-                                    shouldBreakStreak = true;
-                                    if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
-                                        oldestUncompletedDate = dueDate;
-                                        oldestUncompletedTaskId = task.id;
-                                    }
+                                shouldBreakStreak = true;
+                                if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
+                                    oldestUncompletedDate = dueDate;
+                                    oldestUncompletedTaskId = task.id;
                                 }
                             }
                             const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
@@ -9205,15 +9207,20 @@ function App() {
 
                                     <p className="text-sm text-stone-500 mb-6 font-medium leading-relaxed">תעדי את ההבנה והקשיים שלך עכשיו, כדי שמחולל המבחנים יידע לבנות לך תוכנית חזרה מושלמת.</p>
                                     
-                                    <form onSubmit={(e) => {
+                                    <form noValidate onSubmit={(e) => {
                                         e.preventDefault();
                                         const chosenReason = activeTaskIsLate ? (lateReason === 'אחר' ? otherLateReason : lateReason) : '';
                                         if (activeTaskIsLate && !chosenReason) {
-                                            showToast('אנא בחרי סיבת איחור', 'error');
+                                            showToast('אנא בחרי סיבת איחור ⏰', 'warning');
+                                            return;
+                                        }
+                                        const ratingVal = e.target.rating ? Number(e.target.rating.value) : 0;
+                                        if (!ratingVal || isNaN(ratingVal)) {
+                                            showToast('אנא דרגי את רמת ההבנה שלך (1 עד 5) ⭐️', 'warning');
                                             return;
                                         }
                                         const durationInfo = calculateStudyDuration(studyTimeMode, studyDurationHoursInput, studyTimeStart, studyTimeEnd);
-                                        handleCompleteTask(activeTask, Number(e.target.rating.value), e.target.hard.value, chosenReason, durationInfo);
+                                        handleCompleteTask(activeTask, ratingVal, e.target.hard ? e.target.hard.value : '', chosenReason, durationInfo);
                                     }} className="space-y-6">
                                         
                                         {activeTaskIsLate && (
