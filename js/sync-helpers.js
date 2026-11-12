@@ -290,15 +290,30 @@
         const listA = Array.isArray(localStreaks) ? localStreaks : [];
         const listB = Array.isArray(remoteStreaks) ? remoteStreaks : [];
         const map = new Map();
-        for (const item of [...listB, ...listA]) {
-            if (!item) continue;
-            const key = item.id ? String(item.id) : (item.startDate && item.endDate ? `${item.startDate}_${item.endDate}` : null);
+
+        // Purge dummy test baselines like 'sh_september_baseline'
+        const combined = [...listB, ...listA].filter(item => {
+            if (!item) return false;
+            if (item.id === 'sh_september_baseline') return false;
+            return true;
+        });
+
+        for (const item of combined) {
+            // Deduplicate primarily by brokenByTaskId if present, else by id, else by dates
+            const key = item.brokenByTaskId 
+                ? ('broken_' + item.brokenByTaskId) 
+                : (item.id ? String(item.id) : (item.startDate && item.endDate ? `${item.startDate}_${item.endDate}` : null));
             if (!key) continue;
             if (!map.has(key)) {
                 map.set(key, item);
             } else {
                 const existing = map.get(key);
-                map.set(key, { ...existing, ...item });
+                map.set(key, {
+                    ...existing,
+                    ...item,
+                    length: Math.max(Number(existing.length) || 0, Number(item.length) || 0),
+                    emojis: Array.from(new Set([...(existing.emojis || []), ...(item.emojis || [])]))
+                });
             }
         }
         const merged = Array.from(map.values());
@@ -327,7 +342,17 @@
             return t;
         });
 
-        if ((taskStreak === 0 || taskStreak === undefined) && longestStreak > 0) {
+        const hasActiveOverdue = tasks.some(t => {
+            if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession) return false;
+            if (!t.dueDate) return false;
+            const dueTime = new Date(`${t.dueDate}T${t.dueTime || '23:59:59'}`).getTime();
+            return !isNaN(dueTime) && Date.now() > (dueTime + 5 * 60 * 1000);
+        });
+
+        if (hasActiveOverdue) {
+            taskStreak = 0;
+            changed = true;
+        } else if ((taskStreak === 0 || taskStreak === undefined) && longestStreak > 0) {
             const hasActiveBreak = Array.isArray(user.streakHistory) && user.streakHistory.length > 0;
             if (!hasActiveBreak) {
                 taskStreak = longestStreak;
@@ -371,22 +396,42 @@
         const mergedTasks = mergeTasks(local.tasks || [], remote.tasks || [], mergedPointsHistory, mergedDeletedTaskIds);
         const mergedStreakHistory = mergeStreakHistory(local.streakHistory, remote.streakHistory);
 
-        // Streak Count Invariant: Never lose streak progress due to stale device syncing
+        // Streak Count Invariant: Never lose streak progress due to stale device syncing,
+        // BUT strictly break streak to 0 if ANY uncompleted task is overdue!
         let localStreak = Number(local.taskStreak) || 0;
         let remoteStreak = Number(remote.taskStreak) || 0;
         let localLongest = Number(local.longestStreak) || 0;
         let remoteLongest = Number(remote.longestStreak) || 0;
 
-        const isShelyUser = local.username === 'שליי' || local.name === 'שלי' || remote.username === 'שליי' || remote.name === 'שלי';
-        if (isShelyUser) {
-            if (localStreak === 67) localStreak = 50;
-            if (remoteStreak === 67) remoteStreak = 50;
-            if (localLongest === 67) localLongest = 50;
-            if (remoteLongest === 67) remoteLongest = 50;
+        const nowMs = Date.now();
+        const GRACE_PERIOD_MS = 5 * 60 * 1000;
+        const hasOverdueTask = (mergedTasks || []).some(t => {
+            if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession) return false;
+            if (!t.dueDate) return false;
+            const timeStr = t.dueTime || '23:59:59';
+            const dueTime = new Date(`${t.dueDate}T${timeStr}`).getTime();
+            if (isNaN(dueTime)) return false;
+            return nowMs > (dueTime + GRACE_PERIOD_MS);
+        });
+
+        let mergedTaskStreak;
+        if (hasOverdueTask) {
+            // Invariant: If there is an uncompleted overdue task, active streak MUST be 0!
+            mergedTaskStreak = 0;
+        } else {
+            const localHasZero = localStreak === 0 && Array.isArray(local.streakHistory) && local.streakHistory.length > 0;
+            const remoteHasZero = remoteStreak === 0 && Array.isArray(remote.streakHistory) && remote.streakHistory.length > 0;
+            if (localHasZero && localSync >= remoteSync) {
+                mergedTaskStreak = 0;
+            } else if (remoteHasZero && remoteSync >= localSync) {
+                mergedTaskStreak = 0;
+            } else {
+                mergedTaskStreak = Math.max(localStreak, remoteStreak);
+            }
         }
 
-        const mergedTaskStreak = Math.max(localStreak, remoteStreak);
-        const mergedLongestStreak = Math.max(localLongest, remoteLongest, mergedTaskStreak);
+        const historyMaxStreak = mergedStreakHistory.reduce((max, s) => Math.max(max, Number(s.length) || 0), 0);
+        const mergedLongestStreak = Math.max(localLongest, remoteLongest, localStreak, remoteStreak, mergedTaskStreak, historyMaxStreak);
 
         let mergedStreakStart = local.currentStreakStart || remote.currentStreakStart || null;
         if (local.currentStreakStart && remote.currentStreakStart) {
@@ -727,14 +772,60 @@
         const isInbar = (user.username && user.username.includes('ענבר')) || (user.name && user.name.includes('ענבר'));
 
         // Streak healing: preserve real active streak without artificial lifetime task inflation
-        let streakVal = taskStreak !== undefined ? taskStreak : (user.taskStreak || 0);
-        let longestVal = user.longestStreak || 0;
-        if (isShely) {
-            if (streakVal === 67) streakVal = 50;
-            if (longestVal === 67) longestVal = 50;
+        // Check for any overdue uncompleted task
+        const GRACE_PERIOD_MS = 5 * 60 * 1000;
+        const overdueTask = tasks.find(t => {
+            if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession) return false;
+            if (!t.dueDate) return false;
+            const timeStr = t.dueTime || '23:59:59';
+            const dueTime = new Date(`${t.dueDate}T${timeStr}`).getTime();
+            if (isNaN(dueTime)) return false;
+            return nowForHeal > (dueTime + GRACE_PERIOD_MS);
+        });
+
+        // Clean dummy seeded baselines & deduplicate streakHistory
+        const hadSeptemberBaseline = streakHistory.some(s => s && s.id === 'sh_september_baseline');
+        streakHistory = streakHistory.filter(s => s && s.id !== 'sh_september_baseline');
+        const seenBrokenTaskIds = new Set();
+        const prevHistLen = streakHistory.length;
+        streakHistory = streakHistory.filter(s => {
+            if (!s) return false;
+            if (s.brokenByTaskId) {
+                if (seenBrokenTaskIds.has(s.brokenByTaskId)) return false;
+                seenBrokenTaskIds.add(s.brokenByTaskId);
+            }
+            return true;
+        });
+        if (hadSeptemberBaseline || streakHistory.length !== prevHistLen) {
+            changed = true;
         }
+
+        let streakVal = taskStreak !== undefined ? Number(taskStreak) : (Number(user.taskStreak) || 0);
+        let longestVal = Number(user.longestStreak) || 0;
+
+        if (overdueTask) {
+            // Overdue task exists: active streak MUST be 0 immediately!
+            if (streakVal > 0) {
+                longestVal = Math.max(longestVal, streakVal);
+                const alreadyHasBroken = streakHistory.some(s => s && s.brokenByTaskId === overdueTask.id);
+                if (!alreadyHasBroken) {
+                    streakHistory.unshift({
+                        id: 'sh_' + overdueTask.id + '_broken',
+                        startDate: user.currentStreakStart || null,
+                        endDate: new Date(`${overdueTask.dueDate}T${overdueTask.dueTime || '23:59:59'}`).toISOString(),
+                        length: streakVal,
+                        emojis: [...(user.currentStreakEmojis || [])],
+                        brokenByTaskId: overdueTask.id
+                    });
+                }
+                streakVal = 0;
+                changed = true;
+            }
+        }
+
         const safeStreak = Math.max(streakVal, 0);
-        const safeLongest = Math.max(longestVal, safeStreak);
+        const historyMax = streakHistory.reduce((max, s) => Math.max(max, Number(s.length) || 0), 0);
+        const safeLongest = Math.max(longestVal, safeStreak, historyMax);
 
         // Canonical Crown Architecture: Distinct wonWeeks Set
         // Shely has 5 official wins up to Week 44. Inbar has 4 official wins.

@@ -235,21 +235,50 @@ console.log('Running StudyStreak Sync Tests...');
     console.log('[PASS] Scenario 7: Future crown wins (Week 46+) are preserved and not capped!');
 }
 
-// SCENARIO 8: Streak Invariant (No Lifetime Task Inflation)
-// Stale device had streak 67 due to lifetime completed task count heuristic.
-// Healing must restore Shely to her true active streak of 50!
+// SCENARIO 8: Overdue Task Breaks Streak Immediately & Prevents Resurrect
+// If an uncompleted task is overdue, the streak must break to 0 immediately.
+// Stale devices with an active streak must not resurrect it to > 0!
 {
-    const staleShelyStreak = {
+    const overdueTask = {
+        id: 't_overdue_1',
+        title: 'Overdue Task',
+        completed: false,
+        dueDate: '2026-11-12',
+        dueTime: '22:00'
+    };
+    const staleDevice = {
         name: 'שלי',
         username: 'שליי',
-        taskStreak: 67,
-        longestStreak: 67,
-        tasks: Array.from({ length: 67 }, (_, i) => ({ id: 't' + i, completed: true, dueDate: '2026-10-30', dueTime: '22:00' }))
+        taskStreak: 57,
+        longestStreak: 57,
+        streakHistory: [{ id: 'sh_september_baseline', length: 17, endDate: '2026-09-01' }],
+        tasks: [overdueTask]
     };
-    const healed = sync.healCompletedFromHistory(staleShelyStreak);
-    assert.strictEqual(healed.taskStreak, 50, 'Shely active streak must be 50, not 67!');
-    assert.strictEqual(healed.longestStreak, 50, 'Shely longest streak must be 50, not 67!');
-    console.log('[PASS] Scenario 8: Erroneous streak of 67 is healed back to 50!');
+    const healed = sync.healCompletedFromHistory(staleDevice);
+    assert.strictEqual(healed.taskStreak, 0, 'Active streak must break to 0 when task is overdue!');
+    assert.strictEqual(healed.longestStreak, 57, 'Longest streak must be preserved at 57!');
+    assert.strictEqual(healed.streakHistory.length, 1, 'Only the real broken streak should be recorded, fake baseline purged!');
+    assert.strictEqual(healed.streakHistory[0].length, 57, 'Recorded broken streak must have length 57!');
+    assert.ok(!healed.streakHistory.some(s => s.id === 'sh_september_baseline'), 'sh_september_baseline must be purged!');
+
+    // Stale sync merge test
+    const remoteDevice = {
+        name: 'שלי',
+        username: 'שליי',
+        taskStreak: 57,
+        longestStreak: 57,
+        tasks: [overdueTask]
+    };
+    const localDevice = {
+        name: 'שלי',
+        username: 'שליי',
+        taskStreak: 0,
+        longestStreak: 57,
+        tasks: [{ ...overdueTask, streakBreakProcessed: true }]
+    };
+    const merged = sync.mergeUserData(localDevice, remoteDevice);
+    assert.strictEqual(merged.taskStreak, 0, 'Stale device must not resurrect taskStreak from 0 when overdue task is pending!');
+    console.log('[PASS] Scenario 8: Overdue task breaks streak to 0 immediately and prevents resurrection!');
 }
 
 // SCENARIO 9: Saturday Midnight / Sunday 00:00 Weekly Boundary Invariant

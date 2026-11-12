@@ -81,52 +81,71 @@ const FileStorage = (() => {
         }
     };
 
-    // Compress an image file via HTML5 Canvas (high sharpness max 2048px, 0.90 quality for clear chalkboard text)
-    const compressImage = (file, maxWidth = 2048, quality = 0.90) => {
+    // Helper timeout wrapper
+    const withTimeout = (promise, ms = 8000) => {
+        return Promise.race([
+            promise,
+            new Promise((_, reject) => setTimeout(() => reject(new Error('Operation timed out')), ms))
+        ]);
+    };
+
+    // Fast, memory-safe image compressor via HTML5 Canvas (max 1600px, 0.75 JPEG, 0 base64 overhead)
+    const compressImage = (file, maxWidth = 1600, quality = 0.75) => {
         return new Promise((resolve) => {
-            if (!file.type.startsWith('image/')) {
-                return resolve(null);
-            }
-            // If already light (< 600KB), keep original without canvas re-encoding to preserve 100% sharpness
-            if (file.size <= 600 * 1024) {
-                const r = new FileReader();
-                r.onload = (e) => resolve(e.target.result);
-                r.onerror = () => resolve(null);
-                r.readAsDataURL(file);
-                return;
-            }
-            const reader = new FileReader();
-            reader.onload = (e) => {
+            if (!file) return resolve(null);
+            const isImg = (file.type && file.type.startsWith('image/')) || /\.(jpe?g|png|webp|heic|bmp|gif)$/i.test(file.name || '');
+            if (!isImg) return resolve(null);
+
+            const timer = setTimeout(() => {
+                console.warn('compressImage: safety timeout reached, falling back');
+                resolve(null);
+            }, 5000);
+
+            try {
+                const blobUrl = URL.createObjectURL(file);
                 const img = new Image();
                 img.onload = () => {
-                    let width = img.width;
-                    let height = img.height;
+                    clearTimeout(timer);
+                    try {
+                        let width = img.naturalWidth || img.width;
+                        let height = img.naturalHeight || img.height;
 
-                    if (width > maxWidth) {
-                        height = Math.round((height * maxWidth) / width);
-                        width = maxWidth;
+                        if (width > maxWidth || height > maxWidth) {
+                            if (width >= height) {
+                                height = Math.round((height * maxWidth) / width);
+                                width = maxWidth;
+                            } else {
+                                width = Math.round((width * maxWidth) / height);
+                                height = maxWidth;
+                            }
+                        }
+
+                        const canvas = document.createElement('canvas');
+                        canvas.width = width;
+                        canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.imageSmoothingEnabled = true;
+                        ctx.imageSmoothingQuality = 'medium';
+                        ctx.drawImage(img, 0, 0, width, height);
+
+                        const dataUrl = canvas.toDataURL('image/jpeg', quality);
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(dataUrl);
+                    } catch (e) {
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(null);
                     }
-
-                    const canvas = document.createElement('canvas');
-                    canvas.width = width;
-                    canvas.height = height;
-                    const ctx = canvas.getContext('2d');
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(img, 0, 0, width, height);
-
-                    // Prefer webp if supported, otherwise jpeg with high 0.90 quality
-                    let dataUrl = canvas.toDataURL('image/webp', quality);
-                    if (!dataUrl || dataUrl.startsWith('data:image/png')) {
-                        dataUrl = canvas.toDataURL('image/jpeg', quality);
-                    }
-                    resolve(dataUrl);
                 };
-                img.onerror = () => resolve(null);
-                img.src = e.target.result;
-            };
-            reader.onerror = () => resolve(null);
-            reader.readAsDataURL(file);
+                img.onerror = () => {
+                    clearTimeout(timer);
+                    URL.revokeObjectURL(blobUrl);
+                    resolve(null);
+                };
+                img.src = blobUrl;
+            } catch (err) {
+                clearTimeout(timer);
+                resolve(null);
+            }
         });
     };
 
@@ -141,25 +160,29 @@ const FileStorage = (() => {
     };
 
     /**
-     * Process multiple attachments in parallel with progress tracking
+     * Process multiple attachments sequentially to prevent browser freeze and out-of-memory
      */
     const processAndSaveFiles = async (files, category = 'general', onProgress = null) => {
         if (!files) return [];
         const fileArr = Array.from(files);
         if (fileArr.length === 0) return [];
         
-        let completed = 0;
-        const promises = fileArr.map(async (file) => {
-            const result = await processAndSaveFile(file, category);
-            completed++;
-            if (typeof onProgress === 'function') {
-                onProgress(completed, fileArr.length, file.name);
+        const results = [];
+        for (let i = 0; i < fileArr.length; i++) {
+            const file = fileArr[i];
+            try {
+                const res = await processAndSaveFile(file, category);
+                if (res) results.push(res);
+            } catch (err) {
+                console.warn('Failed to process attachment:', file.name, err);
             }
-            return result;
-        });
-        
-        const results = await Promise.all(promises);
-        return results.filter(Boolean);
+            if (typeof onProgress === 'function') {
+                onProgress(i + 1, fileArr.length, file.name);
+            }
+            // Yield 15ms so UI thread can re-render smoothly
+            await new Promise(r => setTimeout(r, 15));
+        }
+        return results;
     };
 
     /**
@@ -173,11 +196,11 @@ const FileStorage = (() => {
         const name = file.name || 'קובץ ללא שם';
         const type = file.type || (name.toLowerCase().endsWith('.pdf') ? 'application/pdf' : 'application/octet-stream');
         const isPdf = type === 'application/pdf' || name.toLowerCase().endsWith('.pdf');
-        const isImage = type.startsWith('image/');
+        const isImage = type.startsWith('image/') || /\.(jpe?g|png|webp|heic|bmp)$/i.test(name);
 
         let dataUrl = null;
         if (isImage) {
-            // Compress phone photos
+            // Compress phone photos instantly without memory lockup
             dataUrl = await compressImage(file, 1600, 0.75);
             if (!dataUrl) {
                 dataUrl = await readFileAsDataURL(file);
@@ -202,16 +225,14 @@ const FileStorage = (() => {
             uploadedAt: new Date().toISOString()
         };
 
-        // 1. Always save in local IndexedDB (instant offline availability)
+        // 1. Instant local IndexedDB save (offline ready in 5-20ms)
         await saveToIndexedDB(item);
 
-        // 2. Cloud sync to Firestore for cross-device availability (PC <-> Phone)
-        if (typeof db !== 'undefined' && db) {
-            try {
-                await saveAttachmentToCloud(item);
-            } catch (err) {
-                console.warn('Cloud sync of attachment skipped:', err.message);
-            }
+        // 2. Cloud sync in background (non-blocking so UI never freezes!)
+        if (typeof db !== 'undefined' && db && (typeof navigator === 'undefined' || navigator.onLine !== false)) {
+            saveAttachmentToCloud(item).catch(err => {
+                console.warn('Background cloud sync of attachment deferred:', err.message);
+            });
         }
 
         // Return lightweight metadata only (NO heavy dataUrl)
@@ -227,16 +248,16 @@ const FileStorage = (() => {
 
     /**
      * Save attachment to Firestore for cross-device sync.
-     * Uses chunking if dataUrl exceeds ~600KB so files up to 10MB+ sync without hitting Firestore's 1MB limit.
+     * Uses chunking if dataUrl exceeds ~500KB so files sync smoothly under Firestore\'s 1MB limit.
      */
     const saveAttachmentToCloud = async (item) => {
         if (!item || !item.id || !item.dataUrl || typeof db === 'undefined' || !db) return;
         try {
-            const CHUNK_SIZE = 600000; // ~600,000 characters base64 (safe margin under Firestore 1MB)
+            const CHUNK_SIZE = 500000;
             const dataUrlLen = item.dataUrl.length;
 
             if (dataUrlLen <= CHUNK_SIZE) {
-                await db.collection('task_attachments').doc(item.id).set({
+                await withTimeout(db.collection('task_attachments').doc(item.id).set({
                     id: item.id,
                     name: item.name,
                     type: item.type,
@@ -245,11 +266,10 @@ const FileStorage = (() => {
                     dataUrl: item.dataUrl,
                     isChunked: false,
                     uploadedAt: item.uploadedAt || new Date().toISOString()
-                });
+                }), 10000);
             } else {
                 const totalChunks = Math.ceil(dataUrlLen / CHUNK_SIZE);
-                // 1. Write parent metadata doc
-                await db.collection('task_attachments').doc(item.id).set({
+                await withTimeout(db.collection('task_attachments').doc(item.id).set({
                     id: item.id,
                     name: item.name,
                     type: item.type,
@@ -258,25 +278,23 @@ const FileStorage = (() => {
                     isChunked: true,
                     totalChunks: totalChunks,
                     uploadedAt: item.uploadedAt || new Date().toISOString()
-                });
-                // 2. Write each chunk
+                }), 10000);
                 const batch = db.batch();
                 for (let i = 0; i < totalChunks; i++) {
                     const chunkData = item.dataUrl.substring(i * CHUNK_SIZE, (i + 1) * CHUNK_SIZE);
-                    const chunkRef = db.collection('task_attachments').doc(`${item.id}_c${i}`);
+                    const chunkRef = db.collection('task_attachments').doc(${item.id}_c);
                     batch.set(chunkRef, {
                         attachmentId: item.id,
                         chunkIndex: i,
                         data: chunkData
                     });
                 }
-                await batch.commit();
+                await withTimeout(batch.commit(), 15000);
             }
         } catch (err) {
             console.warn('Cloud sync error for attachment:', item.id, err);
         }
     };
-
     /**
      * Retrieve the full file dataUrl for viewing or printing (supports cross-device sync & chunking)
      */

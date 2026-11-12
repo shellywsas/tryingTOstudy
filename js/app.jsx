@@ -25,8 +25,7 @@ function App() {
                                         const cBadge = parsed.users[u].badges.find(b => b && b.id === 'b_weekly_champ');
                                         if (cBadge) {
                                             if (u === 'שליי' || parsed.users[u].name === 'שלי') {
-                                                if (parsed.users[u].taskStreak >= 67) parsed.users[u].taskStreak = 50;
-                                                if (parsed.users[u].longestStreak >= 67) parsed.users[u].longestStreak = 50;
+                                                
                                                 cBadge.wonWeeks = Array.isArray(cBadge.wonWeeks) && cBadge.wonWeeks.length >= 5 
                                                     ? Array.from(new Set(cBadge.wonWeeks)) 
                                                     : ['2026-W37', '2026-W38', '2026-W40', '2026-W42', '2026-W44'];
@@ -172,10 +171,7 @@ function App() {
                             let healed = typeof healCompletedFromHistory === 'function'
                                 ? healCompletedFromHistory(merged || remoteData)
                                 : (merged || remoteData);
-                            if (healed && (prev.activeUser === 'שליי' || healed.name === 'שלי')) {
-                                if ((healed.taskStreak || 0) >= 67) healed.taskStreak = 50;
-                                if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
-                            }
+
 
                             // If local had completed tasks, points, or ANY edited fields (tasks, subjects, exams) that remote was missing, write back to Firestore immediately
                             const remoteDone = (remoteData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
@@ -239,10 +235,7 @@ function App() {
                             let healed = typeof healCompletedFromHistory === 'function'
                                 ? healCompletedFromHistory(applied || liveData)
                                 : (applied || liveData);
-                            if (healed && (prev.activeUser === 'שליי' || healed.name === 'שלי')) {
-                                if ((healed.taskStreak || 0) >= 67) healed.taskStreak = 50;
-                                if ((healed.longestStreak || 0) >= 67) healed.longestStreak = 50;
-                            }
+
 
                             // If local had completed tasks, points, or ANY edited fields that liveData was missing, write back to Firestore immediately
                             const remoteDone = (liveData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
@@ -912,11 +905,13 @@ function App() {
                             const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
                             const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 86400000);
 
-                            if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS) && (healedPrev.taskStreak || 0) > 0) {
-                                shouldBreakStreak = true;
-                                if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
-                                    oldestUncompletedDate = dueDate;
-                                    oldestUncompletedTaskId = task.id;
+                            if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS)) {
+                                if ((healedPrev.taskStreak || 0) > 0 || !task.streakBreakProcessed) {
+                                    shouldBreakStreak = true;
+                                    if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
+                                        oldestUncompletedDate = dueDate;
+                                        oldestUncompletedTaskId = task.id;
+                                    }
                                 }
                             }
                             const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
@@ -947,19 +942,27 @@ function App() {
                         let currentStreakStart = healedPrev.currentStreakStart;
                         let currentStreakEmojis = healedPrev.currentStreakEmojis;
 
-                        if (shouldBreakStreak && taskStreak > 0) {
-                            newStreakHistory.push({
-                                id: 'sh_' + Date.now(),
-                                startDate: currentStreakStart,
-                                endDate: oldestUncompletedDate.toISOString(),
-                                length: taskStreak,
-                                emojis: [...(currentStreakEmojis || [])],
-                                brokenByTaskId: oldestUncompletedTaskId
-                            });
+                        if (shouldBreakStreak) {
+                            const alreadyRecorded = newStreakHistory.some(s => s && s.brokenByTaskId === oldestUncompletedTaskId);
+                            if (taskStreak > 0 && !alreadyRecorded) {
+                                newStreakHistory.unshift({
+                                    id: 'sh_' + oldestUncompletedTaskId + '_broken',
+                                    startDate: currentStreakStart,
+                                    endDate: oldestUncompletedDate ? oldestUncompletedDate.toISOString() : now.toISOString(),
+                                    length: taskStreak,
+                                    emojis: [...(currentStreakEmojis || [])],
+                                    brokenByTaskId: oldestUncompletedTaskId
+                                });
+                            }
+                            const brokenTask = (healedPrev.tasks || []).find(t => t.id === oldestUncompletedTaskId);
+                            if (taskStreak > 0 && (!brokenTask || !brokenTask.streakBreakNotified)) {
+                                setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
+                            }
                             taskStreak = 0;
                             currentStreakStart = null;
                             currentStreakEmojis = [];
-                            setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
+                            // Mark task as streakBreakProcessed so it does not re-trigger toast
+                            updatedTasks = updatedTasks.map(t => t.id === oldestUncompletedTaskId ? { ...t, streakBreakProcessed: true, streakBreakNotified: true } : t);
                         }
                         if (needsUpdate) {
                             setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
@@ -3083,13 +3086,17 @@ function App() {
                     streakMessage = `המד עלה ל-${newStreak} 🔥`;
                 } else {
                     if (newStreak > 0) {
-                        newStreakHistory.push({
-                            id: 'sh_' + Date.now(),
-                            startDate: newStreakStart,
-                            endDate: dueDate.toISOString(),
-                            length: newStreak,
-                            emojis: newStreakEmojis
-                        });
+                        const alreadyBroken = newStreakHistory.some(s => s && s.brokenByTaskId === task.id);
+                        if (!alreadyBroken) {
+                            newStreakHistory.unshift({
+                                id: 'sh_' + task.id + '_broken',
+                                startDate: newStreakStart,
+                                endDate: dueDate.toISOString(),
+                                length: newStreak,
+                                emojis: newStreakEmojis,
+                                brokenByTaskId: task.id
+                            });
+                        }
                     }
                     newStreak = 0;
                     newStreakStart = null;
