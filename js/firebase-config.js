@@ -18,7 +18,7 @@ try {
         }
         db = firebase.firestore();
         try {
-            db.settings({ ignoreUndefinedProperties: true });
+            db.settings({ ignoreUndefinedProperties: true, merge: true });
         } catch (e) {
             console.warn('Firestore settings warning:', e);
         }

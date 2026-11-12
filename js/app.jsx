@@ -173,21 +173,7 @@ function App() {
                                 : (merged || remoteData);
 
 
-                            // If local had completed tasks, points, or ANY edited fields (tasks, subjects, exams) that remote was missing, write back to Firestore immediately
-                            const remoteDone = (remoteData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
-                            const healedDone = (healed.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
-                            const remoteHist = (remoteData.pointsHistory || []).length;
-                            const healedHist = (healed.pointsHistory || []).length;
-                            const localNewer = (currentUserData?.lastSync || 0) > (remoteData?.lastSync || 0);
-                            const remoteClean = sanitizeForFirestore(remoteData);
-                            const healedClean = sanitizeForFirestore(healed);
-                            const hasAnyDivergence = JSON.stringify(remoteClean) !== JSON.stringify(healedClean);
-                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (remoteData.taskStreak || 0) || (hasAnyDivergence && localNewer)) {
-                                try {
-                                    const clean = sanitizeForFirestore({ ...healed, lastSync: Date.now() });
-                                    userRef.set(clean, { merge: true });
-                                } catch (e) {}
-                            }
+// Incoming server read adopted cleanly without destructive write-back
 
                             if (currentUserData && JSON.stringify(currentUserData) === JSON.stringify(healed)) return prev;
                             return {
@@ -237,21 +223,7 @@ function App() {
                                 : (applied || liveData);
 
 
-                            // If local had completed tasks, points, or ANY edited fields that liveData was missing, write back to Firestore immediately
-                            const remoteDone = (liveData.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
-                            const healedDone = (healed.tasks || []).filter(t => t && (t.completed || t.completedAt)).length;
-                            const remoteHist = (liveData.pointsHistory || []).length;
-                            const healedHist = (healed.pointsHistory || []).length;
-                            const localNewer = (currentUserData?.lastSync || 0) > (liveData?.lastSync || 0);
-                            const liveClean = sanitizeForFirestore(liveData);
-                            const healedClean = sanitizeForFirestore(healed);
-                            const hasAnyDivergence = JSON.stringify(liveClean) !== JSON.stringify(healedClean);
-                            if (healedDone > remoteDone || healedHist > remoteHist || (healed.taskStreak || 0) > (liveData.taskStreak || 0) || (hasAnyDivergence && localNewer)) {
-                                try {
-                                    const clean = sanitizeForFirestore({ ...healed, lastSync: Date.now() });
-                                    userRef.set(clean, { merge: true });
-                                } catch (e) {}
-                            }
+// Incoming real-time snapshot adopted cleanly without destructive write-back
 
                             if (currentUserData && JSON.stringify(currentUserData) === JSON.stringify(healed)) return prev;
                             return {
