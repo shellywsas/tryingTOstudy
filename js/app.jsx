@@ -2932,7 +2932,7 @@ function App() {
                         longestStreak: sx.newLongest,
                         currentStreakStart: sx.newStreakStart,
                         currentStreakEmojis: sx.newStreakEmojis,
-                        pointsHistory: [...ladderRows, ...(pointsDelta !== 0 ? [historyLog] : []), ...(prev.pointsHistory || [])],
+                        pointsHistory: [...ladderRows, historyLog, ...(prev.pointsHistory || [])],
                         streakHistory: sx.newStreakHistory
                     });
                 });

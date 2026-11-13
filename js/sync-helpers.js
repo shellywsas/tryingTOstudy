@@ -472,8 +472,8 @@
         const taskId = String(p.taskId || '');
         const title = String(p.taskTitle || '');
         if (sub.includes('היסטוריה')) { const ms = toMs(p.date); if (!Number.isFinite(ms) || ms < HOTFIX_CUTOFF_MS) return true; }
-        if (id.includes('1794473352381') || taskId === 't_1794473352381' || (title.includes('11.11.26') && sub.includes('פיזיקה'))) return true;
-        if (id.includes('1794473104904') || taskId === 't_1794473104904' || (title.includes('11.11.26') && sub.includes('מתמטיקה'))) return true;
+        if (id.includes('1794473352381') || taskId === 't_1794473352381' || (title.includes('11.11.26') && sub.includes('פיזיקה'))) { const ms = toMs(p.date); if (!Number.isFinite(ms) || ms < HOTFIX_CUTOFF_MS) return true; }
+        if (id.includes('1794473104904') || taskId === 't_1794473104904' || (title.includes('11.11.26') && sub.includes('מתמטיקה'))) { const ms = toMs(p.date); if (!Number.isFinite(ms) || ms < HOTFIX_CUTOFF_MS) return true; }
         if (id.startsWith('ph_t_1794521101639_') || (dt.startsWith('2026-11-13T01:20') && sub.includes('מדעי המחשב'))) return true;
         return false;
     }
