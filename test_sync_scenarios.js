@@ -41,16 +41,20 @@ console.log('Running StudyStreak Sync Tests...');
         ]
     };
 
-    const merged = sync.applyRemoteUser(phoneLocal, computerRemote);
+    // Changed: totals are now derived from the merged ledger (no Math.max of stored numbers); `now` pinned to
+// Sat 2026-10-31 noon so both ledger rows fall in the week window.
+const merged = sync.mergeUserData(phoneLocal, computerRemote, undefined, { now: sync.jerusalemMs(2026, 10, 31, 12) });
 
     assert.strictEqual(merged.taskStreak, 48, 'Streak on phone must be 48!');
     assert.strictEqual(merged.longestStreak, 48, 'Longest streak must be 48!');
-    assert.strictEqual(merged.totalPoints, 104, 'Total points must be 104!');
-    assert.strictEqual(merged.weeklyPoints, 24, 'Weekly points must be 24!');
+    // Was 104/24. Total 104 now comes from a permanent ph_opening_balance row (100) + ledger (4); weekly is the
+    // ledger window sum (4), not the stored 24.
+    assert.strictEqual(merged.totalPoints, 104, 'Total points must be 104 (ledger 4 + opening balance 100)!');
+    assert.strictEqual(merged.weeklyPoints, 4, 'Weekly points must equal the ledger window sum!');
     assert.strictEqual(merged.tasks.length, 2, 'Must have 2 tasks!');
     assert.strictEqual(merged.tasks[0].completed, true, 'Task 1 must be completed!');
     assert.strictEqual(merged.tasks[1].completed, true, 'Task 2 must be completed!');
-    assert.strictEqual(merged.pointsHistory.length, 2, 'Points history must have 2 entries!');
+    assert.strictEqual(merged.pointsHistory.length, 3, 'Points history: 2 entries + opening balance row!');
     console.log('[PASS] Scenario 1: Phone successfully adopts Computer submissions without rollback!');
 }
 
@@ -134,6 +138,7 @@ console.log('Running StudyStreak Sync Tests...');
     assert.strictEqual(merged.tasks.length, 2);
     assert.strictEqual(merged.tasks[0].completed, true, 'Task 1 must stay completed!');
     assert.strictEqual(merged.tasks[1].completed, true, 'Task 2 must stay completed!');
+    // two non-empty ledgers: no opening-balance mint during a two-sided merge (heal on a single device mints it)
     assert.strictEqual(merged.pointsHistory.length, 2, 'Both history logs must be merged!');
     console.log('[PASS] Scenario 3: Independent offline actions on both devices merged losslessly!');
 }
@@ -468,4 +473,11 @@ console.log('Running StudyStreak Sync Tests...');
     console.log('[PASS] Scenario 15: Task study duration hours and minutes healed into 100% lockstep!');
 }
 
-console.log('ALL TESTS PASSED SUCCESSFULLY! 🚀');
+require('./tests/ledger_sync.js');
+require('./tests/fixes.js');
+require('./tests/fixes2.js');
+require('./tests/fixes3.js');
+require('./tests/fixes4.js');
+const { stats } = require('./tests/harness.js');
+if (stats.fail) { console.log(stats.fail + ' FAILED: ' + stats.failures.join(' | ')); process.exit(1); }
+console.log('ALL TESTS PASSED SUCCESSFULLY! (' + stats.pass + ' tests + 8 legacy scenarios)');

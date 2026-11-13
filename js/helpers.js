@@ -1,6 +1,29 @@
 const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
 
 
+        // Display a stored date; invalid/null/epoch (year < 2020) shows 'לא ידוע' instead of 1970.
+        const fmtDate = (d, locale = 'he-IL', options) => {
+            if (d === null || d === undefined || d === '') return 'לא ידוע';
+            const dt = d instanceof Date ? d : new Date(d);
+            const ms = dt.getTime();
+            if (!Number.isFinite(ms) || dt.getUTCFullYear() < 2020) return 'לא ידוע';
+            return dt.toLocaleDateString(locale, options);
+        };
+        if (typeof window !== 'undefined') window.fmtDate = fmtDate;
+
+        // Local calendar date (YYYY-MM-DD). toISOString().split('T')[0] is UTC and is off by a day around midnight.
+        const localDateStr = (d) => {
+            const dt = d instanceof Date ? d : new Date(d);
+            if (!Number.isFinite(dt.getTime())) return '';
+            return dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+        };
+        // 'YYYY-MM-DD' as LOCAL midnight (new Date('YYYY-MM-DD') is UTC midnight: wrong weekday west of UTC).
+        const parseLocalDate = (s) => {
+            const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(String(s || ''));
+            return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : new Date(s);
+        };
+        if (typeof window !== 'undefined') { window.localDateStr = localDateStr; window.parseLocalDate = parseLocalDate; }
+
         const getUserLevel = (points) => {
             if (points <= 50) return { title: 'תלמידה מתחילה', icon: '🌱' };
             if (points <= 150) return { title: 'צוערת בגרויות', icon: '🚀' };
@@ -20,9 +43,11 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 .toLowerCase();
         };
 
-        // In Israel, week runs from Sunday 00:00:00.000 to Saturday 23:59:59.999 (Sunday 00:00:00.000).
-        // All points earned up to Saturday 24:00 (Sunday 00:00:00) strictly belong to that completed week!
+        // In Israel, week runs from Sunday 00:00:00.000 to Saturday 23:59:59.999. All points earned up to Saturday 24:00
+        // strictly belong to the completed week. Asia/Jerusalem based (sync-helpers getWindowStart) so every host timezone agrees;
+        // the local-time versions below are only the fallback when sync-helpers is not loaded.
         const getCurrentWeekStart = (nowInput) => {
+            if (typeof getWindowStart === 'function') return getWindowStart(nowInput instanceof Date ? nowInput.getTime() : (nowInput || Date.now()));
             const now = nowInput instanceof Date ? new Date(nowInput) : new Date(nowInput || Date.now());
             const d = now.getDay(); // 0 = Sun, 1 = Mon, ..., 6 = Sat
             const sunday = new Date(now);
@@ -32,6 +57,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
         };
 
         const getNextWeekReset = (nowInput) => {
+            if (typeof nextWindowStart === 'function') return nextWindowStart(nowInput instanceof Date ? nowInput.getTime() : (nowInput || Date.now()));
             const currentWeekSunday = getCurrentWeekStart(nowInput);
             const nextSunday = new Date(currentWeekSunday);
             nextSunday.setDate(nextSunday.getDate() + 7);
@@ -51,35 +77,22 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
         const getNextSaturday22PM = getNextWeekReset;
         const getLastSaturday22PM = getCurrentWeekStart;
 
+        // Headline weekly points: signed ledger sum inside the single week window (getWindowStart); legacy no-ledger docs keep the stored value.
         const getEffectiveWeeklyPoints = (userData, nowInput) => {
             if (!userData) return 0;
             const now = typeof nowInput === 'number' ? nowInput : (nowInput instanceof Date ? nowInput.getTime() : Date.now());
+            if (Array.isArray(userData.pointsHistory) && userData.pointsHistory.length && typeof sumLedger === 'function') {
+                return sumLedger(userData.pointsHistory, { from: getCurrentWeekStart(now), to: Infinity });
+            }
+            // No ledger (legacy doc): completed tasks since Sunday 00:00; stale stored points never leak into a new week
             const weekStart = getCurrentWeekStart(now);
-            
-            // Calculate active points earned strictly since Sunday 00:00:00 of the current week.
-            // Any tasks or points completed before Sunday 00:00:00 belong to the previous week!
-            const hist = Array.isArray(userData.pointsHistory) ? userData.pointsHistory : [];
-            const histSum = hist.filter(h => {
-                if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
-                const t = new Date(h.date).getTime();
-                return !isNaN(t) && t >= weekStart && t <= now;
-            }).reduce((sum, h) => sum + (h.points || 0), 0);
-            
             const tasks = Array.isArray(userData.tasks) ? userData.tasks : [];
             const taskSum = tasks.filter(t => {
                 if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
                 const tTime = new Date(t.completedAt).getTime();
                 return !isNaN(tTime) && tTime >= weekStart && tTime <= now;
             }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
-            
-            const actualThisWeek = Math.max(histSum, taskSum);
-            
-            // If user has not earned any points in the current week window, weekly points is strictly 0.
-            // We never allow stale points from before Sunday 00:00:00 to leak into the new week.
-            if (actualThisWeek === 0) {
-                return 0;
-            }
-            return actualThisWeek;
+            return taskSum;
         };
 
         if (typeof window !== 'undefined') {
@@ -113,7 +126,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
         const calculateSpecificDueDate = (subject, givenDateStr) => {
             if (!subject || !subject.rules || subject.rules.length === 0) return null; 
             
-            const givenDate = new Date(givenDateStr);
+            const givenDate = parseLocalDate(givenDateStr);
             const currentDay = givenDate.getDay();
             
             const rule = subject.rules.find(r => Number(r.assignDay) === currentDay);
@@ -125,7 +138,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 const resultDate = new Date(givenDate);
                 resultDate.setDate(resultDate.getDate() + daysToAdd);
                 return {
-                    date: resultDate.toISOString().split('T')[0],
+                    date: localDateStr(resultDate),
                     time: rule.dueTime || '22:00'
                 };
             }
@@ -215,7 +228,7 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                     if (endM - actualStartM >= 30) {
                         resultWindows.push({
                             id: 'win_' + i + '_' + actualStartM,
-                            dateStr: targetDate.toISOString().split('T')[0],
+                            dateStr: localDateStr(targetDate),
                             dayName: isToday ? 'היום' : (i === 1 ? 'מחר' : `יום ${dayNames[dayIdx]}`),
                             start: minsToTime(actualStartM),
                             end: w.end,
@@ -680,16 +693,22 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
                 return 3;
             }
 
-            const createdAt = task.createdAt ? new Date(task.createdAt) : null;
+            // dates may be ISO strings, numbers, numeric strings or Firestore Timestamps (toMs from sync-helpers)
+            const msAny = (v) => {
+                if (v === null || v === undefined || v === '') return NaN;
+                if (typeof toMs === 'function') return toMs(v);
+                return new Date(v).getTime();
+            };
+            const createdAt = task.createdAt ? new Date(msAny(task.createdAt)) : null;
             let dueDate = null;
-            if (task.dueDate && task.dueTime) {
-                dueDate = new Date(`${task.dueDate}T${task.dueTime}`);
-            } else if (task.dueDate) {
-                dueDate = new Date(`${task.dueDate}T23:59:59`);
+            if (task.dueDate) {
+                // fixed-timezone due instant (same on every device) when sync-helpers is loaded
+                const dm = typeof getDueMs === 'function' ? getDueMs(task) : NaN;
+                dueDate = Number.isFinite(dm) ? new Date(dm) : new Date(`${task.dueDate}T${task.dueTime || '23:59:59'}`);
             }
 
             let isEarly = false;
-            const completionTime = task.completedAt ? new Date(task.completedAt) : null;
+            const completionTime = task.completedAt ? new Date(msAny(task.completedAt)) : null;
             if (dueDate && createdAt && !isNaN(dueDate.getTime()) && !isNaN(createdAt.getTime()) && completionTime && !isNaN(completionTime.getTime())) {
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
                 const usedDurationMs = completionTime.getTime() - createdAt.getTime();
@@ -728,6 +747,10 @@ const DAYS_HE = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי
 
         if (typeof module !== 'undefined' && module.exports) {
             module.exports = {
+                fmtDate,
+                DEFAULT_USER_STATE,
+                localDateStr,
+                parseLocalDate,
                 calculateTaskExpectedPoints,
                 getCurrentWeekStart,
                 getNextWeekReset,
