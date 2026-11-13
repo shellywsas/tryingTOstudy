@@ -1863,6 +1863,11 @@ function App() {
             const [isShellyAdmin, setIsShellyAdmin] = useState(false);
             const [adminUsersList, setAdminUsersList] = useState([]);
             const [adminLoading, setAdminLoading] = useState(false);
+            const [loginLoading, setLoginLoading] = useState(false);
+            const withTimeout = (promise, ms, label) => Promise.race([
+                promise,
+                new Promise((_, reject) => setTimeout(() => reject(new Error(label || 'timeout')), ms))
+            ]);
             const [selectedAdminUser, setSelectedAdminUser] = useState(null);
             const [deleteConfirmUser, setDeleteConfirmUser] = useState(null);
             const [deleteConfirmStep, setDeleteConfirmStep] = useState(0);
@@ -1992,8 +1997,11 @@ function App() {
                             if (uName && uData) map[uName] = { ...uData, username: uName };
                         });
                     }
+                    if (Object.keys(map).length > 0) {
+                        setAdminUsersList(Object.values(map));
+                    }
                     if (db) {
-                        const snap = await db.collection("users").get();
+                        const snap = await withTimeout(db.collection("users").get(), 10000, 'admin_load_timeout');
                         snap.forEach(doc => {
                             const data = doc.data();
                             if (data && doc.id) {
@@ -2052,8 +2060,10 @@ function App() {
                     });
                     setAdminUsersList(Object.values(map));
                     setSelectedAdminUser(prev => prev ? (map[prev.username] || prev) : null);
+                    setAdminLoading(false);
                 }, (err) => {
                     console.warn("Admin live sync listener error:", err);
+                    setAdminLoading(false);
                 });
                 return () => unsub();
             }, [isAdminLoggedIn]);
@@ -2415,6 +2425,7 @@ function App() {
 
             const handleLogin = (e) => {
                 e.preventDefault();
+                if (loginLoading) return;
                 const user = (typeof normalizeUsername === 'function' ? normalizeUsername(e.target.username.value) : (e.target.username.value || '').trim());
                 const pass = (e.target.password.value || '').trim();
                 if(!user) return;
@@ -2444,7 +2455,8 @@ function App() {
                         });
                         showToast(`איזה כיף שחזרת, ${data.name}! ✨ (מזהה: ${id})`, 'success');
                     };
-                    const tryDoc = (id) => db.collection("users").doc(id).get();
+                    const tryDoc = (id) => withTimeout(db.collection("users").doc(id).get(), 8000, 'login_timeout');
+                    setLoginLoading(true);
                     Promise.resolve().then(async () => {
                         // ALWAYS probe every spelling variant (typed, normalised, local keys): normalisation strips FE0F/zero-width marks,
                         // so a near-empty normalised doc may exist next to the user's real legacy doc. Never auto-merge, never auto-create.
@@ -2523,12 +2535,18 @@ function App() {
                             }
                             return { ...prev, users, activeUser: user };
                         });
+                    }).finally(() => {
+                        setLoginLoading(false);
                     });
                 }
             };
 
 
             const handleLogout = () => {
+                setLoginChoices(null);
+                setLoginLoading(false);
+                setIsAdminLoggedIn(false);
+                setIsShellyAdmin(false);
                 setGlobalState(prev => ({ ...prev, activeUser: null }));
                 setActiveTab('dashboard');
             };
@@ -5633,8 +5651,8 @@ function App() {
                                     <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">סיסמה</label>
                                     <input name="password" type="password" dir="rtl" required className="w-full text-right p-4 bg-stone-50 rounded-xl border border-stone-200 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400 focus:bg-white transition-all outline-none" placeholder="הקלידי סיסמה..." />
                                 </div>
-                                <button type="submit" className="w-full py-4 bg-gradient-to-r from-purple-500 to-fuchsia-500 hover:from-purple-600 hover:to-fuchsia-600 text-white rounded-xl font-bold shadow-md shadow-purple-500/20 transition-all mt-4 text-sm tracking-wide active:scale-95">
-                                    כניסה / הרשמה (מסונכרן לענן)
+                                <button type="submit" disabled={loginLoading} className="w-full py-4 bg-gradient-to-r from-purple-500 to-fuchsia-500 hover:from-purple-600 hover:to-fuchsia-600 disabled:opacity-60 text-white rounded-xl font-bold shadow-md shadow-purple-500/20 transition-all mt-4 text-sm tracking-wide active:scale-95">
+                                    {loginLoading ? 'מתחבר לענן... ⏳' : 'כניסה / הרשמה (מסונכרן לענן)'}
                                 </button>
                             </form>
                             <div className="text-center text-[11px] text-stone-400 mt-6 font-medium relative z-10">
