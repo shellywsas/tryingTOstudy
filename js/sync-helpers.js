@@ -1489,8 +1489,8 @@
                             studyTimeRange: updated.studyTimeRange || null
                         };
 
-                        newHist.unshift(healedLog);
-                        changed = true;
+                        // a row the purge would drop again must not be minted (mint/purge oscillation = churn every pass)
+                        if (!isInvalidPointsHistory(healedLog)) { newHist.unshift(healedLog); changed = true; }
                     } else if ((updated.pointsEarned === undefined || updated.pointsEarned <= 0) && !updated.givenUp) {
                         const delta = expectedPoints - (updated.pointsEarned || 0);
                         if (delta > 0) {
