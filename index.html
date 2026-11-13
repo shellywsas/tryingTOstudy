@@ -17,7 +17,7 @@
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
     <link id="manifest-link" rel="manifest" href="manifest.json?v=20261025_2">
-    <script src="js/pwa.js?v=20261113_7"></script>
+    <script src="js/pwa.js?v=20261113_8"></script>
 
     <!-- Firebase Compat SDKs (CDN) -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
@@ -210,14 +210,38 @@
                                     return true;
                                 });
                             }
-                            // Detect uncompleted overdue task
+                            // Clean bogus entries from pointsHistory and ensure tasks in localStorage match
+                            if (Array.isArray(usr.pointsHistory)) {
+                                usr.pointsHistory = usr.pointsHistory.filter(p => {
+                                    if (!p) return false;
+                                    const sub = String(p.subjectName || '');
+                                    const id = String(p.id || '');
+                                    const dt = String(p.date || '');
+                                    if (sub.includes('היסטוריה') || id.startsWith('ph_t_1794473352381')) return false;
+                                    if (id.startsWith('ph_t_1794521101639_') || (dt.startsWith('2026-11-13T01:20') && sub.includes('מדעי המחשב'))) return false;
+                                    return true;
+                                });
+                            }
+                            if (Array.isArray(usr.tasks)) {
+                                usr.tasks = usr.tasks.map(t => {
+                                    if (t.id === 't_1794473104904' || t.id === 't_1794473352381') {
+                                        return { ...t, completed: false, completedAt: null, pointsEarned: null };
+                                    }
+                                    return t;
+                                });
+                            }
+
+                            // Detect uncompleted overdue task (ignoring already-processed tasks)
                             const now = Date.now();
+                            const streakStartMs = usr.currentStreakStart ? new Date(usr.currentStreakStart).getTime() : 0;
                             const hasOverdue = (usr.tasks || []).some(t => {
-                                if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession) return false;
+                                if (!t || t.completed || t.completedAt || t.givenUp || t.isLessonLog || t.isPracticeSession || t.isFlexibleExamSession || t.streakBreakProcessed) return false;
                                 if (!t.dueDate) return false;
                                 const dueTimeStr = t.dueTime || '23:59:59';
                                 const due = new Date(`${t.dueDate}T${dueTimeStr}`).getTime();
-                                return !isNaN(due) && now > (due + 5 * 60 * 1000);
+                                if (isNaN(due)) return false;
+                                if (streakStartMs && due < streakStartMs) return false;
+                                return now > (due + 5 * 60 * 1000);
                             });
                             if (hasOverdue) {
                                 if (usr.taskStreak > 0) {
@@ -259,12 +283,12 @@
     </script>
 
     <!-- Modular Scripts -->
-    <script src="js/firebase-config.js?v=20261113_7"></script>
-    <script src="js/helpers.js?v=20261113_7"></script>
-    <script src="js/sync-helpers.js?v=20261113_7"></script>
+    <script src="js/firebase-config.js?v=20261113_8"></script>
+    <script src="js/helpers.js?v=20261113_8"></script>
+    <script src="js/sync-helpers.js?v=20261113_8"></script>
     <script src="js/whatsapp-service.js?v=20261010_1"></script>
-    <script src="js/file-storage.js?v=20261113_7"></script>
+    <script src="js/file-storage.js?v=20261113_8"></script>
     <script type="text/babel" src="js/icons.jsx?v=20261004_2"></script>
-    <script type="text/babel" src="js/app.jsx?v=20261113_7"></script>
+    <script type="text/babel" src="js/app.jsx?v=20261113_8"></script>
 </body>
 </html>

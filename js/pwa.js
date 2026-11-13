@@ -12,7 +12,7 @@ document.addEventListener('DOMContentLoaded', setupPWA);
 // Register Service Worker for Background Notifications & Lock-Screen Push
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js?v=20261113_7')
+        navigator.serviceWorker.register('sw.js?v=20261113_8')
             .then(reg => {
                 console.log('StudyStreak Service Worker active:', reg.scope);
                 // Background update check without disturbing active user UI

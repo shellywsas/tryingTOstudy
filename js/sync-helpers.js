@@ -5,6 +5,16 @@
         return s.startsWith("ph_auto_") || s.startsWith("ph_refund_");
     }
 
+    function isInvalidPointsHistory(p) {
+        if (!p) return true;
+        const sub = String(p.subjectName || "");
+        const id = String(p.id || "");
+        const dt = String(p.date || "");
+        if (sub.includes("היסטוריה") || id.startsWith("ph_t_1794473352381")) return true;
+        if (id.startsWith("ph_t_1794521101639_") || (dt.startsWith("2026-11-13T01:20") && sub.includes("מדעי המחשב"))) return true;
+        return false;
+    }
+
     function taskLooksCompleted(task, pointsHistory) {
         if (!task) return false;
         if (task.completed || task.givenUp || task.completedAt) return true;
@@ -42,7 +52,17 @@
         }
         const localDone = taskLooksCompleted(localT, pointsHistory);
         const incomingDone = taskLooksCompleted(incomingT, pointsHistory);
-        if (localDone && !incomingDone) return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
+        if (localDone && !incomingDone) {
+            const localMod = localT.updatedAt || localT.lastModified || 0;
+            const incomingMod = incomingT.updatedAt || incomingT.lastModified || 0;
+            if (incomingMod >= localMod && incomingT.completed === false) {
+                return { ...localT, ...incomingT, completed: false, completedAt: null, pointsEarned: null };
+            }
+            if (incomingT.id === 't_1794473104904' || incomingT.id === 't_1794473352381') {
+                return { ...localT, ...incomingT, completed: false, completedAt: null, pointsEarned: null };
+            }
+            return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
+        }
         if (incomingDone && !localDone) return { ...localT, ...incomingT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(incomingT) ? false : (incomingT.autoPenaltyApplied || false) };
         if (localDone && incomingDone) {
             const localMod = localT.updatedAt || localT.lastModified || (localT.completedAt ? new Date(localT.completedAt).getTime() : 0) || localT.createdAt || 0;
@@ -270,8 +290,8 @@
     }
 
     function mergePointsHistory(localHist, remoteHist) {
-        const listA = Array.isArray(localHist) ? localHist : [];
-        const listB = Array.isArray(remoteHist) ? remoteHist : [];
+        const listA = (Array.isArray(localHist) ? localHist : []).filter(h => !isInvalidPointsHistory(h));
+        const listB = (Array.isArray(remoteHist) ? remoteHist : []).filter(h => !isInvalidPointsHistory(h));
         const map = new Map();
         for (const item of [...listB, ...listA]) {
             if (!item) continue;
@@ -574,7 +594,7 @@
 
     function healCompletedFromHistory(user) {
         if (!user) return user;
-        const hist = [...(user.pointsHistory || [])];
+        const hist = [...(user.pointsHistory || [])].filter(h => !isInvalidPointsHistory(h));
         let changed = false;
         let totalPoints = user.totalPoints || 0;
         let weeklyPoints = user.weeklyPoints || 0;
