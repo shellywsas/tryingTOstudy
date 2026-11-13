@@ -18,7 +18,8 @@ try {
         }
         db = firebase.firestore();
         try {
-            db.settings({ ignoreUndefinedProperties: true, merge: true });
+            // Long-polling auto fallback: some mobile networks / Safari block the WebChannel stream.
+            db.settings({ ignoreUndefinedProperties: true, experimentalAutoDetectLongPolling: true, merge: true });
         } catch (e) {
             console.warn('Firestore settings warning:', e);
         }

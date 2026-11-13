@@ -16,8 +16,9 @@
     <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png">
     <link rel="apple-touch-icon" sizes="180x180" href="./apple-touch-icon.png">
     <link rel="apple-touch-icon" href="./icons/icon-192.png">
-    <link id="manifest-link" rel="manifest" href="manifest.json?v=20261025_2">
-    <script src="js/pwa.js?v=20261113_8"></script>
+    <link id="manifest-link" rel="manifest" href="manifest.json?v=20261113_a1">
+    <script>window.__BUILD_ID = "20261113_a1";</script>
+    <script src="js/pwa.js?v=20261113_a1"></script>
 
     <!-- Firebase Compat SDKs (CDN) -->
     <script src="https://www.gstatic.com/firebasejs/10.4.0/firebase-app-compat.js"></script>
@@ -40,14 +41,14 @@
     </script>
     
     <!-- React, ReactDOM, Babel & Chart.js -->
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="js/pdf.min.js?v=20261003_4"></script>
+    <script src="https://unpkg.com/react@18.3.1/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone@8.1.2/babel.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.6.1"></script>
+    <script src="js/pdf.min.js?v=20261113_a1"></script>
     <script>
         if (typeof window !== 'undefined' && window.pdfjsLib) {
-            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.min.js?v=20261003_4';
+            window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'js/pdf.worker.min.js?v=20261113_a1';
         }
     </script>
     
@@ -158,7 +159,7 @@
         }
     </style>
     <!-- Custom Styles -->
-    <link rel="stylesheet" href="css/style.css?v=20261003_2">
+    <link rel="stylesheet" href="css/style.css?v=20261113_a1">
 </head>
 <body class="bg-stone-50 text-stone-800 min-h-screen selection:bg-purple-200 selection:text-purple-900 pt-safe-top pb-safe-bottom">
     <div id="root">
@@ -180,15 +181,6 @@
     <script>
     (function() {
         try {
-            // Clear stuck outbox from previous failed sync attempts
-        try {
-            Object.keys(localStorage).forEach(key => {
-                if (key.startsWith('studyStreak_outbox_')) {
-                    localStorage.removeItem(key);
-                }
-            });
-        } catch (e) {}
-
         const k = 'studyStreakData_DB_v7';
             const raw = localStorage.getItem(k);
             if (raw) {
@@ -219,7 +211,8 @@
                                     const dt = String(p.date || '');
                                     const taskId = String(p.taskId || '');
                                     const title = String(p.taskTitle || '');
-                                    if (sub.includes('היסטוריה')) return false;
+                                    // history-subject rows: only those that existed at the 2026-11-13 hotfix (later study is legitimate)
+                                    if (sub.includes('היסטוריה')) { const pm = new Date(p.date).getTime(); if (!isFinite(pm) || pm < Date.parse('2026-11-13T00:41:00.000Z')) return false; }
                                     if (id.includes('1794473352381') || taskId === 't_1794473352381' || (title.includes('11.11.26') && sub.includes('פיזיקה'))) return false;
                                     if (id.includes('1794473104904') || taskId === 't_1794473104904' || (title.includes('11.11.26') && sub.includes('מתמטיקה'))) return false;
                                     if (id.startsWith('ph_t_1794521101639_') || (dt.startsWith('2026-11-13T01:20') && sub.includes('מדעי המחשב'))) return false;
@@ -229,6 +222,9 @@
                             if (Array.isArray(usr.tasks)) {
                                 usr.tasks = usr.tasks.map(t => {
                                     if (t.id === 't_1794473104904' || t.id === 't_1794473352381') {
+                                        // locked uncompleted unless genuinely submitted after the hotfix
+                                        const cm = new Date(t.completedAt).getTime();
+                                        if (isFinite(cm) && cm >= Date.parse('2026-11-13T00:41:00.000Z')) return t;
                                         return { ...t, completed: false, completedAt: null, pointsEarned: null };
                                     }
                                     return t;
@@ -287,12 +283,15 @@
     </script>
 
     <!-- Modular Scripts -->
-    <script src="js/firebase-config.js?v=20261113_8"></script>
-    <script src="js/helpers.js?v=20261113_8"></script>
-    <script src="js/sync-helpers.js?v=20261113_8"></script>
-    <script src="js/whatsapp-service.js?v=20261010_1"></script>
-    <script src="js/file-storage.js?v=20261113_8"></script>
-    <script type="text/babel" src="js/icons.jsx?v=20261004_2"></script>
-    <script type="text/babel" src="js/app.jsx?v=20261113_8"></script>
+    <script src="js/firebase-config.js?v=20261113_a1"></script>
+    <script src="js/helpers.js?v=20261113_a1"></script>
+    <script src="js/sync-helpers.js?v=20261113_a1"></script>
+    <script src="js/sync-engine.js?v=20261113_a1"></script>
+    <script src="js/ladder.js?v=20261113_a1"></script>
+    <script src="js/whatsapp-service.js?v=20261113_a1"></script>
+    <script src="js/wa-slots.js?v=20261113_a1"></script>
+    <script src="js/file-storage.js?v=20261113_a1"></script>
+    <script type="text/babel" src="js/icons.jsx?v=20261113_a1"></script>
+    <script type="text/babel" src="js/app.jsx?v=20261113_a1"></script>
 </body>
 </html>

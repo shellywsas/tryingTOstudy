@@ -2,10 +2,14 @@
 
 const { useState, useEffect, useMemo, useRef } = React;
 
+// Storage can throw (private mode, quota, blocked site data): never let it crash a render or an effect.
+const safeGetItem = (k) => { try { return window.localStorage.getItem(k); } catch (e) { return null; } };
+const safeSetItem = (k, v) => { try { window.localStorage.setItem(k, v); return true; } catch (e) { return false; } };
+
 
 function App() {
             const [globalState, setGlobalState] = useState(() => {
-                const saved = localStorage.getItem('studyStreakData_DB_v7');
+                const saved = safeGetItem('studyStreakData_DB_v7');
                 if (saved) {
                     try {
                         const parsed = JSON.parse(saved);
@@ -48,17 +52,12 @@ function App() {
                             });
                         }
                         return parsed;
-                    } catch(e) { return { users: {}, activeUser: null }; }
+                    } catch(e) { safeSetItem('studyStreakData_corrupt_backup_' + Date.now(), saved); return { users: {}, activeUser: null }; } // keep the raw text: the persist effect would overwrite it
                 }
                 return { users: {}, activeUser: null };
             });
-            const pendingWriteSync = useRef(0);
-            const hasRemoteSynced = useRef(false);
-            const isServerSynced = useRef(false);
 
             // Cloud Sync Status & Outbox Diagnostics State
-            const [syncState, setSyncState] = useState(() => (typeof navigator !== 'undefined' && !navigator.onLine ? 'offline' : 'synced'));
-            const [syncErrorDetails, setSyncErrorDetails] = useState('');
             const [isSyncDiagnosticsOpen, setIsSyncDiagnosticsOpen] = useState(false);
             const [editingExam, setEditingExam] = useState(null);
 
@@ -74,7 +73,7 @@ function App() {
                             setGlobalState(prev => {
                                 if (prev.activeUser !== event.data.activeUser) return prev;
                                 const current = prev.users[prev.activeUser];
-                                const merged = typeof mergeUserData === 'function' ? mergeUserData(current, event.data.user) : { ...current, ...event.data.user };
+                                const merged = typeof applyRemoteSafe === 'function' ? applyRemoteSafe(current, event.data.user) : { ...current, ...event.data.user };
                                 const healed = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(merged) : merged;
                                 if (current && JSON.stringify(current) === JSON.stringify(healed)) return prev;
                                 return {
@@ -101,313 +100,27 @@ function App() {
             // Safety snapshot backup before first remote sync session
             useEffect(() => {
                 try {
-                    if (globalState.activeUser && !localStorage.getItem('studyStreakData_backup_pre_sync')) {
-                        localStorage.setItem('studyStreakData_backup_pre_sync', JSON.stringify(globalState));
+                    if (globalState.activeUser && !safeGetItem('studyStreakData_backup_pre_sync')) {
+                        safeSetItem('studyStreakData_backup_pre_sync', JSON.stringify(globalState));
                     }
                 } catch (e) {}
             }, [globalState.activeUser]);
 
-            // Reset remote sync tracking on activeUser change & trigger active server fetch
+            const storageOkRef = useRef(true);
             useEffect(() => {
-                hasRemoteSynced.current = false;
-                isServerSynced.current = false;
-                if (globalState.activeUser) {
-                    forceSyncFromServer(true);
+                const json = JSON.stringify(globalState);
+                let ok = safeSetItem('studyStreakData_DB_v7', json);
+                if (!ok) {
+                    // free space: the pre-sync backup is the first thing to go, then retry once
+                    try { window.localStorage.removeItem('studyStreakData_backup_pre_sync'); } catch (e) {}
+                    ok = safeSetItem('studyStreakData_DB_v7', json);
                 }
-            }, [globalState.activeUser]);
-
-
-            useEffect(() => {
-                localStorage.setItem('studyStreakData_DB_v7', JSON.stringify(globalState));
+                if (ok !== storageOkRef.current) {
+                    storageOkRef.current = ok;
+                    const eng = syncEngineRef.current;
+                    if (eng) eng.setStorageError(!ok, 'main state write failed');
+                }
             }, [globalState]);
-
-
-            // Utility: wrap promise with strict timeout so tablet/mobile never hangs
-            const withTimeout = (promise, ms = 15000) => {
-                return Promise.race([
-                    promise,
-                    new Promise((_, reject) => setTimeout(() => reject(new Error('Sync timeout (' + ms + 'ms)')), ms))
-                ]);
-            };
-
-            // Watchdog: If state is syncing, verify outbox status before resetting
-            useEffect(() => {
-                if (syncState === 'syncing') {
-                    const timer = setTimeout(() => {
-                        const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
-                        if (pending) {
-                            console.warn('Syncing watchdog: pending outbox items exist');
-                        } else {
-                            setSyncState(navigator.onLine ? 'synced' : 'offline');
-                        }
-                    }, 8000);
-                    return () => clearTimeout(timer);
-                }
-            }, [syncState, globalState.activeUser]);
-
-            // Active server-direct pull to guarantee real-time cross-device sync without WebSocket latency
-            const forceSyncFromServer = async (silent = true) => {
-                if (!db || !globalState.activeUser || (typeof navigator !== 'undefined' && !navigator.onLine)) return false;
-                try {
-                    const userRef = db.collection("users").doc(globalState.activeUser);
-                    let docSnap = null;
-                    try {
-                        // Force read directly from server with strict timeout, bypassing stale client cache
-                        docSnap = await withTimeout(userRef.get({ source: 'server' }), 15000);
-                    } catch (e) {
-                        try {
-                            docSnap = await withTimeout(userRef.get(), 15000);
-                        } catch (e2) {}
-                    }
-                    if (docSnap && docSnap.exists) {
-                        const remoteData = docSnap.data();
-                        hasRemoteSynced.current = true;
-                        isServerSynced.current = true;
-                        setGlobalState(prev => {
-                            const currentUserData = prev.users[prev.activeUser];
-                            const merged = typeof mergeUserData === 'function' 
-                                ? mergeUserData(currentUserData, remoteData, pendingWriteSync.current)
-                                : applyRemoteUser(currentUserData, remoteData, pendingWriteSync.current);
-                            let healed = typeof healCompletedFromHistory === 'function'
-                                ? healCompletedFromHistory(merged || remoteData)
-                                : (merged || remoteData);
-
-
-// Incoming server read adopted cleanly without destructive write-back
-
-                            if (currentUserData && JSON.stringify(currentUserData) === JSON.stringify(healed)) return prev;
-                            return {
-                                ...prev,
-                                users: {
-                                    ...prev.users,
-                                    [prev.activeUser]: healed
-                                }
-                            };
-                        });
-                        setSyncState('synced');
-                        setSyncErrorDetails('');
-                        return true;
-                    }
-                } catch (err) {
-                    if (!silent) console.warn("forceSyncFromServer error:", err);
-                }
-                return false;
-            };
-
-            // Live Firestore Snapshot with error diagnosis & lossless merge
-            useEffect(() => {
-                if (!globalState.activeUser || !db) {
-                    if (!db) setSyncState(navigator.onLine ? 'error' : 'offline');
-                    return;
-                }
-
-                const userRef = db.collection("users").doc(globalState.activeUser);
-                
-                const unsubscribe = userRef.onSnapshot((doc) => {
-                    hasRemoteSynced.current = true;
-                    if (!doc.metadata?.fromCache) {
-                        isServerSynced.current = true;
-                    }
-                    setSyncState('synced');
-                    setSyncErrorDetails('');
-                    if (doc.exists) {
-                        const liveData = doc.data();
-                        
-                        setGlobalState(prev => {
-                            const currentUserData = prev.users[prev.activeUser];
-                            const applied = typeof mergeUserData === 'function'
-                                ? mergeUserData(currentUserData, liveData, pendingWriteSync.current)
-                                : applyRemoteUser(currentUserData, liveData, pendingWriteSync.current);
-                            let healed = typeof healCompletedFromHistory === 'function'
-                                ? healCompletedFromHistory(applied || liveData)
-                                : (applied || liveData);
-
-
-// Incoming real-time snapshot adopted cleanly without destructive write-back
-
-                            if (currentUserData && JSON.stringify(currentUserData) === JSON.stringify(healed)) return prev;
-                            return {
-                                ...prev,
-                                users: {
-                                    ...prev.users,
-                                    [prev.activeUser]: healed
-                                }
-                            };
-                        });
-                    }
-                }, (error) => {
-                    console.error("Live sync error:", error);
-                    setSyncState('error');
-                    const isPerm = error.code === 'permission-denied' || String(error.message).includes('permission');
-                    setSyncErrorDetails(isPerm 
-                        ? 'חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לתיקון מהיר.' 
-                        : (error.message || 'שגיאת התחברות לענן'));
-                });
-
-                return () => unsubscribe();
-            }, [globalState.activeUser]);
-
-            // Manual & Continuous Cloud Push for Outbox Queue (Safely Merging with Cloud First!)
-            const pushPendingSyncToCloud = async (forceUser = null, silent = false) => {
-                const targetUser = forceUser || globalState.activeUser;
-                if (!targetUser || !db) return false;
-                if (!silent) setSyncState('syncing');
-                try {
-                    const pending = typeof getPendingSync === 'function' ? getPendingSync(targetUser) : null;
-                    let userToUpload = pending?.data || globalState.users[targetUser];
-                    if (!userToUpload) {
-                        setSyncState('synced');
-                        return true;
-                    }
-
-                    // CRITICAL: Fetch current server document and merge with pending data before saving
-                    // This guarantees we NEVER overwrite recent progress from another device!
-                    try {
-                        const remoteDoc = await withTimeout(db.collection("users").doc(targetUser).get(), 15000);
-                        if (remoteDoc.exists) {
-                            const remoteData = remoteDoc.data();
-                            userToUpload = typeof mergeUserData === 'function'
-                                ? mergeUserData(userToUpload, remoteData)
-                                : { ...remoteData, ...userToUpload };
-                        }
-                    } catch (fetchErr) {
-                        console.warn('Pre-push remote merge warning (offline):', fetchErr);
-                    }
-
-                    if (Array.isArray(userToUpload.deletedTaskIds) && userToUpload.deletedTaskIds.length > 0 && Array.isArray(userToUpload.tasks)) {
-                        const delSet = new Set(userToUpload.deletedTaskIds);
-                        userToUpload = {
-                            ...userToUpload,
-                            tasks: userToUpload.tasks.filter(t => t && !delSet.has(t.id))
-                        };
-                    }
-                    if (Array.isArray(userToUpload.deletedExamIds) && userToUpload.deletedExamIds.length > 0 && Array.isArray(userToUpload.exams)) {
-                        const delExamSet = new Set(userToUpload.deletedExamIds);
-                        userToUpload = {
-                            ...userToUpload,
-                            exams: userToUpload.exams.filter(e => e && !delExamSet.has(e.id))
-                        };
-                    }
-                    const cleanData = sanitizeForFirestore(userToUpload);
-                    await withTimeout(db.collection("users").doc(targetUser).set(cleanData, { merge: true }), 15000);
-                    if (typeof clearPendingSync === 'function') {
-                        clearPendingSync(targetUser);
-                    }
-                    setSyncState('synced');
-                    setSyncErrorDetails('');
-                    return true;
-                } catch (err) {
-                    console.error("Manual push sync failed:", err);
-                    const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
-                    if (isPerm) {
-                        setSyncState('error');
-                        setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied)');
-                    } else {
-                        setSyncState('error');
-                        setSyncErrorDetails('שגיאה בהעלאת נתונים לענן: ' + (err.message || 'החיבור התנתק או פג הזמן'));
-                    }
-                    return false;
-                }
-            };
-
-            // Multi-Device Continuous Sentinel Guard (Active poll every 12s + Instant wake on Visibility/Focus/Online)
-            useEffect(() => {
-                if (!globalState.activeUser) return;
-
-                const runMultiDeviceSentinel = async (isManual = false) => {
-                    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-                        setSyncState('offline');
-                        setSyncErrorDetails('אין חיבור לאינטרנט במכשיר זה');
-                        return false;
-                    }
-                    if (!db) {
-                        setSyncState('error');
-                        setSyncErrorDetails('מסד הנתונים בענן (Firebase) לא אותחל');
-                        return false;
-                    }
-
-                    try {
-                        // 1. Proactive server sync: ALWAYS fetch latest document first!
-                        await forceSyncFromServer(true);
-
-                        // 2. Drain pending outbox changes if any (safely merged!)
-                        const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
-                        if (pending) {
-                            const pushed = await pushPendingSyncToCloud(null, true);
-                            if (!pushed) {
-                                setSyncState('syncing');
-                                setSyncErrorDetails('ישנם שינויים מקומיים שממתינים לשמירה בענן');
-                                return false;
-                            }
-                        }
-                        
-                        // 3. Confirm clean sync state
-                        const checkPendingAgain = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
-                        if (!checkPendingAgain) {
-                            setSyncState('synced');
-                            setSyncErrorDetails('');
-                        } else {
-                            setSyncState('syncing');
-                            setSyncErrorDetails('ישנם שינויים מקומיים שממתינים לשמירה בענן');
-                        }
-                        return true;
-                    } catch (sentinelErr) {
-                        console.warn('runMultiDeviceSentinel cycle error:', sentinelErr);
-                        setSyncState('error');
-                        setSyncErrorDetails(sentinelErr.message || 'שגיאה בתקשורת מול שרת הענן');
-                        return false;
-                    }
-                };
-
-                window.__runMultiDeviceSentinel = runMultiDeviceSentinel;
-                runMultiDeviceSentinel();
-                // Check every 12 seconds for real-time background sync across computer, phone, tablet
-                const interval = setInterval(runMultiDeviceSentinel, 12000);
-
-                const onOnline = () => {
-                    runMultiDeviceSentinel();
-                    showToast('חיבור האינטרנט חזר! מסנכרן שינויים לענן... 🔄', 'info');
-                };
-                const onOffline = () => {
-                    setSyncState('offline');
-                };
-                const onWakeOrFocus = () => {
-                    // Mobile & tablet instant wake detection (when screen turns on or user returns to tab)
-                    if (document.visibilityState === 'visible' || document.hasFocus()) {
-                        runMultiDeviceSentinel();
-                    }
-                };
-
-                window.addEventListener('online', onOnline);
-                window.addEventListener('offline', onOffline);
-                window.addEventListener('focus', onWakeOrFocus);
-                window.addEventListener('pageshow', onWakeOrFocus);
-                document.addEventListener('visibilitychange', onWakeOrFocus);
-
-                return () => {
-                    clearInterval(interval);
-                    window.removeEventListener('online', onOnline);
-                    window.removeEventListener('offline', onOffline);
-                    window.removeEventListener('focus', onWakeOrFocus);
-                    window.removeEventListener('pageshow', onWakeOrFocus);
-                    document.removeEventListener('visibilitychange', onWakeOrFocus);
-                };
-            }, [globalState.activeUser]);
-
-            const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
-
-            const hasHealedStartupRef = useRef(false);
-            useEffect(() => {
-                // Guard: NEVER trigger cloud updates from stale startup state before remote sync completes
-                if (!activeUserData || !hasRemoteSynced.current || hasHealedStartupRef.current) return;
-                hasHealedStartupRef.current = true;
-                const healed = healCompletedFromHistory(activeUserData);
-                if (healed !== activeUserData && JSON.stringify(healed) !== JSON.stringify(activeUserData)) {
-                    updateUserData(() => healed);
-                }
-            }, [globalState.activeUser, hasRemoteSynced.current]);
-
-
             const sanitizeForFirestore = (obj) => {
                 if (obj === undefined) return null;
                 if (obj === null || typeof obj !== 'object') return obj;
@@ -418,62 +131,176 @@ function App() {
                 }
             };
 
-            const updateUserData = (updater) => {
+            // ---- Sync engine wiring (js/sync-engine.js): outbox, transactional push, pull, honest status ----
+            const liveUserRef = useRef({ id: null, doc: null });
+            liveUserRef.current = { id: globalState.activeUser, doc: globalState.activeUser ? globalState.users[globalState.activeUser] : null };
+
+            // Merge a cloud/transaction result into the latest local state. Never stamps lastSync, never queues a push.
+            const applyMerged = (merged, o) => {
+                setGlobalState(prev => {
+                    const id = prev.activeUser;
+                    if (!id || !merged) return prev;
+                    const cur = prev.users[id];
+                    // first pull of a never-used device: its unedited default scalars must not beat the cloud
+                    const base = cur && o && o.stripUnedited ? stripUneditedScalars(cur) : cur;
+                    const m = base ? mergeUserData(base, merged) : merged;
+                    if (isMergeAborted(m)) return prev;
+                    if (cur && contentHash(cur) === contentHash(m)) return prev;
+                    return { ...prev, users: { ...prev.users, [id]: m } };
+                });
+            };
+            const applyMergedRef = useRef(applyMerged);
+            applyMergedRef.current = applyMerged;
+
+            // Never-used device state: engine never pushes it before the first successful pull. A just-created default doc
+            // (no lastSync, no content) counts as fresh too.
+            const isFreshLocal = (u) => !u || isEmptyLocal(u) || (!u.lastSync && !(u.tasks || []).length && !(u.pointsHistory || []).length && !(u.exams || []).length);
+            const [bootstrapSkipped, setBootstrapSkipped] = useState(false);
+            const [syncInfoRaw, setSyncInfo] = useState(null);
+            // info of ANOTHER account (just switched) must never count: key it by docId
+            const syncInfo = syncInfoRaw && syncInfoRaw.docId === globalState.activeUser ? syncInfoRaw : null;
+            const syncPulled = !!(syncInfo && syncInfo.pullOk);
+
+            // the backup only matters until the first successful pull; then drop it (keep at most the latest one)
+            useEffect(() => {
+                if (syncPulled) { try { window.localStorage.removeItem('studyStreakData_backup_pre_sync'); } catch (e) {} }
+            }, [syncPulled]);
+            // status can change without an engine emit (applyLocal / merges): refresh after every commit
+            useEffect(() => {
+                const eng = syncEngineRef.current;
+                if (eng) { try { setSyncInfo(eng.info()); } catch (e) {} }
+            }, [globalState]);
+            // cloud doc written by a NEWER build than this one: offer the update immediately
+            useEffect(() => {
+                const b = syncInfo && syncInfo.remoteBuild, mine = window.__BUILD_ID;
+                if (b && mine && String(b) > String(mine) && typeof window.__showUpdateBanner === 'function') window.__showUpdateBanner(b);
+            }, [syncInfo && syncInfo.remoteBuild]);
+
+            const syncEngineRef = useRef(null);
+            if (!syncEngineRef.current && db && typeof createSyncEngine === 'function') {
+                let notifyQueued = false;
+                syncEngineRef.current = createSyncEngine({
+                    helpers: { mergeUserData, isMergeAborted, contentHash, isEmptyLocal: isFreshLocal, computeSyncStatus },
+                    db: firestorePort(db),
+                    storage: (() => { try { return window.localStorage; } catch (e) { return null; } })(),
+                    online: typeof navigator === 'undefined' || navigator.onLine !== false,
+                    getLocal: () => liveUserRef.current.doc,
+                    applyLocal: (m, o) => applyMergedRef.current(m, o),
+                    buildId: (typeof window !== 'undefined' && window.__BUILD_ID) || null,
+                    // never set state synchronously (the engine can emit from inside a state updater)
+                    onChange: () => {
+                        if (notifyQueued) return;
+                        notifyQueued = true;
+                        Promise.resolve().then(() => { notifyQueued = false; try { const inf = syncEngineRef.current.info(); setSyncInfo(inf); if (!window.__ssFirstSync && inf && (inf.pullOk || inf.listenerState === 'ok')) { window.__ssFirstSync = true; window.dispatchEvent(new Event('ss-first-sync')); } } catch (e) {} });
+                    }
+                });
+            }
+            const hasRemoteSynced = { current: syncPulled };
+            const pendingWriteSync = useRef(0);
+
+            const fmtClock = (ms) => {
+                if (!ms) return '';
+                const d = new Date(ms);
+                return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+            };
+            const syncStatusRaw = !db
+                ? { state: 'error', reason: 'firebase_not_initialised' }
+                : (syncInfo ? syncInfo.status : { state: 'pending', reason: 'starting' });
+            // UI vocabulary: synced | syncing | offline | error
+            const syncState = syncStatusRaw.state === 'pending' ? 'syncing' : syncStatusRaw.state;
+            const syncErrorDetails = syncStatusRaw.reason === 'storage_full' ? 'האחסון מלא' : (syncInfo && syncInfo.lastError ? syncInfo.lastError : (syncStatusRaw.state === 'error' ? syncStatusRaw.reason : ''));
+            const syncLastAckText = syncInfo && syncInfo.lastPushAckAt ? `סונכרן לאחרונה ${fmtClock(syncInfo.lastPushAckAt)}` : 'עדיין לא סונכרן';
+            const noCloudDocNow = syncStatusRaw.reason === 'no_cloud_doc';
+            const createCloudFromLocal = async () => {
+                const eng = syncEngineRef.current;
+                if (!eng || !window.confirm('אין חשבון בענן. ליצור אותו מהנתונים שבמכשיר הזה?')) return;
+                const r = await eng.createFromLocal();
+                showToast(r === 'created' ? 'החשבון נוצר בענן מהנתונים שבמכשיר ✅' : r === 'existing' ? 'כבר קיים חשבון בענן — הנתונים מוזגו' : 'היצירה נכשלה, נסי שוב', r === 'failed' ? 'error' : 'success');
+                try { setSyncInfo(eng.info()); } catch (e) {}
+            };
+            const syncLabel = noCloudDocNow ? 'אין חשבון בענן — ליצור מהנתונים במכשיר?' : syncState === 'synced' ? `מסונכרן ✓ ${syncLastAckText}`
+                : syncState === 'syncing' ? `מסנכרן… ${syncInfo && syncInfo.outboxCount ? syncInfo.outboxCount + ' ממתינים' : ''} ${syncLastAckText}`.replace(/\s+/g, ' ')
+                : syncState === 'offline' ? 'אין חיבור — השינויים נשמרים ויסונכרנו'
+                : `לא מסונכרן: ${syncErrorDetails || syncStatusRaw.reason}`;
+            const [isSyncInfoOpen, setIsSyncInfoOpen] = useState(false);
+            const dotTaps = useRef({ n: 0, timer: null });
+            const onSyncDotTap = () => {
+                const t = dotTaps.current;
+                t.n++;
+                if (t.timer) clearTimeout(t.timer);
+                if (t.n >= 5) { t.n = 0; setIsSyncInfoOpen(true); return; }
+                t.timer = setTimeout(() => { t.n = 0; setIsSyncDiagnosticsOpen(true); }, 700);
+            };
+            const retrySync = async () => {
+                const eng = syncEngineRef.current;
+                if (!eng) return;
+                await eng.retry();
+                try { setSyncInfo(eng.info()); } catch (e) {}
+            };
+
+            // Reset sync on activeUser change; first pull happens inside the engine (bootstrap gate for empty local)
+            useEffect(() => {
+                const eng = syncEngineRef.current;
+                setSyncInfo(null);
+                setBootstrapSkipped(false);
+                window.__activeSyncUser = globalState.activeUser || null;
+                if (eng) { eng.refreshOnline(typeof navigator === 'undefined' || navigator.onLine !== false); eng.setUser(globalState.activeUser || null); }
+                return () => { /* engine.setUser handles teardown */ };
+            }, [globalState.activeUser]);
+
+            // Poll every 15 s + wake on focus/visibility/pageshow + online/offline events (poll also offline->online)
+            useEffect(() => {
+                if (!globalState.activeUser) return;
+                const eng = syncEngineRef.current;
+                if (!eng) return;
+                const tick = () => { eng.refreshOnline(typeof navigator === 'undefined' || navigator.onLine !== false); if (typeof navigator === 'undefined' || navigator.onLine !== false) eng.poll(); };
+                const interval = setInterval(tick, 15000);
+                const onOnline = () => { eng.setOnline(true); showToast('חיבור האינטרנט חזר! מסנכרן שינויים לענן... 🔄', 'info'); };
+                const onOffline = () => eng.setOnline(false);
+                const onWake = () => { if (document.visibilityState === 'visible') tick(); };
+                window.addEventListener('online', onOnline);
+                window.addEventListener('offline', onOffline);
+                window.addEventListener('focus', onWake);
+                window.addEventListener('pageshow', onWake);
+                document.addEventListener('visibilitychange', onWake);
+                return () => {
+                    clearInterval(interval);
+                    window.removeEventListener('online', onOnline);
+                    window.removeEventListener('offline', onOffline);
+                    window.removeEventListener('focus', onWake);
+                    window.removeEventListener('pageshow', onWake);
+                    document.removeEventListener('visibilitychange', onWake);
+                };
+            }, [globalState.activeUser]);
+
+            const activeUserData = globalState.activeUser ? globalState.users[globalState.activeUser] : null;
+
+            const hasHealedStartupRef = useRef(false);
+            useEffect(() => {
+                // Guard: NEVER trigger cloud updates from stale startup state before the first successful pull
+                if (!activeUserData || !syncPulled || hasHealedStartupRef.current) return;
+                hasHealedStartupRef.current = true;
+                const healed = healCompletedFromHistory(activeUserData);
+                if (healed !== activeUserData && JSON.stringify(healed) !== JSON.stringify(activeUserData)) {
+                    updateUserData(() => healed);
+                }
+            }, [globalState.activeUser, syncPulled]);
+
+            // Every LOCAL mutation stamps lastSync (only place it is stamped). The updater is PURE (a React re-run must not
+            // double-enqueue): side effects (outbox, broadcast) run once per commit in the effect below.
+            const mutationRef = useRef(null);
+            const updateUserData = (updater, opts) => {
                 setGlobalState(prev => {
                     if (!prev.activeUser) return prev;
                     const user = prev.users[prev.activeUser];
-                    const updatedUser = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
-                    if (updatedUser === user) return prev;
-                    
-                    updatedUser.lastSync = Date.now();
-                    pendingWriteSync.current = updatedUser.lastSync;
-                    
-                    if (typeof markPendingSync === 'function') {
-                        markPendingSync(prev.activeUser, updatedUser);
-                    }
-
-                    // Multi-Tab local broadcast (0ms sync between open tabs)
-                    try {
-                        if (window.__studyStreakBroadcast) {
-                            window.__studyStreakBroadcast.postMessage({
-                                type: 'LOCAL_SYNC',
-                                activeUser: prev.activeUser,
-                                user: updatedUser
-                            });
-                        }
-                    } catch (e) {}
-
-                    if (db) {
-                        try {
-                            const cleanData = sanitizeForFirestore(updatedUser);
-                            withTimeout(db.collection("users").doc(prev.activeUser).set(cleanData, { merge: true }), 15000)
-                              .then(() => {
-                                  setSyncState('synced');
-                                  setSyncErrorDetails('');
-                                  if (typeof clearPendingSync === 'function') {
-                                      clearPendingSync(prev.activeUser);
-                                  }
-                              })
-                              .catch(err => {
-                                  console.warn("Save to Firebase error:", err);
-                                  const isPerm = err.code === 'permission-denied' || String(err.message).includes('permission');
-                                  if (isPerm) {
-                                      setSyncState('error');
-                                      setSyncErrorDetails('חוקי האבטחה ב-Firebase פגו (Permission Denied). לחצי לבדיקה.');
-                                  } else {
-                                      setSyncState(navigator.onLine ? 'syncing' : 'offline');
-                                      setSyncErrorDetails('השינוי נשמר במכשיר וממתין לסנכרון מול שרת הענן');
-                                  }
-                              });
-                        } catch (err) {
-                            console.error("Firebase sync error (prevented app crash): ", err);
-                            setSyncState('error');
-                            setSyncErrorDetails(err.message || 'שגיאה באתחול שמירה לענן');
-                        }
-                    } else {
-                        setSyncState(navigator.onLine ? 'error' : 'offline');
-                    }
-
+                    const rawUpdated = typeof updater === 'function' ? updater(user) : { ...user, ...updater };
+                    if (rawUpdated === user) return prev;
+                    // every edit stamps updatedAt / fieldUpdatedAt (not the automatic sweep); headline totals re-derive from the ledger
+                    const stampNow = Date.now();
+                    const stamped = opts && opts.noStamp ? rawUpdated : stampEdits(user, rawUpdated, stampNow);
+                    const updatedUser = withDerivedTotals(stamped, stampNow);
+                    updatedUser.lastSync = stampNow;
+                    mutationRef.current = { id: prev.activeUser, doc: updatedUser };
                     return {
                         ...prev,
                         users: {
@@ -483,7 +310,20 @@ function App() {
                     };
                 });
             };
-
+            useEffect(() => {
+                const m = mutationRef.current;
+                if (!m) return;
+                mutationRef.current = null;
+                pendingWriteSync.current = m.doc.lastSync;
+                const eng = syncEngineRef.current;
+                if (eng) { try { eng.localMutation(m.doc); } catch (err) { console.warn('outbox enqueue failed:', err); } }
+                // Multi-Tab local broadcast (0ms sync between open tabs)
+                try {
+                    if (window.__studyStreakBroadcast) {
+                        window.__studyStreakBroadcast.postMessage({ type: 'LOCAL_SYNC', activeUser: m.id, user: m.doc });
+                    }
+                } catch (e) {}
+            }, [globalState]);
 
             const checkAndAwardBadges = (userData) => {
                 if(!userData) return userData;
@@ -629,21 +469,15 @@ function App() {
             // Helper: calculate total positive points earned by a user within a time window [startTime, endTime]
             const calculatePointsInWindow = (uData, startTime, endTime) => {
                 if (!uData) return 0;
-                const hist = uData.pointsHistory || [];
-                const histSum = hist.filter(h => {
-                    if (!h || !h.date || h.canceled || (h.points || 0) <= 0) return false;
-                    const t = new Date(h.date).getTime();
-                    return !isNaN(t) && t >= startTime && t <= endTime;
-                }).reduce((sum, h) => sum + (h.points || 0), 0);
-
-                const tasks = uData.tasks || [];
-                const taskSum = tasks.filter(t => {
+                if (Array.isArray(uData.pointsHistory) && uData.pointsHistory.length) {
+                    return sumLedger(uData.pointsHistory, { from: startTime, to: endTime }); // signed, penalties included
+                }
+                // legacy docs without a ledger: completed-task points
+                return (uData.tasks || []).filter(t => {
                     if (!t || !t.completed || !t.completedAt || t.givenUp) return false;
                     const tTime = new Date(t.completedAt).getTime();
                     return !isNaN(tTime) && tTime >= startTime && tTime <= endTime;
                 }).reduce((sum, t) => sum + (t.pointsEarned || 1), 0);
-
-                return Math.max(histSum, taskSum);
             };
 
             // Shared Cloud Registry for Weekly Champions
@@ -698,7 +532,10 @@ function App() {
                         const celebratedKey = 'studystreak_celebrated_' + crowningWeekKey + '_' + (globalState.activeUser || '');
 
                         const userHistoricalPts = calculatePointsInWindow(activeUserData, completedWeekStart, completedWeekEnd);
-                        const userCompletedPts = Math.max(userHistoricalPts, Number(activeUserData.lastWeekPoints) || 0);
+                        // ledger window sum is the single authority when a ledger exists (no Math.max with stored numbers)
+                        const userCompletedPts = (Array.isArray(activeUserData.pointsHistory) && activeUserData.pointsHistory.length)
+                            ? userHistoricalPts
+                            : Math.max(userHistoricalPts, Number(activeUserData.lastWeekPoints) || 0);
 
                         // If not yet crowned in cloud registry, fetch ALL friends directly from Firestore to ensure 100% fair crowning
                         if (!existingOfficialWin && (activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) {
@@ -723,7 +560,9 @@ function App() {
 
                             allFriendsData.forEach(f => {
                                 const fHistPts = calculatePointsInWindow(f, completedWeekStart, completedWeekEnd);
-                                const fPts = Math.max(fHistPts, Number(f.weeklyPoints) || 0, Number(f.crownedWeekPoints) || 0, Number(f.lastWeekPoints) || 0);
+                                const fPts = (Array.isArray(f.pointsHistory) && f.pointsHistory.length)
+                                    ? fHistPts
+                                    : Math.max(fHistPts, Number(f.weeklyPoints) || 0, Number(f.crownedWeekPoints) || 0, Number(f.lastWeekPoints) || 0);
                                 if (fPts > topPts) {
                                     topPts = fPts;
                                     topUsername = f.username || f.name || f.id;
@@ -842,123 +681,35 @@ function App() {
 
             useEffect(() => {
                 if (!globalState.activeUser) return;
-                // Guard: Wait for initial remote Firestore sync when online so stale localStorage doesn't trigger false penalties
-                if (!hasRemoteSynced.current && typeof navigator !== 'undefined' && navigator.onLine !== false) return;
+                // Guard: wait for the first successful cloud pull when online so stale/empty local state never charges
+                // (offline: only a non-fresh local doc may sweep; a never-used device waits for its first pull)
+                const pulled = syncPulled;
+                const offlineNow = typeof navigator !== 'undefined' && navigator.onLine === false;
+                if (!pulled && !(offlineNow && !isFreshLocal(activeUserData))) return;
 
+                // Binding ladder (single source: sweepLadder): runs at open/login (after the pull), after merges, every 60 s.
                 const checkOverdueAndStreak = () => {
+                    let result = null;
                     updateUserData(prev => {
-                        if (!prev || !prev.tasks) return prev;
-                        const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
-                        const now = new Date();
-                        let shouldBreakStreak = false;
-                        let oldestUncompletedDate = null;
-                        let oldestUncompletedTaskId = null;
-                        let needsUpdate = false;
-                        let pointsToDeduct = 0;
-                        let historyLogs = [];
-                        const GRACE_PERIOD_MS = 5 * 60 * 1000;
-
-                        const updatedTasks = (healedPrev.tasks || []).map(task => {
-                            const isDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task, healedPrev.pointsHistory));
-                            if (isDone) {
-                                const onTime = typeof isTaskSubmittedOnTime === 'function'
-                                    ? isTaskSubmittedOnTime(task)
-                                    : (task.completedAt && task.dueDate && new Date(task.completedAt).getTime() <= (new Date(`${task.dueDate}T${task.dueTime || '23:59:59'}`).getTime() + GRACE_PERIOD_MS));
-                                if (onTime && task.autoPenaltyApplied) {
-                                    return { ...task, completed: true, autoPenaltyApplied: false };
-                                }
-                                return task.completed ? task : { ...task, completed: true };
-                            }
-                            if (task.isLessonLog || !task.dueDate || task.isFlexibleExamSession || task.isPracticeSession) return task;
-                            const timeStr = task.dueTime || '23:59:59';
-                            const dueDate = new Date(`${task.dueDate}T${timeStr}`);
-                            if (isNaN(dueDate.getTime())) return task;
-
-                            // An uncompleted task that already broke a streak must never break future streaks again
-                            if (task.streakBreakProcessed) return task;
-
-                            const streakStartMs = healedPrev.currentStreakStart ? new Date(healedPrev.currentStreakStart).getTime() : 0;
-                            // If an active streak exists, only a task due AFTER this streak started can break it
-                            const isTaskRelevantForStreak = !streakStartMs || dueDate.getTime() >= (streakStartMs - 5 * 60 * 1000);
-
-                            if (isTaskRelevantForStreak && now.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS)) {
-                                shouldBreakStreak = true;
-                                if (!oldestUncompletedDate || dueDate < oldestUncompletedDate) {
-                                    oldestUncompletedDate = dueDate;
-                                    oldestUncompletedTaskId = task.id;
-                                }
-                            }
-                            const hoursLate = (now.getTime() - dueDate.getTime()) / (1000 * 60 * 60);
-                            // Only apply auto-penalty to recent overdue tasks (within 72 hours), never retroactively on ancient backlog
-                            if (hoursLate >= 3 && hoursLate <= 72 && !task.autoPenaltyApplied) {
-                                needsUpdate = true;
-                                pointsToDeduct += 2;
-                                const sub = (healedPrev.subjects || []).find(s => s.id === task.subjectId);
-                                historyLogs.push({
-                                    id: 'ph_auto_' + task.id + '_' + Date.now(),
-                                    taskId: task.id,
-                                    taskTitle: task.title,
-                                    subjectName: sub ? sub.name : 'כללי',
-                                    subjectEmoji: sub ? sub.emoji : '📚',
-                                    points: -2,
-                                    date: now.toISOString(),
-                                    details: 'קנס אוטומטי! המשימה עברה את זמן ההגשה ביותר מ-3 שעות.'
-                                });
-                                return { ...task, autoPenaltyApplied: true };
-                            }
-                            return task;
-                        });
-
-                        if (!shouldBreakStreak && !needsUpdate) return prev;
-
-                        let newStreakHistory = [...(healedPrev.streakHistory || [])];
-                        let taskStreak = healedPrev.taskStreak;
-                        let currentStreakStart = healedPrev.currentStreakStart;
-                        let currentStreakEmojis = healedPrev.currentStreakEmojis;
-
-                        if (shouldBreakStreak) {
-                            const alreadyRecorded = newStreakHistory.some(s => s && s.brokenByTaskId === oldestUncompletedTaskId);
-                            if (taskStreak > 0 && !alreadyRecorded) {
-                                newStreakHistory.unshift({
-                                    id: 'sh_' + oldestUncompletedTaskId + '_broken',
-                                    startDate: currentStreakStart,
-                                    endDate: oldestUncompletedDate ? oldestUncompletedDate.toISOString() : now.toISOString(),
-                                    length: taskStreak,
-                                    emojis: [...(currentStreakEmojis || [])],
-                                    brokenByTaskId: oldestUncompletedTaskId
-                                });
-                            }
-                            const brokenTask = (healedPrev.tasks || []).find(t => t.id === oldestUncompletedTaskId);
-                            if (taskStreak > 0 && (!brokenTask || !brokenTask.streakBreakNotified)) {
-                                setTimeout(() => showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning'), 100);
-                            }
-                            taskStreak = 0;
-                            currentStreakStart = null;
-                            currentStreakEmojis = [];
-                            // Mark task as streakBreakProcessed so it does not re-trigger toast
-                            updatedTasks = updatedTasks.map(t => t.id === oldestUncompletedTaskId ? { ...t, streakBreakProcessed: true, streakBreakNotified: true } : t);
-                        }
-                        if (needsUpdate) {
-                            setTimeout(() => showToast(`משימה עברה את יעד ההגשה ביותר מ-3 שעות! ירדו 2 נקודות אוטומטית. ⏰`, 'error'), 600);
-                        }
-                        return {
-                            ...healedPrev,
-                            tasks: updatedTasks,
-                            totalPoints: (healedPrev.totalPoints || 0) - pointsToDeduct,
-                            weeklyPoints: (healedPrev.weeklyPoints || 0) - pointsToDeduct,
-                            pointsHistory: [...historyLogs, ...(healedPrev.pointsHistory || [])],
-                            taskStreak,
-                            currentStreakStart,
-                            currentStreakEmojis,
-                            streakHistory: newStreakHistory
-                        };
-                    });
+                        try {
+                            if (!prev || !prev.tasks) return prev;
+                            const healedPrev = typeof healCompletedFromHistory === 'function' ? healCompletedFromHistory(prev) : prev;
+                            result = sweepLadder(healedPrev, Date.now(), { canStamp: pulled });
+                            if (result.user === healedPrev) return prev; // nothing to charge: never persist a bare heal (would stamp + push every minute)
+                            return result.user;
+                        } catch (err) { console.warn('ladder sweep failed:', err); return prev; }
+                    }, { noStamp: true });
+                    setTimeout(() => {
+                        if (!result) return;
+                        if (result.broke) showToast('רצף ההגשות שלך נשבר כי זמן ההגשה של משימה עבר. 😢', 'warning');
+                        if (result.newRows && result.newRows.length) showToast(`משימה עברה את זמן ההגשה: ירדה נקודה אחת (-1) לכל שלב. ⏰`, 'error');
+                    }, 100);
                 };
 
                 checkOverdueAndStreak();
                 const overdueInterval = setInterval(checkOverdueAndStreak, 60000);
                 return () => clearInterval(overdueInterval);
-            }, [globalState.activeUser, hasRemoteSynced.current]);
+            }, [globalState.activeUser, syncPulled]);
 
 
             const handleAddTaskToCalendar = (task) => {
@@ -1142,8 +893,8 @@ function App() {
                     if (permission === 'granted') {
                         const freeWindows = getUpcomingFreeWindows(activeUserData.scheduleSettings, task.dueDate);
                         const windowsToSchedule = freeWindows.length > 0 ? freeWindows.slice(0, 4) : [
-                            { dateStr: new Date().toISOString().split('T')[0], start: '16:30', end: '18:00', dayName: 'היום' },
-                            { dateStr: new Date().toISOString().split('T')[0], start: '20:00', end: '21:30', dayName: 'הערב' }
+                            { dateStr: localDateStr(new Date()), start: '16:30', end: '18:00', dayName: 'היום' },
+                            { dateStr: localDateStr(new Date()), start: '20:00', end: '21:30', dayName: 'הערב' }
                         ];
 
                         // 1. Send scheduled reminders for each upcoming free window
@@ -1200,8 +951,8 @@ function App() {
                 });
             };
 
-            const getWeeklyReportData = () => {
-                if (!activeUserData) return null;
+            const getWeeklyReportData = (u = activeUserData, weekStartStr = null) => {
+                if (!u) return null;
                 const now = new Date();
                 const isSundayMorningReport = (now.getDay() === 0 && now.getHours() < 14);
                 const startOfWeek = new Date(now);
@@ -1211,20 +962,21 @@ function App() {
                 } else {
                     startOfWeek.setDate(now.getDate() - now.getDay());
                 }
+                if (weekStartStr) { const [wy, wm, wd] = weekStartStr.split('-').map(Number); startOfWeek.setFullYear(wy, wm - 1, wd); }
                 startOfWeek.setHours(0,0,0,0);
                 
                 const endOfWeek = new Date(startOfWeek);
                 endOfWeek.setDate(startOfWeek.getDate() + 6);
                 endOfWeek.setHours(23,59,59,999);
 
-                const thisWeekTasks = (activeUserData.tasks || []).filter(t => {
+                const thisWeekTasks = (u.tasks || []).filter(t => {
                     if (!t.completed && !t.completedAt) return false;
                     const dateStr = t.completedAt || (t.completed ? (t.dueDate || t.createdAt) : null);
                     if (!dateStr) return false;
                     const d = new Date(dateStr);
                     return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
                 }).map(t => {
-                    const sub = (activeUserData.subjects || []).find(s => 
+                    const sub = (u.subjects || []).find(s => 
                         s.id === t.subjectId || 
                         s.name === t.subjectId || 
                         cleanSubjectName(s.name) === cleanSubjectName(t.subjectName || t.subject)
@@ -1240,19 +992,19 @@ function App() {
                 const examPrepDone = thisWeekTasks.filter(t => !t.givenUp && t.isExamPrep);
                 const lessonsLogged = thisWeekTasks.filter(t => t.isLessonLog);
 
-                const thisWeekExams = (activeUserData.exams || []).filter(e => {
+                const thisWeekExams = (u.exams || []).filter(e => {
                     const d = new Date(e.date);
                     return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
                 });
 
-                const thisWeekHistory = (activeUserData.pointsHistory || []).filter(h => {
+                const thisWeekHistory = (u.pointsHistory || []).filter(h => {
                     const d = new Date(h.date);
                     return !isNaN(d.getTime()) && d >= startOfWeek && d <= endOfWeek;
                 });
 
-                const historySum = thisWeekHistory.filter(h => h.points > 0).reduce((acc, h) => acc + h.points, 0);
-                const totalPointsGained = Math.max(activeUserData.weeklyPoints || 0, historySum);
-                const currentStreak = activeUserData.taskStreak !== undefined ? activeUserData.taskStreak : (activeUserData.streak || 0);
+                // signed ledger sum for the report week (no Math.max with a stored number, penalties included)
+                const totalPointsGained = sumLedger(u.pointsHistory, { from: startOfWeek.getTime(), to: endOfWeek.getTime() });
+                const currentStreak = u.taskStreak !== undefined ? u.taskStreak : (u.streak || 0);
 
                 const weekTasksWithHours = thisWeekTasks.filter(t => !t.givenUp && t.studyDurationHours);
                 const totalStudyHoursNum = weekTasksWithHours.reduce((sum, t) => sum + Number(t.studyDurationHours), 0);
@@ -1269,7 +1021,7 @@ function App() {
                     totalPointsGained,
                     totalStudyHours,
                     currentStreak,
-                    subjects: activeUserData.subjects || []
+                    subjects: u.subjects || []
                 };
             };
 
@@ -1403,96 +1155,25 @@ function App() {
                 });
             };
 
-            const handleSendParentWeeklyReportWhatsApp = (silent = false) => {
-                const now = new Date();
-                const currentWeek = getWeekIdentifier(now);
-                const nowMs = Date.now();
-
-                // 1. Strict Hermetic Guard: Exactly ONE parent weekly summary per week!
-                if (window.__parentWeeklyReportSending) {
-                    console.log('[WhatsApp Report] Already sending in-flight, skipping duplicate dispatch.');
-                    return;
-                }
-
-                const lastSentWeek = activeUserData?.lastWeeklyReportSentWeek;
-                const lastSentTime = Number(activeUserData?.lastWeeklyReportSentTime) || 0;
-                const hoursSinceLastSent = (nowMs - lastSentTime) / (1000 * 60 * 60);
-
-                const localSentKey = 'studystreak_weekly_report_sent_' + currentWeek;
-                let localAlreadySent = false;
-                try {
-                    if (localStorage.getItem(localSentKey) || sessionStorage.getItem(localSentKey)) {
-                        localAlreadySent = true;
-                    }
-                } catch (e) {}
-
-                const alreadySent = (lastSentWeek === currentWeek) || localAlreadySent || (hoursSinceLastSent < 96);
-
-                if (alreadySent) {
-                    console.log('[WhatsApp Report] Weekly report already sent for week', currentWeek, 'skipping duplicate send.');
-                    if (!silent) {
-                        showToast('דוח סיכום שבועי כבר נשלח השבוע להורים (מוגדר לשלוח רק דוח סיכום 1 בשבוע) 📨', 'info');
-                    }
-                    return;
-                }
-
+            // MANUAL send only (button). Automatic sends go through runWaSlot (one cross-device claim per slot).
+            const handleSendParentWeeklyReportWhatsApp = () => {
                 const p1 = activeUserData?.parentPhoneNumber?.trim();
                 const p2 = activeUserData?.parentPhoneNumber2?.trim();
-
                 if (!p1 && !p2) {
-                    if (!silent) {
-                        showToast('נא להזין תחילה לפחות מספר הורה אחד בהגדרות ⚙️', 'warning');
-                        setActiveTab('settings');
-                    }
+                    showToast('נא להזין תחילה לפחות מספר הורה אחד בהגדרות ⚙️', 'warning');
+                    setActiveTab('settings');
                     return;
                 }
-
                 const reportData = getWeeklyReportData();
-                if (!reportData) {
-                    if (!silent) showToast('אין מספיק נתונים להפקת דוח שבועי כרגע', 'info');
-                    return;
-                }
-
-                // Lock immediately across memory, sessionStorage and localStorage before any network request
-                window.__parentWeeklyReportSending = true;
-                try {
-                    localStorage.setItem(localSentKey, String(nowMs));
-                    sessionStorage.setItem(localSentKey, String(nowMs));
-                } catch (e) {}
-
-                // Immediately persist sent markers to state and cloud so tasks/points updates won't re-trigger
-                updateUserData(prev => ({
-                    ...prev,
-                    lastWeeklyReportSentWeek: currentWeek,
-                    lastWeeklyReportSentTime: nowMs
-                }));
-
+                if (!reportData) { showToast('אין מספיק נתונים להפקת דוח שבועי כרגע', 'info'); return; }
                 const messageText = WhatsAppService.generateParentReportText(activeUserData.name || 'שלי', reportData);
-
-                // Deduplicate recipients cleanly to guarantee no duplicate numbers
-                const recipients = (activeUserData?.sendReportToPrimaryParentOnly)
-                    ? [p1 || p2].filter(Boolean)
-                    : Array.from(new Set([p1, p2].filter(Boolean)));
-
-                Promise.allSettled(recipients.map(phone => {
-                    return WhatsAppService.sendMessage({
-                        to: phone,
-                        message: messageText,
-                        gatewayConfig: activeUserData.whatsappGateway
-                    }).catch(err => console.error('Error sending parent report to:', phone, err));
-                })).finally(() => {
-                    setTimeout(() => {
-                        window.__parentWeeklyReportSending = false;
-                    }, 30000);
-                });
-
-                if (!silent) {
-                    if (activeUserData?.whatsappGateway?.instanceId) {
-                        showToast(`דוח סיכום שבועי נשלח אוטומטית לוואטסאפ של ${recipients.length > 1 ? 'שני ההורים' : 'ההורה'}! 📨🚀`, 'success');
-                    } else {
-                        showToast(`נפתח וואטסאפ לשליחת הדוח השבועי 📲`, 'info');
-                    }
-                }
+                const recipients = (activeUserData?.sendReportToPrimaryParentOnly) ? [p1 || p2].filter(Boolean) : Array.from(new Set([p1, p2].filter(Boolean)));
+                Promise.allSettled(recipients.map(phone => WhatsAppService.sendMessage({
+                    to: phone, message: messageText, gatewayConfig: activeUserData.whatsappGateway
+                }).catch(err => console.error('Error sending parent report to:', phone, err))));
+                showToast(activeUserData?.whatsappGateway?.instanceId
+                    ? `דוח שבועי נשלח לוואטסאפ של ${recipients.length > 1 ? 'שני ההורים' : 'ההורה'}! 📨🚀`
+                    : 'נפתח וואטסאפ לשליחת הדוח השבועי 📲', activeUserData?.whatsappGateway?.instanceId ? 'success' : 'info');
             };
 
             const handleSendWhatsAppStudyReminder = (manual = false) => {
@@ -1504,34 +1185,7 @@ function App() {
                 const now = new Date();
                 const nowTime = now.getTime();
 
-                // סינון משימות פתוחות: כל המשימות שאינן הושלמו/בוטלו, ושלא בוטלו מפורשות בוואטסאפ
-                const activeTasks = (activeUserData.tasks || [])
-                    .filter(t => !t.completed && !t.givenUp && !t.isLessonLog && t.whatsappRemindersEnabled !== false && t.dueDate)
-                    .sort((a, b) => {
-                        const timeA = `${a.dueDate}T${a.dueTime || '23:59'}`;
-                        const timeB = `${b.dueDate}T${b.dueTime || '23:59'}`;
-                        return new Date(timeA) - new Date(timeB);
-                    });
-
-                if (activeTasks.length === 0) {
-                    if (manual) showToast('אין משימות פתוחות הממתינות לתזכורת כרגע! 🎉', 'info');
-                    return;
-                }
-
-                // סינון דחיפות חכם: משימות שעברו את היעד, משימות להיום, מחר או ב-48 השעות הקרובות בלבד ("לא כל המשימות בבת אחת!")
-                const urgentTasks = activeTasks.filter(t => {
-                    const timeStr = `${t.dueDate}T${t.dueTime || '23:59'}`;
-                    const taskDate = new Date(timeStr);
-                    if (isNaN(taskDate.getTime())) return false;
-                    const diffHours = (taskDate.getTime() - nowTime) / (1000 * 60 * 60);
-                    return diffHours <= 48; // עבר הזמן או עד 48 שעות קדימה
-                });
-
-                // בוחרים לכל היותר 1 עד 3 משימות הכי דחופות בלבד
-                const selectedTasks = urgentTasks.length > 0 
-                    ? urgentTasks.slice(0, 3) 
-                    : activeTasks.slice(0, 1);
-
+                const selectedTasks = WaSlots.pickReminderTasks(activeUserData.tasks, nowTime, 3);
                 if (selectedTasks.length === 0) {
                     if (manual) showToast('אין משימות קרובות הדורשות תזכורת כרגע.', 'info');
                     return;
@@ -1565,70 +1219,56 @@ function App() {
                 });
             };
 
-            // אוטומציה של וואטסאפ: שליחת דוח שבועי במוצאי שבת ותזכורות משימות מתוזמנות
+            // WhatsApp automation: reminders 17:00 + 20:00, parent report Saturday 19:00 (Asia/Jerusalem).
+            // One Firestore claim per slot across ALL devices; content is built from a fresh SERVER read by the winner only.
+            // whatsappAutomation: 'off' = kill switch, 'dry' = log only (no claim, no send).
+            const runWaSlot = async (slot) => {
+                const docId = globalState.activeUser;
+                const mode = activeUserData?.whatsappAutomation;
+                if (!docId || mode === 'off') return;
+                if (slot.kind === 'weekly' && activeUserData.autoSendParentReport === false) return;
+                if (mode === 'dry') { console.log('[WA dry-run] would claim', slot.id); return; }
+                const deviceId = (syncInfo && syncInfo.deviceId) || 'dev';
+                let won = false;
+                try { won = await WaSlots.claimSlot(db, docId, slot.id, deviceId, Date.now()); }
+                catch (e) { console.warn('[WA slot] claim failed (offline/rules?)', slot.id, e && e.message); return; }
+                if (!won) return;
+                try {
+                    const snap = await db.collection('users').doc(docId).get({ source: 'server' });
+                    const u = snap.exists ? snap.data() : null;
+                    if (!u || !u.whatsappGateway?.instanceId) throw new Error('no server doc / gateway');
+                    let sends = [];
+                    if (slot.kind === 'weekly') {
+                        const p1 = (u.parentPhoneNumber || '').trim(), p2 = (u.parentPhoneNumber2 || '').trim();
+                        const to = (u.sendReportToPrimaryParentOnly ? [p1 || p2] : [p1, p2]).filter(Boolean);
+                        const rd = getWeeklyReportData(u, slot.weekStart);
+                        if (!to.length || !rd) { await WaSlots.markSlot(db, docId, slot.id, 'skipped', Date.now(), 'no recipient or data'); return; }
+                        const msg = WhatsAppService.generateParentReportText(u.name || 'שלי', rd);
+                        sends = to.map(phone => WhatsAppService.sendMessage({ to: phone, message: msg, gatewayConfig: u.whatsappGateway }));
+                    } else {
+                        if (!u.phoneNumber) { await WaSlots.markSlot(db, docId, slot.id, 'skipped', Date.now(), 'no phone'); return; }
+                        const picked = WaSlots.pickReminderTasks(u.tasks, Date.now(), 3);
+                        if (!picked.length) { await WaSlots.markSlot(db, docId, slot.id, 'skipped', Date.now(), 'no open tasks'); return; }
+                        const msg = WhatsAppService.generateCombinedStudentReminderText(u.name || 'שלי', picked, u.subjects || []);
+                        sends = [WhatsAppService.sendMessage({ to: u.phoneNumber, message: msg, gatewayConfig: u.whatsappGateway })];
+                    }
+                    const results = await Promise.allSettled(sends);
+                    const okCount = results.filter(r => r.status === 'fulfilled' && r.value && r.value.status === 'sent_gateway').length;
+                    // any delivered message => final ('sent', note partial): a retry would duplicate it to that recipient
+                    await WaSlots.markSlot(db, docId, slot.id, okCount ? 'sent' : 'failed', Date.now(), okCount === results.length ? null : (okCount ? 'partial: ' : '') + 'gateway did not confirm');
+                } catch (e) {
+                    console.error('[WA slot]', slot.id, e);
+                    try { await WaSlots.markSlot(db, docId, slot.id, 'failed', Date.now(), e && e.message); } catch (e2) {}
+                }
+            };
+
             useEffect(() => {
                 if (!activeUserData || !activeUserData.whatsappGateway?.instanceId) return;
-
-                const runWhatsAppAutomationCheck = () => {
-                    const now = new Date();
-                    const day = now.getDay(); // 6 = Saturday, 0 = Sunday
-                    const hour = now.getHours();
-                    const currentWeek = getWeekIdentifier(now);
-
-                    // 1. שליחת דוח הורים במוצאי שבת (החל מ-19:00) או בראשון בבוקר - בדיוק הודעת סיכום אחת בלבד!
-                    const isSaturdayEveningOrSunday = (day === 6 && hour >= 19) || (day === 0 && hour < 14);
-                    const alreadySentThisWeek = (activeUserData.lastWeeklyReportSentWeek === currentWeek);
-                    const lastSentTime = Number(activeUserData.lastWeeklyReportSentTime) || 0;
-                    const hoursSinceLastSent = (now.getTime() - lastSentTime) / (1000 * 60 * 60);
-                    const autoSendEnabled = activeUserData.autoSendParentReport !== false;
-
-                    const localSentKey = 'studystreak_weekly_report_sent_' + currentWeek;
-                    let localAlreadySent = false;
-                    try {
-                        if (localStorage.getItem(localSentKey) || sessionStorage.getItem(localSentKey)) localAlreadySent = true;
-                    } catch (e) {}
-
-                    if (isSaturdayEveningOrSunday && !alreadySentThisWeek && !localAlreadySent && hoursSinceLastSent >= 96 && autoSendEnabled) {
-                        const hasParent = activeUserData.parentPhoneNumber || activeUserData.parentPhoneNumber2;
-                        if (hasParent && !window.__parentWeeklyReportSending) {
-                            console.log('Sending automatic Saturday evening parent report via WhatsApp...');
-                            handleSendParentWeeklyReportWhatsApp(true);
-                        }
-                    }
-
-                    // 2. תזכורות משימות חכמות (לפי דחיפות הלו"ז - "לא כל המשימות בבת אחת!")
-                    if (activeUserData.phoneNumber) {
-                        const todayPlan = (activeUserData.scheduleSettings || []).find(s => s.day === day);
-                        const schoolEndTime = todayPlan?.schoolEndTime;
-                        const currentMinutes = hour * 60 + now.getMinutes();
-
-                        let canSendRemindersNow = false;
-                        if (schoolEndTime && schoolEndTime.trim() !== '') {
-                            const [endH, endM] = schoolEndTime.split(':').map(Number);
-                            const schoolEndMinutes = endH * 60 + (endM || 0);
-                            const reminderStartMinutes = Math.max(0, schoolEndMinutes - 30); // חצי שעה לפני סיום הלימודים
-                            canSendRemindersNow = (currentMinutes >= reminderStartMinutes && currentMinutes <= 22 * 60);
-                        } else {
-                            // יום חופשי / שבת: מ-10:00 בבוקר עד 22:00
-                            canSendRemindersNow = (hour >= 10 && hour <= 22);
-                        }
-
-                        if (canSendRemindersNow) {
-                            const lastGlobalSent = activeUserData.lastGlobalWhatsAppReminderSent || 0;
-                            const hoursSinceGlobal = (Date.now() - lastGlobalSent) / (1000 * 60 * 60);
-
-                            // מרווח גלובלי של 3.5 שעות לפחות בין תזכורות כדי למנוע ספאם!
-                            if (hoursSinceGlobal >= 3.5) {
-                                handleSendWhatsAppStudyReminder(false);
-                            }
-                        }
-                    }
-                };
-
-                runWhatsAppAutomationCheck();
-                const intervalId = setInterval(runWhatsAppAutomationCheck, 10 * 60 * 1000);
+                const tick = () => { for (const slot of WaSlots.dueSlots(Date.now(), activeUserData.waSlotConfig)) runWaSlot(slot); };
+                tick();
+                const intervalId = setInterval(tick, 60 * 1000);
                 return () => clearInterval(intervalId);
-            }, [activeUserData?.whatsappGateway?.instanceId, activeUserData?.lastWeeklyReportSentWeek, activeUserData?.lastWeeklyReportSentTime, activeUserData?.tasks, activeUserData?.scheduleSettings]);
+            }, [globalState.activeUser, activeUserData?.whatsappGateway?.instanceId, activeUserData?.whatsappAutomation, activeUserData?.autoSendParentReport, activeUserData?.waSlotConfig]);
 
             const [liveFriends, setLiveFriends] = useState({});
             
@@ -2059,7 +1699,7 @@ function App() {
             const [practiceDurationMins, setPracticeDurationMins] = useState(45);
             const [practiceUnderstanding, setPracticeUnderstanding] = useState(5);
             const [showPastTopics, setShowPastTopics] = useState(false);
-            const [taskGivenDate, setTaskGivenDate] = useState(() => new Date().toISOString().split('T')[0]);
+            const [taskGivenDate, setTaskGivenDate] = useState(() => localDateStr(new Date()));
             const [lateReason, setLateReason] = useState('');
             const [otherLateReason, setOtherLateReason] = useState('');
             const [studyTimeMode, setStudyTimeMode] = useState('direct'); // 'direct' | 'range'
@@ -2565,7 +2205,10 @@ function App() {
                 saveAdminUserUpdate(user.username, {
                     taskStreak: restoredLen,
                     longestStreak: Math.max(user.longestStreak || 0, restoredLen),
-                    streakHistory: newStreakHistory
+                    streakHistory: newStreakHistory,
+                    // valid start for the restored streak + tombstone so the merge cannot resurrect the broken record
+                    currentStreakStart: isValidStart(streakItem.startDate) ? streakItem.startDate : (deriveStreakStart(user.tasks, restoredLen, Infinity) || new Date().toISOString()),
+                    restoredBrokenIds: Array.from(new Set([...(user.restoredBrokenIds || []), streakItem.id]))
                 });
                 recordAdminAuditLog(
                     'שחזור רצף שנשבר',
@@ -2602,9 +2245,16 @@ function App() {
                 const oldWeekly = user.weeklyPoints || 0;
                 const newTotal = isNaN(t) ? oldTotal : t;
                 const newWeekly = isNaN(w) ? oldWeekly : w;
+                // ledger is the only authority: record the manual change as rows (weekly part dated now, rest outside the window)
+                const wDelta = newWeekly - oldWeekly, tDelta = newTotal - oldTotal;
+                const stampIso = new Date().toISOString(), sid = Date.now();
+                const adj = [];
+                if (wDelta) adj.push({ id: 'ph_admin_adjust_w_' + sid, taskId: null, taskTitle: 'עדכון ידני (מנהל)', subjectName: '', subjectEmoji: '', points: wDelta, date: stampIso, details: 'עדכון נקודות ידני ע״י מנהל' });
+                if (tDelta - wDelta) adj.push({ id: 'ph_admin_adjust_t_' + sid, taskId: null, taskTitle: 'עדכון ידני (מנהל)', subjectName: '', subjectEmoji: '', points: tDelta - wDelta, date: '2020-01-01T00:00:00.000Z', details: 'עדכון נקודות ידני ע״י מנהל' });
                 saveAdminUserUpdate(user.username, {
                     totalPoints: newTotal,
-                    weeklyPoints: newWeekly
+                    weeklyPoints: newWeekly,
+                    pointsHistory: [...adj, ...(user.pointsHistory || [])]
                 });
                 recordAdminAuditLog(
                     'עדכון נקודות ידני',
@@ -2631,18 +2281,23 @@ function App() {
             const adminToggleTask = (user, taskId) => {
                 const targetTask = (user.tasks || []).find(t => t.id === taskId);
                 const nowDone = !(targetTask?.completed);
+                const stamp = Date.now();
+                let ledger = user.pointsHistory || [];
                 const newTasks = (user.tasks || []).map(t => {
-                    if (t.id === taskId) {
-                        return {
-                            ...t,
-                            completed: nowDone,
-                            completedAt: nowDone ? new Date().toISOString() : null,
-                            autoPenaltyApplied: false
-                        };
-                    }
-                    return t;
+                    if (t.id !== taskId) return t;
+                    if (nowDone) return { ...t, completed: true, completedAt: new Date(stamp).toISOString(), autoPenaltyApplied: false, updatedAt: stamp };
+                    // un-complete contract: completed:false, no completedAt, uncompletedAt + updatedAt stamped
+                    const { completedAt, ...rest } = t;
+                    return { ...rest, completed: false, uncompletedAt: stamp, updatedAt: stamp, autoPenaltyApplied: false };
                 });
-                saveAdminUserUpdate(user.username, { tasks: newTasks });
+                if (!nowDone) {
+                    // cancel the completion's ledger rows with explicit deterministic refund rows (rows are never deleted)
+                    const iso = new Date(stamp).toISOString();
+                    // completion rows only; ladder penalties are refunded only if the task's due date is no longer overdue
+                    const undo = refundCompletionRows(taskId, ledger, iso);
+                    ledger = [...undo, ...refundPenaltiesIfNotOverdue(targetTask, ledger, iso, stamp), ...ledger];
+                }
+                saveAdminUserUpdate(user.username, { tasks: newTasks, pointsHistory: ledger });
                 recordAdminAuditLog(
                     'שינוי סטטוס משימה',
                     'task',
@@ -2748,9 +2403,19 @@ function App() {
             const toggleModal = (modalName, val) => setModals(m => ({ ...m, [modalName]: val }));
 
 
+            const [loginChoices, setLoginChoices] = useState(null);
+            const chooseLoginDoc = (opt) => {
+                setLoginChoices(null);
+                setGlobalState(prev => {
+                    const merged = healCompletedFromHistory((typeof applyRemoteSafe === 'function' ? applyRemoteSafe(prev.users[opt.id], opt.data) : opt.data) || opt.data);
+                    return {...prev, users: {...prev.users, [opt.id]: merged}, activeUser: opt.id};
+                });
+                showToast(`מחובר/ת עם מזהה: ${opt.id}`, 'success');
+            };
+
             const handleLogin = (e) => {
                 e.preventDefault();
-                const user = (e.target.username.value || '').trim();
+                const user = (typeof normalizeUsername === 'function' ? normalizeUsername(e.target.username.value) : (e.target.username.value || '').trim());
                 const pass = (e.target.password.value || '').trim();
                 if(!user) return;
 
@@ -2769,31 +2434,83 @@ function App() {
                 }
 
 
+                if (!isValidDocId(user)) { showToast('שם משתמש לא תקין (אסור להשתמש ב-/)', 'error'); return; }
                 if (db) {
-                    const userRef = db.collection("users").doc(user);
-                    userRef.get().then((doc) => {
-                        if (doc.exists) {
-                            const data = doc.data();
-                            if (data.password !== pass) {
-                                showToast('סיסמה שגויה למשתמש הקיים!', 'error');
+                    const rawTrim = String(e.target.username.value || '').trim();
+                    const enterWith = (id, data) => {
+                        setGlobalState(prev => {
+                            const merged = healCompletedFromHistory((typeof applyRemoteSafe === 'function' ? applyRemoteSafe(prev.users[id], data) : applyRemoteUser(prev.users[id], data, null)) || data);
+                            return {...prev, users: {...prev.users, [id]: merged}, activeUser: id};
+                        });
+                        showToast(`איזה כיף שחזרת, ${data.name}! ✨ (מזהה: ${id})`, 'success');
+                    };
+                    const tryDoc = (id) => db.collection("users").doc(id).get();
+                    Promise.resolve().then(async () => {
+                        // ALWAYS probe every spelling variant (typed, normalised, local keys): normalisation strips FE0F/zero-width marks,
+                        // so a near-empty normalised doc may exist next to the user's real legacy doc. Never auto-merge, never auto-create.
+                        const localKeys = Object.keys(globalState.users || {}).filter(k => normalizeUsername(k) === user || k === rawTrim);
+                        const variants = Array.from(new Set([user, rawTrim, ...localKeys])).filter(k => k && isValidDocId(k));
+                        const found = [];
+                        for (const id of variants) {
+                            let d = null;
+                            try { d = await tryDoc(id); } catch (err) { throw err; }
+                            if (d && d.exists) found.push({ id, data: d.data() });
+                        }
+                        const matches = found.filter(f => f.data.password === pass);
+                        if (matches.length === 1) { enterWith(matches[0].id, matches[0].data); return; }
+                        if (matches.length > 1) {
+                            const opts = matches.map(m => ({ id: m.id, data: m.data, tasks: (m.data.tasks || []).length, lastSync: Number(m.data.lastSync) || 0 }))
+                                .sort((x, y) => (y.tasks - x.tasks) || (y.lastSync - x.lastSync));
+                            setLoginChoices(opts); // chooser, richest first (default); nothing is merged
+                            return;
+                        }
+                        if (found.length > 0) { showToast('סיסמה שגויה למשתמש הקיים!', 'error'); return; }
+                        // A local-only account (created offline / never reached the cloud): create the cloud doc FROM that local state
+                        // (create-only). Local data is never replaced by a default doc under any path.
+                        const localHit = Array.from(new Set([user, rawTrim, ...localKeys])).filter(k => k && isValidDocId(k) && globalState.users[k] && globalState.users[k].password === pass)
+                            .sort((x, y) => ((globalState.users[y].tasks || []).length - (globalState.users[x].tasks || []).length));
+                        if (localHit.length) {
+                            const id = localHit[0];
+                            const out = await firestorePort(db).createOnly(id, sanitizeForFirestore({ ...globalState.users[id] }));
+                            if (out.existing) {
+                                if (out.existing.password !== pass) { showToast('סיסמה שגויה למשתמש הקיים!', 'error'); return; }
+                                enterWith(id, out.existing); // somebody created it meanwhile: normal merge, local kept
                                 return;
                             }
-                            setGlobalState(prev => {
-                                const merged = healCompletedFromHistory(applyRemoteUser(prev.users[user], data, null) || data);
-                                return {...prev, users: {...prev.users, [user]: merged}, activeUser: user};
-                            });
-                            showToast(`איזה כיף שחזרת, ${data.name}! ✨`, 'success');
-                        } else {
-                             const newUser = { ...DEFAULT_USER_STATE, password: pass, name: user };
-                             userRef.set(newUser).then(() => {
-                                 setGlobalState(prev => ({...prev, users: {...prev.users, [user]: newUser}, activeUser: user}));
-                                 showToast('חשבון חדש נוצר בהצלחה וסונכרן לענן! ✨', 'success');
-                             });
+                            setGlobalState(prev => ({ ...prev, activeUser: id })); // local state untouched
+                            showToast('החשבון נוצר בענן מהנתונים שבמכשיר ✨ (מזהה: ' + id + ')', 'success');
+                            return;
                         }
+                        if (globalState.users[user]) { showToast('סיסמה שגויה למשתמש הקיים!', 'error'); return; }
+                        if (!window.confirm(`לא נמצא חשבון בשם "${user}". ליצור חשבון חדש?`)) return;
+                        const newUser = { ...DEFAULT_USER_STATE, password: pass, name: user };
+                        // create-only transaction: never overwrites a doc another device just created
+                        const outcome = await db.runTransaction(async (tx) => {
+                            const ref = db.collection("users").doc(user);
+                            const snap = await tx.get(ref);
+                            if (snap.exists) return { existing: snap.data() };
+                            tx.set(ref, newUser);
+                            return { created: true };
+                        });
+                        if (outcome.existing) {
+                            if (outcome.existing.password !== pass) { showToast('סיסמה שגויה למשתמש הקיים!', 'error'); return; }
+                            enterWith(user, outcome.existing);
+                            return;
+                        }
+                        setGlobalState(prev => ({...prev, users: {...prev.users, [user]: prev.users[user] || newUser}, activeUser: user}));
+                        showToast('חשבון חדש נוצר בהצלחה וסונכרן לענן! ✨ (מזהה: ' + user + ')', 'success');
                     }).catch(error => {
                         console.log("Fallback to local due to error:", error);
                         setGlobalState(prev => {
                             const users = { ...prev.users };
+                            // same variant lookup as the online path: a raw/legacy-spelling local account wins over creating a default
+                            const variantKeys = Array.from(new Set([user, rawTrim, ...Object.keys(users).filter(k => normalizeUsername(k) === user || k === rawTrim)])).filter(k => k && users[k]);
+                            const pwHit = variantKeys.filter(k => users[k].password === pass).sort((x, y) => ((users[y].tasks || []).length - (users[x].tasks || []).length))[0];
+                            if (pwHit) {
+                                showToast(`איזה כיף שחזרת, ${users[pwHit].name}! ✨ (מצב אופליין, מזהה: ${pwHit})`, 'success');
+                                return { ...prev, activeUser: pwHit };
+                            }
+                            if (variantKeys.length) { showToast('סיסמה שגויה למשתמש הקיים!', 'error'); return prev; }
                             if (users[user]) {
                                 if (users[user].password !== pass) {
                                     showToast('סיסמה שגויה למשתמש הקיים!', 'error');
@@ -2819,7 +2536,7 @@ function App() {
 
             const handleAddTask = (taskData, currentFormType = 'hw', practiceOpts = {}) => {
                 const now = new Date();
-                const actualGivenDate = taskData.givenDate || now.toISOString().split('T')[0];
+                const actualGivenDate = taskData.givenDate || localDateStr(now);
                 const attachments = taskData.attachments || taskFormAttachments || [];
                 const sub = (activeUserData.subjects || []).find(s => s.id === taskData.subjectId);
                 const actualType = typeof currentFormType === 'boolean' ? (currentFormType ? 'hw' : 'log') : currentFormType;
@@ -2874,7 +2591,7 @@ function App() {
                         updateUserData(prev => {
                             let newStreak = (prev.taskStreak || 0) + 1;
                             let newLongest = Math.max(newStreak, prev.longestStreak || 0);
-                            let newStreakStart = prev.currentStreakStart || now.toISOString();
+                            let newStreakStart = isValidStart(prev.currentStreakStart) ? prev.currentStreakStart : ((prev.taskStreak || 0) > 0 ? safeStreakStart(prev, now.getTime()) : now.toISOString());
                             let newStreakEmojis = [...(prev.currentStreakEmojis || [])];
                             if (sub && sub.name && !newStreakEmojis.includes(sub.name)) {
                                 newStreakEmojis.push(sub.name);
@@ -3052,8 +2769,8 @@ function App() {
                 const completionTime = (task.completedAt && !isNaN(new Date(task.completedAt).getTime())) ? new Date(task.completedAt) : now;
                 const totalDurationMs = dueDate.getTime() - createdAt.getTime();
                 const usedDurationMs = completionTime.getTime() - createdAt.getTime();
-                const GRACE_PERIOD_MS = 5 * 60 * 1000;
-                const isLate = completionTime.getTime() > (dueDate.getTime() + GRACE_PERIOD_MS);
+                const lateEval = evaluateLateness(task, completionTime.getTime(), null);
+                const isLate = lateEval.late;
                 const isSameDay = completionTime.toDateString() === dueDate.toDateString();
                 
                 let pointsDelta = 0;
@@ -3086,17 +2803,10 @@ function App() {
                         pointsDelta += 1; pointsText = 'בוצע סשן למידה למבחן (+נקודת בונוס על השקעה)!';
                     }
                 } else {
+                    // Late (non-exempt homework): the ladder rows (ph_pen1_/ph_pen2_, written below) carry the minus; no extra charge.
                     streakBroken = true;
-                    if (task.autoPenaltyApplied) {
-                        pointsDelta = 0;
-                        pointsText = `הוגש באיחור (הקנס ירד כבר אוטומטית). סיבה: ${chosenLateReason}`;
-                    } else {
-                        if (isSameDay) {
-                            pointsDelta = -1; pointsText = `הוגש באיחור קל (באותו יום). סיבה: ${chosenLateReason}`;
-                        } else {
-                            pointsDelta = -2; pointsText = `הוגש באיחור של יום ומעלה. סיבה: ${chosenLateReason}`;
-                        }
-                    }
+                    pointsDelta = 0;
+                    pointsText = `הוגש באיחור. סיבה: ${chosenLateReason}`;
                 }
 
 
@@ -3114,42 +2824,45 @@ function App() {
                 };
 
 
-                let newStreak = activeUserData.taskStreak;
-                let newLongest = activeUserData.longestStreak || 0;
-                let newStreakStart = activeUserData.currentStreakStart;
-                let newStreakEmojis = [...(activeUserData.currentStreakEmojis || [])];
-                let newStreakHistory = [...(activeUserData.streakHistory || [])];
-                let streakMessage = '';
-
-
-                if (!streakBroken) {
-                    newStreak += 1;
-                    if (newStreak === 1) {
-                        newStreakStart = now.toISOString();
-                        newStreakEmojis = [];
-                    }
-                    if (sub && sub.name && !newStreakEmojis.includes(sub.name)) newStreakEmojis.push(sub.name); 
-                    if (newStreak > newLongest) newLongest = newStreak;
-                    streakMessage = `המד עלה ל-${newStreak} 🔥`;
-                } else {
-                    if (newStreak > 0) {
-                        const alreadyBroken = newStreakHistory.some(s => s && s.brokenByTaskId === task.id);
-                        if (!alreadyBroken) {
-                            newStreakHistory.unshift({
-                                id: 'sh_' + task.id + '_broken',
-                                startDate: newStreakStart,
+                // Streak outcome is computed from the LATEST doc inside updateUserData (prev); the copy below is only for the toast.
+                const streakFrom = (src) => {
+                    let newStreak = src.taskStreak || 0;
+                    let newLongest = src.longestStreak || 0;
+                    let newStreakStart = src.currentStreakStart;
+                    let newStreakEmojis = [...(src.currentStreakEmojis || [])];
+                    let newStreakHistory = [...(src.streakHistory || [])];
+                    let streakMessage = '';
+                    if (!streakBroken) {
+                        newStreak += 1;
+                        if (newStreak === 1 || !isValidStart(newStreakStart)) {
+                            newStreakStart = now.toISOString();
+                            if (newStreak === 1) newStreakEmojis = [];
+                        }
+                        if (sub && sub.name && !newStreakEmojis.includes(sub.name)) newStreakEmojis.push(sub.name);
+                        if (newStreak > newLongest) newLongest = newStreak;
+                        streakMessage = `המד עלה ל-${newStreak} 🔥`;
+                    } else if (hasStreakBreakFor(src, task.id)) {
+                        // the sweep (or another device) already broke the streak for this task: never break a newer streak again (no banner)
+                        streakMessage = '';
+                    } else {
+                        if (newStreak > 0) {
+                            newStreakHistory.push({
+                                id: 'sh_brk_' + task.id + '_' + dueDate.getTime(),
+                                startDate: safeStreakStart(src, dueDate.getTime()),
                                 endDate: dueDate.toISOString(),
                                 length: newStreak,
                                 emojis: newStreakEmojis,
                                 brokenByTaskId: task.id
                             });
                         }
+                        if ((src.taskStreak || 0) > 0) streakMessage = `הרצף נשבר בגלל האיחור 😢`; // only when a streak record is written
+                        newStreak = 0;
+                        newStreakStart = null;
+                        newStreakEmojis = [];
                     }
-                    newStreak = 0;
-                    newStreakStart = null;
-                    newStreakEmojis = [];
-                    streakMessage = `הרצף נשבר בגלל האיחור 😢`;
-                }
+                    return { newStreak, newLongest, newStreakStart, newStreakEmojis, newStreakHistory, streakMessage };
+                };
+                const streakMessage = streakFrom(activeUserData).streakMessage;
 
 
                 // Automatically cancel and stop future reminders for this completed task
@@ -3161,10 +2874,14 @@ function App() {
                 }
 
                 updateUserData(prev => {
+                    const sx = streakFrom(prev);
+                    // late submit: same deterministic ladder rows the sweep writes (idempotent by id, no extra charge)
+                    const ladderRows = isLate ? lateSubmitRows(prev, task, completionTime.getTime(), now.getTime()) : [];
+                    const hasLadder = isLate && (ladderRows.length > 0 || (prev.pointsHistory || []).some(h => h && h.taskId === task.id && isPenaltyRow(h)));
                     const updatedTasks = prev.tasks.map(t => t.id === task.id ? { 
-                        ...t, completed: true, completedAt: t.completedAt || now.toISOString(), 
+                        ...t, completed: true, completedAt: t.completedAt || now.toISOString(), updatedAt: Date.now(),
                         understandingRating: rating, hardExercises: hardExercises, pointsEarned: pointsDelta, lateReason: isLate ? chosenLateReason : '',
-                        autoPenaltyApplied: isLate ? (t.autoPenaltyApplied || false) : false,
+                        autoPenaltyApplied: hasLadder,
                         remindersEnabled: false,
                         whatsappRemindersEnabled: false,
                         studyDurationHours: durationInfo?.studyDurationHours || t.studyDurationHours || null,
@@ -3193,12 +2910,12 @@ function App() {
                         tasks: updatedTasks,
                         totalPoints: prev.totalPoints + pointsDelta,
                         weeklyPoints: prev.weeklyPoints + pointsDelta,
-                        taskStreak: newStreak,
-                        longestStreak: newLongest,
-                        currentStreakStart: newStreakStart,
-                        currentStreakEmojis: newStreakEmojis,
-                        pointsHistory: pointsDelta !== 0 ? [historyLog, ...(prev.pointsHistory || [])] : (prev.pointsHistory || []),
-                        streakHistory: newStreakHistory
+                        taskStreak: sx.newStreak,
+                        longestStreak: sx.newLongest,
+                        currentStreakStart: sx.newStreakStart,
+                        currentStreakEmojis: sx.newStreakEmojis,
+                        pointsHistory: [...ladderRows, ...(pointsDelta !== 0 ? [historyLog] : []), ...(prev.pointsHistory || [])],
+                        streakHistory: sx.newStreakHistory
                     });
                 });
 
@@ -3212,7 +2929,8 @@ function App() {
                 if (pointsDelta > 0) {
                     showToast(`כל הכבוד! ${pointsDelta}+ נקודות. ${streakMessage}`, 'success');
                 } else {
-                    showToast(`המשימה הושלמה ${pointsDelta === 0 ? '(ללא קנס נוסף)' : 'וירדו נקודות'}. ${streakMessage}`, 'warning');
+                    const preRelease = isLate && Number(activeUserData.penaltyLadderStartedAt) && dueDate.getTime() < Number(activeUserData.penaltyLadderStartedAt);
+                    showToast(`המשימה הוגשה${isLate ? (preRelease ? ' באיחור (מועד ההגשה היה לפני עדכון המערכת, ללא קנס)' : ' באיחור (הקנס לפי זמן האיחור כבר נרשם ביומן הנקודות)') : ''}. ${streakMessage}`, 'warning');
                 }
             };
 
@@ -3229,7 +2947,7 @@ function App() {
                     if (newStreak > 0) {
                         newStreakHistory.push({
                             id: 'sh_' + Date.now(),
-                            startDate: prev.currentStreakStart,
+                            startDate: safeStreakStart(prev, now.getTime()),
                             endDate: now.toISOString(),
                             length: newStreak,
                             emojis: [...(prev.currentStreakEmojis || [])]
@@ -3390,7 +3108,7 @@ function App() {
                             if (newStreak > 0) {
                                 newStreakHistory.push({
                                     id: 'sh_' + Date.now(),
-                                    startDate: newStreakStart,
+                                    startDate: safeStreakStart(prev, now.getTime()),
                                     endDate: now.toISOString(),
                                     length: newStreak,
                                     emojis: newStreakEmojis
@@ -3714,7 +3432,7 @@ function App() {
                     startTime: friendTask.startTime || null,
                     createdAt: new Date().toISOString(),
                     completed: false,
-                    givenDate: friendTask.givenDate || new Date().toISOString().split('T')[0],
+                    givenDate: friendTask.givenDate || localDateStr(new Date()),
                     autoPenaltyApplied: false
                 };
 
@@ -4037,7 +3755,7 @@ function App() {
                         const windowDuration = wEndMins - wStartMins;
                         if (windowDuration >= 30) {
                             allAvailableWindows.push({
-                                date: current.toISOString().split('T')[0],
+                                date: localDateStr(current),
                                 startMins: wStartMins,
                                 endMins: wEndMins,
                                 duration: windowDuration
@@ -4137,7 +3855,7 @@ function App() {
                             isLessonLog: false,
                             isExamPrep: true,
                             sessionNumber: sessionIdx,
-                            givenDate: new Date().toISOString().split('T')[0],
+                            givenDate: localDateStr(new Date()),
                             dueDate: ses.date,
                             startTime: ses.startTime,
                             dueTime: ses.endTime,
@@ -4267,7 +3985,7 @@ function App() {
 
             const handleCreateSingleExamSession = (e) => {
                 e.preventDefault();
-                const todayStr = new Date().toISOString().split('T')[0];
+                const todayStr = localDateStr(new Date());
                 const { examId, customExamName, customSubjectId, title, notes } = singleExamSessionData;
                 
                 const selectedExam = (activeUserData.exams || []).find(ex => ex.id === examId);
@@ -5687,7 +5405,7 @@ function App() {
                                                                         <div>
                                                                             <div className="font-bold text-stone-800 text-xs">רצף של {sh.length} משימות 🔥</div>
                                                                             <div className="text-[10px] text-stone-400">
-                                                                                {new Date(sh.startDate).toLocaleDateString('he-IL')} עד {new Date(sh.endDate).toLocaleDateString('he-IL')}
+                                                                                {fmtDate(sh.startDate)} עד {fmtDate(sh.endDate)}
                                                                             </div>
                                                                         </div>
                                                                         <button 
@@ -5894,6 +5612,18 @@ function App() {
                             )}
 
 
+                            {loginChoices && (
+                                <div className="mb-4 p-3 rounded-2xl border border-amber-200 bg-amber-50 relative z-10 text-sm" dir="rtl">
+                                    <div className="font-bold text-amber-900 mb-2">נמצאו כמה חשבונות באיות דומה. בחרי את החשבון שלך:</div>
+                                    {loginChoices.map((o, i) => (
+                                        <button key={o.id} type="button" onClick={() => chooseLoginDoc(o)} className={`w-full text-right mb-2 p-2.5 rounded-xl border active:scale-95 ${i === 0 ? 'bg-white border-amber-400' : 'bg-white/60 border-stone-200'}`}>
+                                            <div className="font-bold text-stone-800" dir="ltr">{JSON.stringify(o.id)}</div>
+                                            <div className="text-xs text-stone-500">{o.tasks} משימות · עודכן {o.lastSync ? new Date(o.lastSync).toLocaleString('he-IL') : 'לא ידוע'}{i === 0 ? ' · מומלץ (הכי עשיר)' : ''}</div>
+                                        </button>
+                                    ))}
+                                    <button type="button" onClick={() => setLoginChoices(null)} className="text-xs text-stone-500 underline">ביטול</button>
+                                </div>
+                            )}
                             <form onSubmit={handleLogin} className="space-y-5 relative z-10">
                                 <div>
                                     <label className="block text-xs text-right font-bold text-stone-500 mb-1.5 uppercase tracking-wide">שם משתמש / אימייל</label>
@@ -5971,7 +5701,25 @@ function App() {
             };
 
 
-            const myLevel = getUserLevel(activeUserData.totalPoints);
+            // New device / cleared storage: show a loading state until the first successful cloud pull (nothing is pushed before it)
+            if (db && !bootstrapSkipped && isFreshLocal(activeUserData) && !syncPulled) {
+                return (
+                    <div className="min-h-screen flex items-center justify-center bg-[#FAFAFA] p-4" dir="rtl">
+                        <div className="bg-white p-8 rounded-3xl shadow border border-stone-100 w-full max-w-sm text-center">
+                            <div className="text-4xl mb-3">☁️</div>
+                            <h2 className="font-bold text-stone-800 mb-1">טוענת את הנתונים שלך מהענן…</h2>
+                            <p className="text-xs text-stone-500 mb-4">מזהה משתמש: <span dir="ltr" className="font-mono">{globalState.activeUser}</span></p>
+                            {syncState !== 'syncing' && <p className="text-xs text-rose-600 mb-3">{syncLabel}</p>}
+                            <button onClick={retrySync} className="w-full py-2.5 bg-indigo-600 text-white rounded-2xl font-bold text-sm active:scale-95">נסי שוב</button>
+                            <button onClick={() => setBootstrapSkipped(true)} className="w-full mt-2 py-2.5 bg-stone-50 text-stone-500 rounded-2xl font-bold text-xs active:scale-95">המשך במצב מקומי (יסונכרן אחרי טעינה מהענן)</button>
+                            <button onClick={handleLogout} className="w-full mt-2 py-2.5 bg-stone-100 text-stone-600 rounded-2xl font-bold text-xs active:scale-95">התנתקות</button>
+                        </div>
+                    </div>
+                );
+            }
+
+            const headTotals = headlineTotals(activeUserData, Date.now()); // ledger-derived, same source as the list modal
+            const myLevel = getUserLevel(headTotals.totalPoints);
             
             // שימוש בטוח ברשימות כדי שלא יקרוס
             const safePointsHistory = activeUserData.pointsHistory || [];
@@ -6004,24 +5752,14 @@ function App() {
                                     <div className="flex items-center gap-2">
                                         <h1 className="text-lg font-bold text-stone-800 leading-tight tracking-tight">StudyStreak</h1>
                                         <button
-                                            onClick={() => {
-                                                if (typeof window.__runMultiDeviceSentinel === 'function') {
-                                                    window.__runMultiDeviceSentinel(true);
-                                                }
-                                                setIsSyncDiagnosticsOpen(true);
-                                            }}
+                                            onClick={onSyncDotTap}
                                             className={`w-3 h-3 rounded-full transition-all cursor-pointer shrink-0 ${
                                                 syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:scale-125' :
                                                 syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse hover:scale-125' :
                                                 syncState === 'offline' ? 'bg-stone-400 hover:scale-125' : 
                                                 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce hover:scale-125'
                                             }`}
-                                            title={
-                                                syncState === 'synced' ? 'סנכרון ענן פעיל ב-100% 🟢 (לחצי לבדיקה)' :
-                                                syncState === 'syncing' ? 'סנכרון מתבצע כעת... 🟡 (לחצי לפרטים)' :
-                                                syncState === 'offline' ? 'מצב לא מקוון ⚪ (לחצי לפרטים)' :
-                                                'תקלת סנכרון זוהתה! 🔴 (לחצי לבדיקה ותיקון)'
-                                            }
+                                            title={syncLabel}
                                         />
                                     </div>
                                     <div className="flex items-center gap-1.5 mt-0.5">
@@ -6046,10 +5784,10 @@ function App() {
                         <Navigation />
                         
                         <div className="mt-auto pt-6">
-                            <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all active:scale-95">
+                            <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(localDateStr(new Date())); toggleModal('task', true); }} className="w-full py-4 bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white rounded-2xl font-bold shadow-md shadow-purple-500/20 flex items-center justify-center gap-2 text-sm transition-all active:scale-95">
                                 <IconPlus className="w-4 h-4" /> הוספת שיעור/משימה
                             </button>
-                            <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-bold shadow-sm shadow-amber-500/20 flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
+                            <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(localDateStr(new Date())); toggleModal('task', true); }} className="w-full mt-2 py-2.5 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white rounded-2xl font-bold shadow-sm shadow-amber-500/20 flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
                                 <span>💡</span> סשן תרגול מהיר (+נקודות)
                             </button>
                             <button onClick={() => setIsFeedbackModalOpen(true)} className="w-full mt-2 py-2.5 bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200/80 rounded-2xl font-bold flex items-center justify-center gap-2 text-xs transition-all active:scale-95">
@@ -6067,24 +5805,14 @@ function App() {
                             <div className="w-8 h-8 bg-gradient-to-br from-purple-100 to-rose-100 rounded-lg flex items-center justify-center text-sm shadow-sm">✨</div>
                             <div className="font-bold text-lg text-stone-800 tracking-tight">StudyStreak</div>
                             <button
-                                onClick={() => {
-                                    if (typeof window.__runMultiDeviceSentinel === 'function') {
-                                        window.__runMultiDeviceSentinel(true);
-                                    }
-                                    setIsSyncDiagnosticsOpen(true);
-                                }}
+                                onClick={onSyncDotTap}
                                 className={`w-3 h-3 rounded-full transition-all active:scale-95 cursor-pointer shrink-0 ${
                                     syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]' :
                                     syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse' :
                                     syncState === 'offline' ? 'bg-stone-400' : 
                                     'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce'
                                 }`}
-                                title={
-                                    syncState === 'synced' ? 'סנכרון ענן פעיל ב-100% 🟢 (לחצי לבדיקה)' :
-                                    syncState === 'syncing' ? 'סנכרון מתבצע כעת... 🟡 (לחצי לפרטים)' :
-                                    syncState === 'offline' ? 'מצב לא מקוון ⚪ (לחצי לפרטים)' :
-                                    'תקלת סנכרון זוהתה! 🔴 (לחצי לבדיקה ותיקון)'
-                                }
+                                title={syncLabel}
                             />
                         </div>
                         <div className="flex gap-2 items-center">
@@ -6123,7 +5851,7 @@ function App() {
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => { setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">נקודות השבוע</div>
-                                        <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
+                                        <div className="text-3xl font-bold text-purple-600 text-right" dir="ltr">{headTotals.weeklyPoints}</div>
                                         {(() => {
                                             const now = new Date();
                                             const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
@@ -6179,7 +5907,7 @@ function App() {
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => { setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">סה"כ נקודות</div>
-                                        <div className="text-3xl font-bold text-emerald-600 text-right" dir="ltr">{activeUserData.totalPoints}</div>
+                                        <div className="text-3xl font-bold text-emerald-600 text-right" dir="ltr">{headTotals.totalPoints}</div>
                                     </div>
                                     <div className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.05)] border border-stone-100 cursor-pointer hover:border-purple-200 transition-colors active:scale-95" onClick={() => setActiveTab('exam_prep')}>
                                         <div className="text-stone-400 text-xs font-semibold mb-2">תרגילים בארכיון</div>
@@ -6208,7 +5936,7 @@ function App() {
                                             .slice(0,4).map(task => {
                                             const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                             const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp;
-                                            const isLate = !isTaskDone && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
+                                            const isLate = !isTaskDone && evaluateLateness(task, null, Date.now()).late;
                                             const countdown = task.dueDate ? getTaskCountdown(task.dueDate, task.dueTime) : null;
                                             return (
                                                 <div key={task.id} className="bg-white p-5 rounded-3xl shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] border border-stone-100 flex flex-col justify-between hover:shadow-[0_8px_30px_-4px_rgba(0,0,0,0.08)] transition-all gap-4">
@@ -6334,10 +6062,10 @@ function App() {
                                         <p className="text-sm text-stone-500 mt-1">מסודרות לפי רמת הדחיפות.</p>
                                     </div>
                                     <div className="flex items-center gap-2.5 flex-wrap">
-                                        <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-4 py-3 rounded-2xl text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 active:scale-95">
+                                        <button onClick={() => { setTaskFormType('practice'); setShowPastTopics(false); setPracticeDoneNow(true); setTaskGivenDate(localDateStr(new Date())); toggleModal('task', true); }} className="bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 px-4 py-3 rounded-2xl text-sm font-bold shadow-xs transition-colors flex items-center justify-center gap-2 active:scale-95">
                                             <span>💡</span> סשן תרגול
                                         </button>
-                                        <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(new Date().toISOString().split('T')[0]); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
+                                        <button onClick={() => { setTaskFormType('hw'); setShowPastTopics(false); setTaskGivenDate(localDateStr(new Date())); toggleModal('task', true); }} className="bg-stone-800 text-white px-5 py-3 rounded-2xl text-sm font-bold shadow-md hover:bg-stone-900 transition-colors flex items-center justify-center gap-2 active:scale-95">
                                             <IconPlus className="w-4 h-4"/> הוספת חדש
                                         </button>
                                     </div>
@@ -6368,7 +6096,7 @@ function App() {
                                     {sortedFilteredTasks.map(task => {
                                         const sub = activeUserData.subjects.find(s => s.id === task.subjectId);
                                         const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task));
-                                        const isLate = !isTaskDone && task.dueDate && task.dueTime && new Date() > new Date(`${task.dueDate}T${task.dueTime}`);
+                                        const isLate = !isTaskDone && evaluateLateness(task, null, Date.now()).late;
                                         const onTimeSubmitted = typeof isTaskSubmittedOnTime === 'function' ? isTaskSubmittedOnTime(task) : false;
                                         return (
                                             <div key={task.id} className={`p-4 rounded-3xl border transition-all ${isTaskDone ? 'bg-stone-50/50 border-stone-200 opacity-75' : isLate ? 'bg-rose-50/30 border-rose-200' : 'bg-white border-stone-100 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.03)] hover:shadow-md'}`}>
@@ -6797,7 +6525,7 @@ function App() {
                                                     <span>👨‍👩‍👧</span> מספרי טלפון של ההורים (לסיכום השבועי במוצ"ש)
                                                 </div>
                                                 <button 
-                                                    onClick={() => handleSendParentWeeklyReportWhatsApp(false)}
+                                                    onClick={() => handleSendParentWeeklyReportWhatsApp()}
                                                     className="bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 rounded-xl text-xs font-bold transition-all active:scale-95 flex items-center gap-1.5 shadow-sm">
                                                     <span>📊</span> שליחת דוח שבועי להורים עכשיו
                                                 </button>
@@ -8375,13 +8103,13 @@ function App() {
                                     
                                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3 md:gap-4 mb-8 relative z-10">
                                         <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-emerald-50 hover:border-emerald-200 active:scale-95 shadow-xs" onClick={()=>{ setPointsHistoryFilter('all'); toggleModal('pointsHistory', true); }}>
-                                            <div className="text-3xl md:text-4xl font-black text-emerald-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{activeUserData.totalPoints || 0}</div>
+                                            <div className="text-3xl md:text-4xl font-black text-emerald-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{headTotals.totalPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">סה"כ נקודות</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-medium">פירוט היסטוריה</div>
                                         </button>
                                         
                                         <button className="bg-stone-50 border border-stone-200 p-4 md:p-5 rounded-3xl transition-all group flex flex-col justify-center items-center hover:bg-purple-50 hover:border-purple-200 active:scale-95 shadow-xs" onClick={()=>{ setPointsHistoryFilter('weekly'); toggleModal('pointsHistory', true); }}>
-                                            <div className="text-3xl md:text-4xl font-black text-purple-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{typeof getEffectiveWeeklyPoints === 'function' ? getEffectiveWeeklyPoints(activeUserData) : (activeUserData?.weeklyPoints || 0)}</div>
+                                            <div className="text-3xl md:text-4xl font-black text-purple-500 mb-1 md:mb-2 group-hover:scale-105 transition-transform" dir="ltr">{headTotals.weeklyPoints}</div>
                                             <div className="text-xs font-bold text-stone-500 uppercase tracking-wide">השבוע</div>
                                             <div className="text-[10px] text-stone-400 mt-1 font-bold tracking-wider">שיא: {activeUserData.highestWeeklyPoints || 0}</div>
                                         </button>
@@ -8515,7 +8243,7 @@ function App() {
                                                 <button onClick={handleGenerateWeeklyReport} className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-3.5 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
                                                     הפקת דוח להדפסה / PDF 🖨️
                                                 </button>
-                                                <button onClick={handleSendParentWeeklyReportWhatsApp} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3.5 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
+                                                <button onClick={() => handleSendParentWeeklyReportWhatsApp()} className="w-full sm:w-auto bg-emerald-600 hover:bg-emerald-700 text-white px-5 py-3.5 rounded-xl text-sm font-bold shadow-md transition-all active:scale-95 flex items-center justify-center gap-2">
                                                     <span>📲</span> שליחה לוואטסאפ של ההורים
                                                 </button>
                                             </div>
@@ -9163,11 +8891,7 @@ function App() {
 
 
                     {modals.complete && activeTask && (() => {
-                        const onTimeSubmitted = typeof isTaskSubmittedOnTime === 'function' ? isTaskSubmittedOnTime(activeTask) : false;
-                        const dueTimeStr = activeTask.dueTime || '23:59:59';
-                        const taskDueDateTime = activeTask.dueDate ? new Date(`${activeTask.dueDate}T${dueTimeStr}`) : null;
-                        const GRACE_PERIOD_MS = 5 * 60 * 1000;
-                        const activeTaskIsLate = !activeTask.isPracticeSession && !activeTask.isFlexibleExamSession && !activeTask.rewardPoints && !onTimeSubmitted && taskDueDateTime ? (new Date().getTime() > (taskDueDateTime.getTime() + GRACE_PERIOD_MS)) : false;
+                        const activeTaskIsLate = evaluateLateness(activeTask, activeTask.completedAt || null, Date.now()).late;
                         
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-sm z-[70] flex items-end md:items-center justify-center p-0 md:p-4">
@@ -9852,7 +9576,7 @@ function App() {
                                                     value={examPlannerData.date} 
                                                     onChange={e => setExamPlannerData({...examPlannerData, date: e.target.value})} 
                                                     required 
-                                                    min={new Date().toISOString().split('T')[0]} 
+                                                    min={localDateStr(new Date())} 
                                                     className="w-full p-4 bg-white border border-stone-200 rounded-2xl text-sm outline-none font-medium focus:border-indigo-400 focus:ring-4 focus:ring-indigo-50 transition-all shadow-sm" 
                                                 />
                                             </div>
@@ -10059,9 +9783,9 @@ function App() {
                     {modals.pointsHistory && (() => {
                         const isWeeklyMode = pointsHistoryFilter === 'weekly';
                         const now = new Date();
-                        const startOfWeekSunday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - now.getDay(), 0, 0, 0, 0);
-                        // Include points earned after Saturday 22:00 right before this Sunday (since weekly crowning is at 22:00 and new week points accrue from 22:00)
-                        const weekCutoffMs = startOfWeekSunday.getTime() - (2 * 3600000);
+                        // same single window as the headline (getWindowStart = last Saturday 22:00)
+                        const weekCutoffMs = getWindowStart(now.getTime());
+                        const startOfWeekSunday = new Date(weekCutoffMs);
                         const displayedPointsHistory = isWeeklyMode
                             ? safePointsHistory.filter(log => {
                                 if (!log || log.canceled) return false;
@@ -10080,7 +9804,7 @@ function App() {
                                         </h3>
                                         {isWeeklyMode && (
                                             <div className="text-xs font-semibold text-purple-600 mt-0.5">
-                                                נקודות שנצברו השבוע (מיום ראשון {startOfWeekSunday.toLocaleDateString('he-IL')})
+                                                נקודות השבוע (מ-{fmtDate(startOfWeekSunday)}, שבת 22:00): סה"כ {sumLedger(safePointsHistory, { from: weekCutoffMs })}
                                             </div>
                                         )}
                                     </div>
@@ -10176,7 +9900,7 @@ function App() {
                                                         <div>
                                                             <div className="text-[10px] font-bold text-stone-400 uppercase tracking-wide mb-1">תאריכים</div>
                                                             <div className="text-xs font-bold text-stone-600" dir="ltr">
-                                                                {new Date(log.startDate).toLocaleDateString('he-IL')} <br/><span className="text-stone-400">עד</span> {new Date(log.endDate).toLocaleDateString('he-IL')}
+                                                                {fmtDate(log.startDate)} <br/><span className="text-stone-400">עד</span> {fmtDate(log.endDate)}
                                                             </div>
                                                         </div>
                                                         <div className="text-2xl font-black text-stone-400 drop-shadow-sm" dir="ltr">{log.length}</div>
@@ -10525,7 +10249,7 @@ function App() {
                         const subjectName = sub ? `${sub.emoji || ''} ${sub.name}` : 'כללי';
                         const isTaskDone = task.completed || !!task.completedAt || !!task.givenUp || (typeof taskLooksCompleted === 'function' && taskLooksCompleted(task));
                         const countdown = !isTaskDone && task.dueDate ? getTaskCountdown(task.dueDate, task.dueTime) : null;
-                        const isLate = !isTaskDone && task.dueDate && task.dueTime ? (new Date() > new Date(`${task.dueDate}T${task.dueTime}`)) : false;
+                        const isLate = !isTaskDone && evaluateLateness(task, null, Date.now()).late;
 
                         return (
                             <div className="fixed inset-0 bg-stone-900/50 backdrop-blur-xs z-[75] flex items-end md:items-center justify-center p-0 md:p-4 animate-[fadeIn_0.2s_ease-out]"
@@ -12024,6 +11748,41 @@ function App() {
                         </div>
                     )}
 
+                    {isSyncInfoOpen && (() => {
+                        const inf = syncInfo || {};
+                        let sw = '-';
+                        try { sw = (navigator.serviceWorker && navigator.serviceWorker.controller) ? (window.__swVersion || 'active') : 'none'; } catch (e) {}
+                        let devId = '-';
+                        try { devId = safeGetItem('studyStreak_device_id') || ''; if (!devId) { devId = 'dev_' + Math.random().toString(36).slice(2, 10); safeSetItem('studyStreak_device_id', devId); } } catch (e) {}
+                        const rows = [
+                            ['doc id', String(globalState.activeUser || '')],
+                            ['build', String(window.__BUILD_ID || '-')],
+                            ['service worker', sw],
+                            ['local lastSync', activeUserData && activeUserData.lastSync ? new Date(activeUserData.lastSync).toLocaleString('he-IL') : '-'],
+                            ['cloud hash / local hash', (inf.cloudHash || '-') + ' / ' + (inf.localHash || '-')],
+                            ['pull ok', String(!!inf.pullOk)],
+                            ['outbox', String(inf.outboxCount || 0)],
+                            ['last push ack', inf.lastPushAckAt ? new Date(inf.lastPushAckAt).toLocaleString('he-IL') : '-'],
+                            ['last error', inf.lastError || '-'],
+                            ['listener', inf.listenerState || '-'],
+                            ['status', syncStatusRaw.state + ' / ' + syncStatusRaw.reason],
+                            ...((inf.remoteLastSync && inf.remoteLastSync - Date.now() >= 86400000) ? [['clock', 'שעון המכשיר לא מדויק — מומלץ לתקן']] : []),
+                            ['device id', devId],
+                        ];
+                        return (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60" dir="ltr">
+                                <div className="bg-white rounded-3xl p-5 w-full max-w-md shadow-2xl border border-stone-200 max-h-[90vh] overflow-y-auto">
+                                    <div className="font-bold mb-3 text-stone-800">Sync info</div>
+                                    <div className="space-y-1 text-[11px] font-mono text-stone-700 break-all">
+                                        {rows.map(([k, v]) => (<div key={k}><b>{k}:</b> {v}</div>))}
+                                    </div>
+                                    {noCloudDocNow && <button onClick={createCloudFromLocal} className="mt-3 w-full py-2.5 bg-indigo-600 text-white rounded-2xl font-bold text-sm" dir="rtl">אין חשבון בענן — ליצור מהנתונים במכשיר?</button>}
+                                    <button onClick={() => setIsSyncInfoOpen(false)} className="mt-4 w-full py-2.5 bg-stone-100 hover:bg-stone-200 rounded-2xl font-bold text-sm">Close</button>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
                     {isSyncDiagnosticsOpen && (
                         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-[fadeIn_0.15s_ease-out]" dir="rtl">
                             <div className="bg-white rounded-3xl p-6 w-full max-w-lg shadow-2xl border border-stone-200 animate-[scaleUp_0.15s_ease-out] relative max-h-[90vh] overflow-y-auto custom-scrollbar">
@@ -12059,10 +11818,10 @@ function App() {
                                     }`}>
                                         <div className="flex items-center justify-between mb-2">
                                             <span className="font-black text-sm">
-                                                {syncState === 'synced' ? '✅ הסנכרון פועל ב-100% בין הטלפון למחשב' :
-                                                 syncState === 'syncing' ? '⏳ סנכרון מתבצע כעת מול הענן...' :
-                                                 syncState === 'offline' ? '📴 עבודה במצב לא מקוון (Offline)' :
-                                                 '⚠️ זוהתה בעיה בסנכרון מול שרת הענן'}
+                                                {syncState === 'synced' ? '✅ מסונכרן: הענן והמכשיר זהים' :
+                                                 syncState === 'syncing' ? '⏳ מסנכרן… ' + (syncInfo && syncInfo.outboxCount ? syncInfo.outboxCount + ' ממתינים' : '') :
+                                                 syncState === 'offline' ? '📴 אין חיבור (מצב מקומי)' :
+                                                 '⚠️ לא מסונכרן'}
                                             </span>
                                             <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-white/90 border shadow-xs">
                                                 {syncState === 'synced' ? 'סונכרן 🟢' :
@@ -12070,21 +11829,20 @@ function App() {
                                                  syncState === 'offline' ? 'לא מקוון ⚪' : 'שגיאה 🔴'}
                                             </span>
                                         </div>
-                                        <p className="text-xs leading-relaxed opacity-95">
-                                            {syncState === 'synced' ? 'כל המשימות, שעות הלמידה, המקצועות והנקודות שמורים ומסונכרנים אוטומטית לענן וזמינים בזמן אמת גם בטלפון וגם במחשב.' :
-                                             syncState === 'syncing' ? 'שינויים שבוצעו במכשיר זה נשלחים כעת לענן או מתבצעת משיכת עדכונים ממכשיר אחר.' :
-                                             syncState === 'offline' ? 'הדפדפן אינו מחובר כרגע לאינטרנט. כל המידע והשינויים שלך נשמרים בזיכרון המקומי ויסונכרנו אוטומטית ברגע שהחיבור יחזור!' :
-                                             'נמצא קושי בתקשורת מול הענן. המידע שלך שמור ומאובטח במכשיר. לחצי על "סנכרן ובדוק הכל עכשיו" לתיקון מהיר.'}
+                                        <p className="text-xs leading-relaxed opacity-90">
+                                            {syncState === 'synced' ? 'כל השינויים נשמרו בענן ואושרו על ידי השרת. ' + syncLastAckText :
+                                             syncState === 'syncing' ? 'שינויים שממתינים נשמרים במכשיר ויישלחו לענן אוטומטית. ' + syncLastAckText :
+                                             syncState === 'offline' ? 'הדפדפן אינו מחובר כרגע לאינטרנט. השינויים נשמרים במכשיר ויסונכרנו אוטומטית ברגע שהחיבור יחזור. ' + syncLastAckText :
+                                             'השינויים שמורים במכשיר ולא אבדו. ננסה שוב אוטומטית, או לחצי "נסי שוב".'}
                                         </p>
-                                        {syncErrorDetails && (
-                                            <div className="mt-2.5 p-2.5 bg-white/95 rounded-xl text-xs font-medium text-rose-800 border border-rose-200 leading-normal" dir="rtl">
-                                                <span className="font-bold block mb-1">פירוט הבדיקה:</span>
-                                                {syncErrorDetails}
+                                        {syncState === 'error' && (
+                                            <div className="mt-2.5 p-2 bg-white/90 rounded-xl text-[11px] font-mono text-stone-600 border border-stone-200 overflow-x-auto text-left" dir="ltr">
+                                                {syncErrorDetails || syncStatusRaw.reason}
                                             </div>
                                         )}
                                     </div>
 
-                                    {/* דוח רכיבי בדיקת בריאות וסנכרון בזמן אמת */}
+{/* דוח רכיבי בדיקת בריאות וסנכרון בזמן אמת */}
                                     <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2.5 text-xs text-stone-700">
                                         <div className="font-bold text-stone-900 text-xs mb-1.5 flex items-center justify-between">
                                             <span className="flex items-center gap-1.5">
@@ -12111,7 +11869,7 @@ function App() {
                                         <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
                                             <span className="text-stone-600">תור שינויים ממתינים (Outbox):</span>
                                             <span className="font-bold flex items-center gap-1">
-                                                {(typeof getPendingSync === 'function' && getPendingSync(globalState.activeUser))
+                                                {(syncInfo && syncInfo.outboxCount > 0)
                                                     ? <span className="text-amber-600 font-extrabold">🟡 יש שינוי ממתין לשליחה</span>
                                                     : <span className="text-emerald-700">🟢 הכל שמור בענן (0 ממתינים)</span>}
                                             </span>
@@ -12119,7 +11877,7 @@ function App() {
                                         <div className="flex items-center justify-between py-1 border-b border-stone-200/60">
                                             <span className="text-stone-600">שעות למידה שבועיות ונקודות:</span>
                                             <span className="font-bold text-stone-800">
-                                                {activeUserData ? `${activeUserData.weeklyPoints || 0} נק' שבועיות | ${(() => {
+                                                {activeUserData ? `${headTotals.weeklyPoints} נק' שבועיות | ${(() => {
                                                     const ws = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(Date.now()) : 0;
                                                     const wt = (activeUserData.tasks || []).filter(t => t && t.completed && !t.givenUp && t.completedAt && new Date(t.completedAt).getTime() >= ws && t.studyDurationHours);
                                                     const h = wt.reduce((s, t) => s + (Number(t.studyDurationHours) || 0), 0);
@@ -12137,49 +11895,32 @@ function App() {
                                         </div>
                                     </div>
 
+                                                                        {noCloudDocNow && (
+                                        <button onClick={createCloudFromLocal} className="w-full py-3 bg-amber-500 hover:bg-amber-600 text-white rounded-2xl font-bold text-sm active:scale-95">
+                                            אין חשבון בענן — ליצור מהנתונים במכשיר?
+                                        </button>
+                                    )}
                                     <button
                                         onClick={async () => {
-                                            showToast('מבצע בדיקת סנכרון דו-כיוונית מלאה מול הענן... 🔄', 'info');
-                                            setSyncState('syncing');
-                                            try {
-                                                const pending = typeof getPendingSync === 'function' ? getPendingSync(globalState.activeUser) : null;
-                                                if (pending) {
-                                                    await pushPendingSyncToCloud(null, true);
-                                                }
-                                                await forceSyncFromServer(false);
-                                                if (typeof window.__runMultiDeviceSentinel === 'function') {
-                                                    const ok = await window.__runMultiDeviceSentinel(true);
-                                                    if (ok) {
-                                                        showToast('כל הנתונים נבדקו ומסונכרנים ב-100% בין כל המכשירים! 🟢', 'success');
-                                                    } else {
-                                                        showToast('סנכרון בוצע - קיימת הערה בבדיקה', 'warning');
-                                                    }
-                                                } else {
-                                                    setSyncState('synced');
-                                                    showToast('הנתונים סונכרנו בהצלחה מהענן! ✅', 'success');
-                                                }
-                                            } catch (e) {
-                                                setSyncState('error');
-                                                setSyncErrorDetails(e.message || 'שגיאה בביצוע סנכרון');
-                                                showToast('שגיאה בסנכרון: ' + (e.message || ''), 'error');
-                                            }
+                                            showToast('מושך ומסנכרן נתונים עדכניים מהענן... 🔄', 'info');
+                                            await retrySync();
                                         }}
-                                        className="w-full py-3.5 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95 cursor-pointer">
-                                        <span>🔄</span> סנכרן ובדוק הכל עכשיו (בדיקה דו-כיוונית מלאה)
+                                        className="w-full py-3.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-2xl font-bold text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center gap-2 active:scale-95">
+                                        <span>🔄</span> {syncState === 'error' ? 'נסי שוב' : 'סנכרן ומשוך עכשיו מהענן'}
                                     </button>
                                     <button
                                         onClick={() => {
-                                            if (typeof clearPendingSync === 'function' && globalState.activeUser) {
-                                                clearPendingSync(globalState.activeUser);
+                                            if (syncInfo && syncInfo.outboxCount > 0) {
+                                                showToast('יש שינויים שממתינים לסנכרון — לא ניתן לנקות לפני שהם יישמרו בענן', 'error');
+                                                return;
                                             }
-                                            localStorage.removeItem('studyStreak_outbox_' + (globalState.activeUser || ''));
                                             showToast('מרענן מחדש את האפליקציה מהענן... 🚀', 'info');
                                             setTimeout(() => {
                                                 window.location.reload();
                                             }, 300);
                                         }}
                                         className="w-full py-2.5 bg-stone-100 hover:bg-stone-200 text-stone-700 rounded-2xl font-bold text-xs transition-all flex items-center justify-center gap-2 active:scale-95 border border-stone-200">
-                                        <span>🧹</span> ניקוי זיכרון מקומי וטעינה מחדש מהענן
+                                        <span>🧹</span> טעינה מחדש מהענן (רק כשאין שינויים ממתינים)
                                     </button>
 
                                     <div className="bg-stone-50 rounded-2xl p-4 border border-stone-200 space-y-2.5 text-xs text-stone-700">
