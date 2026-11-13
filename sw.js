@@ -1,4 +1,4 @@
-/**
+﻿/**
  * StudyStreak Pro - Service Worker for Background Notifications & PWA
  */
 const CACHE_PREFIX = 'studystreak-';
