@@ -38,19 +38,8 @@ if ('serviceWorker' in navigator) {
         reloadRequested = true;
         try { waitingWorker.postMessage({ type: 'SKIP_WAITING' }); } catch (e) { window.location.reload(); }
     };
-    const showBanner = (target) => {
-        if (document.getElementById('sw-update-banner') || bannerShown) return;
-        // already reloaded for this very build (stale cache served the same one again): do not offer it in a loop
-        try { if (target && sessionStorage.getItem('sw_reloaded_for_build') === String(target)) return; } catch (e) {}
-        bannerTarget = target ? String(target) : null;
-        bannerShown = true;
-        const el = document.createElement('div');
-        el.id = 'sw-update-banner';
-        el.setAttribute('dir', 'rtl');
-        el.style.cssText = 'position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#4f46e5;color:#fff;padding:12px 16px;border-radius:16px;font:700 14px sans-serif;text-align:center;cursor:pointer;box-shadow:0 8px 24px rgba(0,0,0,.25)';
-        el.textContent = 'גרסה חדשה — לחצי לרענון';
-        el.addEventListener('click', applyUpdate);
-        (document.body || document.documentElement).appendChild(el);
+    const showBanner = () => {
+        // Silent update mode: no bottom banner; updates apply when hidden/idle or on next open.
     };
     const onWaiting = (w) => { waitingWorker = w; showBanner(); };
 
