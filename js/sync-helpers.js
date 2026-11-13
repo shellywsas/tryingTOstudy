@@ -10,7 +10,11 @@
         const sub = String(p.subjectName || "");
         const id = String(p.id || "");
         const dt = String(p.date || "");
-        if (sub.includes("היסטוריה") || id.startsWith("ph_t_1794473352381")) return true;
+        const taskId = String(p.taskId || "");
+        const title = String(p.taskTitle || "");
+        if (sub.includes("היסטוריה")) return true;
+        if (id.includes("1794473352381") || taskId === "t_1794473352381" || (title.includes("11.11.26") && sub.includes("פיזיקה"))) return true;
+        if (id.includes("1794473104904") || taskId === "t_1794473104904" || (title.includes("11.11.26") && sub.includes("מתמטיקה"))) return true;
         if (id.startsWith("ph_t_1794521101639_") || (dt.startsWith("2026-11-13T01:20") && sub.includes("מדעי המחשב"))) return true;
         return false;
     }
@@ -52,13 +56,14 @@
         }
         const localDone = taskLooksCompleted(localT, pointsHistory);
         const incomingDone = taskLooksCompleted(incomingT, pointsHistory);
+        if (localT.id === 't_1794473104904' || incomingT.id === 't_1794473104904' || localT.id === 't_1794473352381' || incomingT.id === 't_1794473352381') {
+            const base = { ...localT, ...incomingT };
+            return { ...base, completed: false, completedAt: null, pointsEarned: null };
+        }
         if (localDone && !incomingDone) {
             const localMod = localT.updatedAt || localT.lastModified || 0;
             const incomingMod = incomingT.updatedAt || incomingT.lastModified || 0;
             if (incomingMod >= localMod && incomingT.completed === false) {
-                return { ...localT, ...incomingT, completed: false, completedAt: null, pointsEarned: null };
-            }
-            if (incomingT.id === 't_1794473104904' || incomingT.id === 't_1794473352381') {
                 return { ...localT, ...incomingT, completed: false, completedAt: null, pointsEarned: null };
             }
             return { ...incomingT, ...localT, completed: true, autoPenaltyApplied: isTaskSubmittedOnTime(localT) ? false : (localT.autoPenaltyApplied || false) };
@@ -595,7 +600,7 @@
     function healCompletedFromHistory(user) {
         if (!user) return user;
         const hist = [...(user.pointsHistory || [])].filter(h => !isInvalidPointsHistory(h));
-        let changed = false;
+        let changed = (user.pointsHistory || []).length !== hist.length;
         let totalPoints = user.totalPoints || 0;
         let weeklyPoints = user.weeklyPoints || 0;
         let taskStreak = user.taskStreak;
@@ -634,6 +639,10 @@
 
         const tasks = inputTasks.map((t) => {
             if (!t) return t;
+            if (t.id === 't_1794473104904' || t.id === 't_1794473352381') {
+                if (t.completed || t.completedAt || t.pointsEarned) changed = true;
+                return { ...t, completed: false, completedAt: null, pointsEarned: null };
+            }
             const isDone = taskLooksCompleted(t, hist);
             const onTime = isTaskSubmittedOnTime(t);
             let updated = { ...t };

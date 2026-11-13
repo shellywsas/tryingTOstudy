@@ -217,7 +217,11 @@
                                     const sub = String(p.subjectName || '');
                                     const id = String(p.id || '');
                                     const dt = String(p.date || '');
-                                    if (sub.includes('היסטוריה') || id.startsWith('ph_t_1794473352381')) return false;
+                                    const taskId = String(p.taskId || '');
+                                    const title = String(p.taskTitle || '');
+                                    if (sub.includes('היסטוריה')) return false;
+                                    if (id.includes('1794473352381') || taskId === 't_1794473352381' || (title.includes('11.11.26') && sub.includes('פיזיקה'))) return false;
+                                    if (id.includes('1794473104904') || taskId === 't_1794473104904' || (title.includes('11.11.26') && sub.includes('מתמטיקה'))) return false;
                                     if (id.startsWith('ph_t_1794521101639_') || (dt.startsWith('2026-11-13T01:20') && sub.includes('מדעי המחשב'))) return false;
                                     return true;
                                 });
