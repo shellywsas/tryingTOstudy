@@ -3145,7 +3145,7 @@ function App() {
 
                     const historyLog = {
                         id: 'ph_' + Date.now(),
-                        taskId: taskToCancel.id,
+                        canceledTaskId: taskToCancel.id, // keep off taskId so deletedTaskIds doesn't purge the -4 cancellation penalty
                         taskTitle: taskToCancel.title,
                         subjectName: sub ? sub.name : 'כללי',
                         subjectEmoji: sub ? sub.emoji : '📚',
@@ -3161,6 +3161,7 @@ function App() {
                     return {
                         ...prev,
                         tasks: prev.tasks.filter(t => t.id !== taskToCancel.id),
+                        deletedTaskIds: Array.from(new Set([...(prev.deletedTaskIds || []), taskToCancel.id])),
                         totalPoints: prev.totalPoints - 4,
                         weeklyPoints: prev.weeklyPoints - 4,
                         taskStreak: newStreak,
@@ -3828,6 +3829,7 @@ function App() {
                 updateUserData(prev => {
                     let completedTasksCount = 0;
                     let remainingTasks = prev.tasks || [];
+                    let removedExamTaskIds = [];
                     
                     if (reuseId) {
                         const targetSubjId = examPlannerData.subjectId;
@@ -3854,6 +3856,7 @@ function App() {
                         ).length;
 
                         // Remove old uncompleted tasks for this exam so old dates and times don't remain
+                        removedExamTaskIds = (prev.tasks || []).filter(t => isTaskMatchingExam(t) && !t.completed && !t.completedAt).map(t => t.id);
                         remainingTasks = (prev.tasks || []).filter(t => 
                             !( isTaskMatchingExam(t) && !t.completed && !t.completedAt )
                         );
@@ -3888,6 +3891,7 @@ function App() {
                         return {
                             ...prev,
                             tasks: [...remainingTasks, ...newTasks],
+                            deletedTaskIds: Array.from(new Set([...(prev.deletedTaskIds || []), ...removedExamTaskIds])),
                             exams: exams.map(ex => ex.id === reuseId ? {
                                 ...ex,
                                 examName: examTitle,
@@ -10464,7 +10468,8 @@ function App() {
                                                                 }
                                                                 return ex;
                                                             });
-                                                            return { ...prev, tasks: remainingTasks, exams: updatedExams };
+                                                            const deletedTaskIds = Array.from(new Set([...(prev.deletedTaskIds || []), task.id]));
+                                                            return { ...prev, tasks: remainingTasks, deletedTaskIds, exams: updatedExams };
                                                         });
                                                         showToast('מפגש הלמידה נמחק בהצלחה ✨', 'info');
                                                     }
