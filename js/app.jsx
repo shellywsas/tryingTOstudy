@@ -208,6 +208,19 @@ function App() {
                 : (syncInfo ? syncInfo.status : { state: 'pending', reason: 'starting' });
             // UI vocabulary: synced | syncing | offline | error
             const syncState = syncStatusRaw.state === 'pending' ? 'syncing' : syncStatusRaw.state;
+            // Stabilize the dot color so brief in-flight syncs, 1-frame hash lags, or transient blips don't flicker colors
+            const [displaySyncState, setDisplaySyncState] = useState(syncState);
+            useEffect(() => {
+                const immediate = syncState === 'synced' || syncState === 'offline' ||
+                    (syncState === 'error' && (syncStatusRaw.reason === 'storage_full' || syncStatusRaw.reason === 'password_mismatch' || syncStatusRaw.reason === 'firebase_not_initialised'));
+                if (immediate) {
+                    setDisplaySyncState(syncState);
+                    return;
+                }
+                const delay = syncState === 'error' ? 2500 : 1200;
+                const t = setTimeout(() => setDisplaySyncState(syncState), delay);
+                return () => clearTimeout(t);
+            }, [syncState, syncStatusRaw.reason]);
             const syncErrorDetails = syncStatusRaw.reason === 'storage_full' ? 'האחסון מלא' : (syncInfo && syncInfo.lastError ? syncInfo.lastError : (syncStatusRaw.state === 'error' ? syncStatusRaw.reason : ''));
             const syncLastAckText = syncInfo && syncInfo.lastPushAckAt ? `סונכרן לאחרונה ${fmtClock(syncInfo.lastPushAckAt)}` : 'עדיין לא סונכרן';
             const noCloudDocNow = syncStatusRaw.reason === 'no_cloud_doc';
@@ -5824,9 +5837,9 @@ function App() {
                                         <button
                                             onClick={onSyncDotTap}
                                             className={`w-3 h-3 rounded-full transition-all cursor-pointer shrink-0 ${
-                                                syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:scale-125' :
-                                                syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse hover:scale-125' :
-                                                syncState === 'offline' ? 'bg-stone-400 hover:scale-125' : 
+                                                displaySyncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)] hover:scale-125' :
+                                                displaySyncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse hover:scale-125' :
+                                                displaySyncState === 'offline' ? 'bg-stone-400 hover:scale-125' : 
                                                 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce hover:scale-125'
                                             }`}
                                             title={syncLabel}
@@ -5877,9 +5890,9 @@ function App() {
                             <button
                                 onClick={onSyncDotTap}
                                 className={`w-3 h-3 rounded-full transition-all active:scale-95 cursor-pointer shrink-0 ${
-                                    syncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]' :
-                                    syncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse' :
-                                    syncState === 'offline' ? 'bg-stone-400' : 
+                                    displaySyncState === 'synced' ? 'bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.7)]' :
+                                    displaySyncState === 'syncing' ? 'bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.7)] animate-pulse' :
+                                    displaySyncState === 'offline' ? 'bg-stone-400' : 
                                     'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.7)] animate-bounce'
                                 }`}
                                 title={syncLabel}
