@@ -482,11 +482,14 @@ function App() {
 
             // Shared Cloud Registry for Weekly Champions
             const [weeklyChampionsMap, setWeeklyChampionsMap] = useState({});
+            const [weeklyChampionsLoaded, setWeeklyChampionsLoaded] = useState(typeof db === 'undefined' || !db);
+            const checkedEmptyWeeksRef = useRef(new Set());
 
             useEffect(() => {
                 if (typeof db === 'undefined' || !db) return;
                 try {
                     const unsub = db.collection('task_attachments').doc('system_weekly_champions_doc').onSnapshot(doc => {
+                        setWeeklyChampionsLoaded(true);
                         if (doc.exists) {
                             const data = doc.data() || {};
                             try {
@@ -494,7 +497,7 @@ function App() {
                                 setWeeklyChampionsMap(weeks);
                             } catch(e) {}
                         }
-                    }, err => console.warn('Weekly champions sync listener error:', err));
+                    }, err => { console.warn('Weekly champions sync listener error:', err); setWeeklyChampionsLoaded(true); });
                     return () => unsub();
                 } catch(e) {}
             }, []);
@@ -504,6 +507,7 @@ function App() {
                 if (!activeUserData || !globalState.activeUser) return;
 
                 const checkCrowningAndMidnightReset = async () => {
+                    if (!weeklyChampionsLoaded) return;
                     const now = Date.now();
                     const weekStart = typeof getCurrentWeekStart === 'function' ? getCurrentWeekStart(now) : (now - (now % 86400000));
                     const nextSunday00AM = typeof getNextWeekReset === 'function' ? getNextWeekReset(now) : (weekStart + (7 * 86400000));
@@ -521,7 +525,14 @@ function App() {
 
                     const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
                     const hasStaleWeeklyPoints = (Number(activeUserData.weeklyPoints) || 0) > pointsEarnedSinceSunday00AM;
-                    const needsCrowningOrReset = (now >= targetReset) || ((activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) || hasStaleWeeklyPoints;
+                    const needsReset = (now >= targetReset) || ((activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) || hasStaleWeeklyPoints;
+                    const existingOfficial = weeklyChampionsMap[crowningWeekKey];
+                    const champBadge = (activeUserData.badges || []).find(b => (typeof b === 'object' && b && b.id === 'b_weekly_champ'));
+                    const wonWeeksList = Array.isArray(champBadge?.wonWeeks) ? champBadge.wonWeeks : [];
+                    const hasThisWeekBadge = wonWeeksList.includes(crowningWeekKey);
+                    const needsBadgeSync = Boolean(existingOfficial && ((existingOfficial.winner === globalState.activeUser && !hasThisWeekBadge) || (existingOfficial.winner !== globalState.activeUser && hasThisWeekBadge)));
+                    const needsRecoveryCrown = !existingOfficial && !checkedEmptyWeeksRef.current.has(crowningWeekKey);
+                    const needsCrowningOrReset = needsReset || needsBadgeSync || needsRecoveryCrown;
 
                     // 1. Process Crowning & Reset once past Saturday 23:59:59.999 (Sunday 00:00) or if reset is needed
                     if (needsCrowningOrReset) {
@@ -538,7 +549,9 @@ function App() {
                             : Math.max(userHistoricalPts, Number(activeUserData.lastWeekPoints) || 0);
 
                         // If not yet crowned in cloud registry, fetch ALL friends directly from Firestore to ensure 100% fair crowning
-                        if (!existingOfficialWin && (activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) {
+                        let officialWin = existingOfficialWin;
+                        if (!officialWin && ((activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd || needsRecoveryCrown)) {
+                            checkedEmptyWeeksRef.current.add(crowningWeekKey);
                             let allFriendsData = [];
                             if (typeof db !== 'undefined' && db && Array.isArray(activeUserData.friends) && activeUserData.friends.length > 0) {
                                 try {
@@ -578,6 +591,7 @@ function App() {
                                     crownedAt: new Date().toISOString()
                                 };
                                 const updatedWeeks = { ...weeklyChampionsMap, [crowningWeekKey]: newRecord };
+                                officialWin = newRecord;
                                 setWeeklyChampionsMap(updatedWeeks);
                                 if (typeof db !== 'undefined' && db) {
                                     db.collection('task_attachments').doc('system_weekly_champions_doc').set({
@@ -585,8 +599,9 @@ function App() {
                                     }, { merge: true }).catch(e => console.warn('Failed to record weekly champion:', e));
                                 }
                             }
-                        } else if (existingOfficialWin) {
-                            const isMeWinner = (globalState.activeUser === existingOfficialWin.winner);
+                        }
+                        if (officialWin) {
+                            const isMeWinner = (globalState.activeUser === officialWin.winner);
 
                             if (isMeWinner && !userAlreadyHasThisWeek) {
                                 const updatedWonWeeks = Array.from(new Set([...userWonWeeks, crowningWeekKey]));
@@ -597,7 +612,7 @@ function App() {
                                     count: updatedWonWeeks.length,
                                     wonWeeks: updatedWonWeeks,
                                     lastWonWeek: crowningWeekKey,
-                                    lastWonAt: existingOfficialWin.crownedAt || new Date().toISOString()
+                                    lastWonAt: officialWin.crownedAt || new Date().toISOString()
                                 };
                                 if (idx !== -1) {
                                     updatedBadges[idx] = { ...updatedBadges[idx], ...newBadgeObj };
@@ -610,7 +625,7 @@ function App() {
                                 updateUserData(prev => ({
                                     ...prev,
                                     lastCrownedWeekEnd: completedWeekEnd,
-                                    crownedWeekPoints: existingOfficialWin.points || userCompletedPts,
+                                    crownedWeekPoints: officialWin.points || userCompletedPts,
                                     lastWeekPoints: userCompletedPts,
                                     weeklyPoints: pointsEarnedSinceSunday00AM,
                                     nextWeeklyCrowning: nextSunday00AM,
@@ -620,10 +635,10 @@ function App() {
 
                                 if (!sessionStorage.getItem(celebratedKey)) {
                                     sessionStorage.setItem(celebratedKey, 'true');
-                                    showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${existingOfficialWin.points} נקודות! 👑`, 'success');
+                                    showToast(`👑 מזל טוב! הוכתרת לאלופת השבוע עם ${officialWin.points} נקודות! 👑`, 'success');
                                     setCrowningCelebrationModal({
                                         winnerName: activeUserData.name || 'אלופה',
-                                        points: existingOfficialWin.points,
+                                        points: officialWin.points,
                                         crownCount: updatedWonWeeks.length,
                                         isNewWin: true
                                     });
@@ -657,6 +672,7 @@ function App() {
                             }
                         }
 
+                        if (!needsReset) return;
                         // Complete Sunday 00:00 Points Reset: points earned before Sunday 00:00 belong to completed week
                         const pointsEarnedSinceSunday00AM = calculatePointsInWindow(activeUserData, completedWeekEnd, now);
                         updateUserData(prev => ({
@@ -676,7 +692,7 @@ function App() {
                 checkCrowningAndMidnightReset();
                 const crowningTimerId = setInterval(checkCrowningAndMidnightReset, 30 * 1000);
                 return () => clearInterval(crowningTimerId);
-            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd, Object.keys(liveFriends || {}).length]);
+            }, [globalState.activeUser, activeUserData?.nextWeeklyCrowning, activeUserData?.nextWeeklyReset, activeUserData?.weeklyPoints, activeUserData?.lastCrownedWeekEnd, Object.keys(liveFriends || {}).length, weeklyChampionsLoaded, weeklyChampionsMap]);
 
 
             useEffect(() => {
