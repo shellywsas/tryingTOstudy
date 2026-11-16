@@ -531,7 +531,7 @@ function App() {
                     const wonWeeksList = Array.isArray(champBadge?.wonWeeks) ? champBadge.wonWeeks : [];
                     const hasThisWeekBadge = wonWeeksList.includes(crowningWeekKey);
                     const needsBadgeSync = Boolean(existingOfficial && ((existingOfficial.winner === globalState.activeUser && !hasThisWeekBadge) || (existingOfficial.winner !== globalState.activeUser && hasThisWeekBadge)));
-                    const needsRecoveryCrown = !existingOfficial && !checkedEmptyWeeksRef.current.has(crowningWeekKey);
+                    const needsRecoveryCrown = !checkedEmptyWeeksRef.current.has(crowningWeekKey);
                     const needsCrowningOrReset = needsReset || needsBadgeSync || needsRecoveryCrown;
 
                     // 1. Process Crowning & Reset once past Saturday 23:59:59.999 (Sunday 00:00) or if reset is needed
@@ -550,17 +550,27 @@ function App() {
 
                         // If not yet crowned in cloud registry, fetch ALL friends directly from Firestore to ensure 100% fair crowning
                         let officialWin = existingOfficialWin;
-                        if (!officialWin && ((activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd || needsRecoveryCrown)) {
+                        if ((!officialWin && (activeUserData.lastCrownedWeekEnd || 0) < completedWeekEnd) || needsRecoveryCrown) {
                             checkedEmptyWeeksRef.current.add(crowningWeekKey);
                             let allFriendsData = [];
-                            if (typeof db !== 'undefined' && db && Array.isArray(activeUserData.friends) && activeUserData.friends.length > 0) {
+                            if (typeof db !== 'undefined' && db) {
                                 try {
                                     const snaps = await Promise.all(
-                                        activeUserData.friends.map(f => f && f.username ? db.collection("users").doc(f.username).get().catch(() => null) : Promise.resolve(null))
+                                        (await db.collection("users").get()).docs.filter(d => d.id !== globalState.activeUser).map(d => Promise.resolve(d))
                                     );
                                     allFriendsData = snaps.filter(s => s && s.exists).map(s => ({ ...s.data(), username: s.id }));
                                 } catch (e) {
-                                    console.warn('Friends fetch for crowning warning:', e);
+                                    console.warn('All-users fetch for crowning warning, falling back to friends:', e);
+                                    if (Array.isArray(activeUserData.friends) && activeUserData.friends.length > 0) {
+                                        try {
+                                            const fSnaps = await Promise.all(
+                                                activeUserData.friends.map(f => f && f.username ? db.collection("users").doc(f.username).get().catch(() => null) : Promise.resolve(null))
+                                            );
+                                            allFriendsData = fSnaps.filter(s => s && s.exists).map(s => ({ ...s.data(), username: s.id }));
+                                        } catch (fe) {
+                                            console.warn('Friends fetch fallback for crowning warning:', fe);
+                                        }
+                                    }
                                 }
                             }
                             if (allFriendsData.length === 0) {
@@ -583,7 +593,7 @@ function App() {
                                 }
                             });
 
-                            if (topPts > 0) {
+                            if (topPts > 0 && (!officialWin || topPts > (Number(officialWin.points) || 0))) {
                                 const newRecord = {
                                     winner: topUsername,
                                     winnerName: topName,
@@ -594,9 +604,31 @@ function App() {
                                 officialWin = newRecord;
                                 setWeeklyChampionsMap(updatedWeeks);
                                 if (typeof db !== 'undefined' && db) {
-                                    db.collection('task_attachments').doc('system_weekly_champions_doc').set({
-                                        weeks_json: JSON.stringify(updatedWeeks)
-                                    }, { merge: true }).catch(e => console.warn('Failed to record weekly champion:', e));
+                                    try {
+                                        const champDocRef = db.collection('task_attachments').doc('system_weekly_champions_doc');
+                                        const txWeeks = await db.runTransaction(async (tx) => {
+                                            const docSnap = await tx.get(champDocRef);
+                                            let serverWeeks = {};
+                                            if (docSnap.exists && docSnap.data().weeks_json) {
+                                                try { serverWeeks = JSON.parse(docSnap.data().weeks_json); } catch (_) {}
+                                            }
+                                            const existingServer = serverWeeks[crowningWeekKey];
+                                            if (!existingServer || topPts > (Number(existingServer.points) || 0)) {
+                                                const nextWeeks = { ...serverWeeks, [crowningWeekKey]: newRecord };
+                                                tx.set(champDocRef, { weeks_json: JSON.stringify(nextWeeks) }, { merge: true });
+                                                return nextWeeks;
+                                            }
+                                            return serverWeeks;
+                                        });
+                                        if (txWeeks && txWeeks[crowningWeekKey]) {
+                                            officialWin = txWeeks[crowningWeekKey];
+                                            setWeeklyChampionsMap(txWeeks);
+                                        }
+                                    } catch (e) {
+                                        console.warn('Failed to record weekly champion:', e);
+                                    }
+
+
                                 }
                             }
                         }
